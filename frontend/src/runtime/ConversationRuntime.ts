@@ -45,6 +45,7 @@ export class ConversationRuntime {
   private generation = 0;
   private disposed = false;
   private voiceInput: VoiceInputController | null = null;
+  private voiceOperation: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly agentClient: AgentClient,
@@ -59,6 +60,15 @@ export class ConversationRuntime {
 
   attachVoiceInput(controller: VoiceInputController | null): void {
     this.voiceInput = controller;
+  }
+
+  private runVoiceOperation(method: 'startListening' | 'stopListening'): Promise<void> {
+    const controller = this.voiceInput;
+    if (!controller) return Promise.resolve();
+    const operation = this.voiceOperation.then(() => controller[method]());
+    // A failed controller call is reported to its caller without blocking later stop/start calls.
+    this.voiceOperation = operation.catch(() => {});
+    return operation;
   }
 
   private update(patch: Partial<ConversationSnapshot>): void {
@@ -86,7 +96,7 @@ export class ConversationRuntime {
       error: null,
     });
     try {
-      await this.voiceInput?.startListening();
+      await this.runVoiceOperation('startListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -99,7 +109,7 @@ export class ConversationRuntime {
     this.update({ runtimeStatus: 'ended', conversationStatus: 'ended', error: null });
     try {
       this.tts.stop();
-      await this.voiceInput?.stopListening();
+      await this.runVoiceOperation('stopListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -112,7 +122,7 @@ export class ConversationRuntime {
     this.update({ ...initialSnapshot(), sessionId: crypto.randomUUID() });
     try {
       this.tts.stop();
-      await this.voiceInput?.stopListening();
+      await this.runVoiceOperation('stopListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -129,7 +139,7 @@ export class ConversationRuntime {
     const generation = this.generation;
     this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null });
     try {
-      await this.voiceInput?.stopListening();
+      await this.runVoiceOperation('stopListening');
       if (!this.isCurrent(generation)) return;
       this.update({
         messages: [...this.snapshot.messages, {
@@ -156,7 +166,7 @@ export class ConversationRuntime {
         return;
       }
       this.update({ runtimeStatus: 'listening' });
-      await this.voiceInput?.startListening();
+      await this.runVoiceOperation('startListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -169,7 +179,7 @@ export class ConversationRuntime {
     this.listeners.clear();
     try {
       this.tts.stop();
-      void Promise.resolve(this.voiceInput?.stopListening()).catch(() => {});
+      void this.runVoiceOperation('stopListening').catch(() => {});
     } catch {
       // Teardown must not crash an unmounting UI.
     }

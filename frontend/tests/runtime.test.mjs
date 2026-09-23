@@ -96,6 +96,108 @@ test('HTTP client rejects malformed replies and surfaces backend errors', async 
       error: { code: 'unavailable', message: 'Agent is offline' },
     }), { status: 503, headers: { 'Content-Type': 'application/json' } });
     await assert.rejects(client.sendMessage({ session_id: 'session', text: 'Hello' }), /503: Agent is offline/);
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      response_text: '  ', conversation_status: 'awaiting_user',
+    }), { headers: { 'Content-Type': 'application/json' } });
+    await assert.rejects(client.sendMessage({ session_id: 'session', text: 'Hello' }), /Malformed/);
+
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      response_text: 'Valid', conversation_status: 'active', extra_field: 'accepted',
+    }), { headers: { 'Content-Type': 'application/json' } });
+    assert.equal((await client.sendMessage({ session_id: 'session', text: 'Hello' })).response_text, 'Valid');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('reset waits for a delayed voice start before stopping it', async () => {
+  let releaseStart;
+  let starts = 0;
+  let stops = 0;
+  const runtime = new ConversationRuntime(
+    { sendMessage: async () => ({ response_text: 'Ответ', conversation_status: 'active' }) },
+    { speak: async () => ({}), stop() {} },
+  );
+  runtime.attachVoiceInput({
+    startListening: () => {
+      starts += 1;
+      return starts === 1 ? new Promise((resolve) => { releaseStart = resolve; }) : undefined;
+    },
+    stopListening: () => { stops += 1; },
+  });
+  const starting = runtime.startConversation();
+  await new Promise((resolve) => setImmediate(resolve));
+  const oldSession = runtime.getSnapshot().sessionId;
+  const resetting = runtime.resetConversation();
+  assert.equal(stops, 0);
+  releaseStart();
+  await Promise.all([starting, resetting]);
+  assert.equal(stops, 1);
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'idle');
+  assert.notEqual(runtime.getSnapshot().sessionId, oldSession);
+  await runtime.startConversation();
+  assert.equal(starts, 2);
+  runtime.dispose();
+});
+
+test('reset prevents an old agent response from changing the new session', async () => {
+  let finishAgent;
+  let stops = 0;
+  const runtime = new ConversationRuntime(
+    { sendMessage: () => new Promise((resolve) => { finishAgent = resolve; }) },
+    { speak: async () => ({}), stop: () => { stops += 1; } },
+  );
+  await runtime.startConversation();
+  const oldTurn = runtime.sendText('Старый вопрос');
+  await new Promise((resolve) => setImmediate(resolve));
+  await runtime.resetConversation();
+  finishAgent({ response_text: 'Поздний ответ', conversation_status: 'active' });
+  await oldTurn;
+  assert.equal(stops, 1);
+  assert.equal(runtime.getSnapshot().messages.length, 0);
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'idle');
+  runtime.dispose();
+});
+
+test('reset cancels pending playback and ignores its late rejection', async () => {
+  let cancelPlayback;
+  let stops = 0;
+  const runtime = new ConversationRuntime(
+    { sendMessage: async () => ({ response_text: 'Ответ', conversation_status: 'active' }) },
+    {
+      speak: () => new Promise((_resolve, reject) => {
+        cancelPlayback = () => reject(new DOMException('Cancelled', 'AbortError'));
+      }),
+      stop: () => { stops += 1; cancelPlayback?.(); },
+    },
+  );
+  await runtime.startConversation();
+  const turn = runtime.sendText('Вопрос');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'speaking');
+  await runtime.resetConversation();
+  await turn;
+  assert.equal(stops, 1);
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'idle');
+  assert.equal(runtime.getSnapshot().messages.length, 0);
+  runtime.dispose();
+});
+
+test('HTTP client reports a timeout while reading the response body', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (_url, { signal }) => ({
+      ok: true,
+      json: () => new Promise((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason);
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      }),
+    });
+    const client = new HttpAgentClient('http://localhost:8000', 5);
+    const keepEventLoopAlive = new Promise((resolve) => setTimeout(resolve, 30));
+    await assert.rejects(client.sendMessage({ session_id: 'session', text: 'Hello' }), /timed out/);
+    await keepEventLoopAlive;
   } finally {
     globalThis.fetch = originalFetch;
   }

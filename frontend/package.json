@@ -13,6 +13,7 @@
     "test:runtime": "node --experimental-transform-types --test tests/runtime.test.mjs",
     "test:tts": "node --experimental-transform-types --test tests/tts.test.mjs",
     "test:trace": "node --experimental-transform-types --test tests/trace.test.mjs",
+    "test:integration": "node --experimental-transform-types --test tests/integration.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -52,6 +52,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
+| `docs/INTEGRATION.md` | Short frontend/Voice Input/Agent Core handoff contract and checks |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
@@ -63,6 +64,7 @@ accepts text through `sendText()` or an STT callback through `handleTranscript()
 `POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
 the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
 `onend`; `onstart` gives first-audio latency. A no-audio adapter remains for tests.
+Voice controller start/stop calls are serialized so a delayed start is stopped on reset/end.
 The voice check panel has Russian/Kazakh samples, selected voice and playback timings.
 The conversation panel shows runtime and backend conversation status. The trace panel
 renders only supplied fields, keeps multi-intent order, and uses browser STT/TTS first-audio
@@ -85,7 +87,8 @@ measured application-level traces, never hidden chain-of-thought. This pipeline 
   `{session_id: string, text: string}`; response requires `{response_text: string,
   conversation_status: "active" | "awaiting_user" | "awaiting_confirmation" |
   "handoff" | "ended"}` and optionally `routing`, `state`, `trace` (untyped JSON).
-  Frontend rejects malformed replies, times out after 20 seconds, and never substitutes a mock.
+  Frontend rejects blank/malformed replies, times out after 20 seconds, accepts additive
+  response fields, and never substitutes a mock.
   Optional `trace` fields shown in the browser include turn, transcript, language, scenarios,
   alternatives, concise reason, slots, actions, clarification, handoff and `latency_ms`.
   Optional `state` fields shown include active_scenario, scenario_stack and pending_scenarios.
@@ -146,7 +149,7 @@ Frontend (second terminal, repository root): `cd frontend`, `npm ci`, copy
 `.env.example` to `.env.local` and set `VITE_USE_MOCK_AGENT=true` for independent UI
 development, then `npm run dev`. Switch it to `false` when Agent Core serves `/api/message`.
 Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
-`npm run test:tts`, `npm run test:trace`. Browser speech needs a supported browser and an installed voice;
+`npm run test:tts`, `npm run test:trace`, `npm run test:integration`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.

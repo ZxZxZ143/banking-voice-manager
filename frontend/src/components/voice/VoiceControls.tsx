@@ -4,7 +4,7 @@ export function VoiceControls() {
       <h3 id="voice-title">Голосовой ввод и ответ</h3>
       <button type="button" disabled aria-describedby="voice-status">Микрофон</button>
       <p id="voice-status" className="muted">
-        Запись, распознавание речи и воспроизведение ответа пока не подключены.
+        Голосовой ввод пока не подключён. Ответы озвучивает браузер.
       </p>
     </section>
   );

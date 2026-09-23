@@ -16,6 +16,7 @@ function parseResponse(value: unknown): AgentMessageResponse {
   if (
     !isRecord(value)
     || typeof value.response_text !== 'string'
+    || !value.response_text.trim()
     || !statuses.includes(value.conversation_status as ConversationStatus)
   ) {
     throw new Error('Malformed /api/message response: expected response_text and conversation_status.');
@@ -31,21 +32,29 @@ export class HttpAgentClient implements AgentClient {
 
   async sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse> {
     let response: Response;
+    const signal = AbortSignal.timeout(this.timeoutMs);
     try {
       response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/api/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal,
       });
     } catch (cause) {
-      if (cause instanceof Error && (cause.name === 'TimeoutError' || cause.name === 'AbortError')) {
+      if (signal.aborted || (cause instanceof Error && cause.name === 'TimeoutError')) {
         throw new Error(`Agent API request timed out after ${this.timeoutMs} ms.`);
       }
       throw new Error('Agent API unavailable. Check VITE_API_BASE_URL and the backend connection.');
     }
 
-    const body: unknown = await response.json().catch(() => null);
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      if (signal.aborted) throw new Error(`Agent API request timed out after ${this.timeoutMs} ms.`);
+      if (response.ok) throw new Error('Malformed /api/message response: invalid JSON.');
+      body = null;
+    }
     if (!response.ok) {
       const detail = isRecord(body) && isRecord(body.error) && typeof body.error.message === 'string'
         ? body.error.message
