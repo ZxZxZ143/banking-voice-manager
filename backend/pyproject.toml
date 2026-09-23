@@ -14,10 +14,12 @@ dependencies = [
     "openai-agents>=0.4,<1",
     "openai>=3.19,<4",
     "uvicorn>=0.35,<1",
+    "websockets>=15,<17",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "httpx>=0.28,<1", "ruff>=0.12,<1"]
+voice = ["faster-whisper==1.2.1"]
 
 [project.scripts]
 voice-router = "app.main:run"
