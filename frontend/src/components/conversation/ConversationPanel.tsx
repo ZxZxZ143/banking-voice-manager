@@ -1,13 +1,26 @@
 import { useState, type FormEvent } from 'react';
 import type { ConversationRuntime, ConversationSnapshot } from '../../runtime/ConversationRuntime';
+import type { ConversationStatus, RuntimeStatus } from '../../types/agent';
+import type { TraceViewModel } from '../trace/traceViewModel';
 import { VoiceControls } from '../voice/VoiceControls';
 
 interface Props {
   runtime: ConversationRuntime;
   snapshot: ConversationSnapshot;
+  view: TraceViewModel;
 }
 
-export function ConversationPanel({ runtime, snapshot }: Props) {
+const runtimeLabels: Record<RuntimeStatus, string> = {
+  idle: 'Готов к началу', listening: 'Слушаем', processing: 'Обрабатываем',
+  speaking: 'Ассистент говорит', handoff: 'Передача оператору', ended: 'Завершён', error: 'Ошибка',
+};
+
+const conversationLabels: Record<ConversationStatus, string> = {
+  active: 'Активен', awaiting_user: 'Ожидаем ответ клиента',
+  awaiting_confirmation: 'Ожидаем подтверждение', handoff: 'Передача оператору', ended: 'Завершён',
+};
+
+export function ConversationPanel({ runtime, snapshot, view }: Props) {
   const [text, setText] = useState('');
   const ready = snapshot.runtimeStatus === 'listening';
 
@@ -19,8 +32,9 @@ export function ConversationPanel({ runtime, snapshot }: Props) {
   }
 
   return (
-    <section className="panel" aria-labelledby="conversation-title">
-      <h2 id="conversation-title">Диалог с клиентом</h2>
+    <section className="panel conversation-panel" aria-labelledby="conversation-title">
+      <p className="eyebrow">Для клиента</p>
+      <h2 id="conversation-title">Разговор</h2>
       <div className="controls">
         <button type="button" onClick={() => { void runtime.startConversation(); }}
           disabled={!['idle', 'error'].includes(snapshot.runtimeStatus)
@@ -35,15 +49,42 @@ export function ConversationPanel({ runtime, snapshot }: Props) {
           Сбросить
         </button>
       </div>
-      <p role="status">Состояние: {snapshot.runtimeStatus} · диалог: {snapshot.conversationStatus ?? '—'}</p>
-      <p className="muted debug-id">session_id: {snapshot.sessionId ?? 'создаётся при старте'}</p>
-      {snapshot.sttLatencyMs != null && <p className="muted">STT: {snapshot.sttLatencyMs} ms</p>}
+      <div className="status-line" role="status" aria-live="polite">
+        <span className={`status-dot status-${snapshot.runtimeStatus}`} aria-hidden="true" />
+        <strong>{runtimeLabels[snapshot.runtimeStatus]}</strong>
+        {snapshot.conversationStatus && <span>· {conversationLabels[snapshot.conversationStatus]}</span>}
+      </div>
+      {snapshot.conversationStatus === 'awaiting_confirmation' && (
+        <div className="conversation-notice confirmation-notice">
+          <strong>Требуется подтверждение</strong>
+          {snapshot.lastResponse?.response_text && <p>{snapshot.lastResponse.response_text}</p>}
+        </div>
+      )}
+      {snapshot.conversationStatus === 'awaiting_user' && (
+        <div className="conversation-notice">
+          <strong>{view.clarification ? 'Требуется уточнение' : 'Ожидаем ответ клиента'}</strong>
+          {(view.clarification ?? snapshot.lastResponse?.response_text) && (
+            <p>{view.clarification ?? snapshot.lastResponse?.response_text}</p>
+          )}
+        </div>
+      )}
+      {snapshot.conversationStatus === 'handoff' && (
+        <div className="conversation-notice handoff-notice"><strong>Передаём разговор оператору</strong>
+          {view.handoff?.queue && <p>Очередь: {view.handoff.queue}</p>}
+        </div>
+      )}
+      {snapshot.conversationStatus === 'ended' && (
+        <div className="conversation-notice"><strong>Разговор завершён</strong></div>
+      )}
       {snapshot.error && <p className="error" role="alert">{snapshot.error}</p>}
-      <div className="history" aria-label="История разговора">
+      <div className="history" aria-label="История разговора" aria-live="polite">
         {snapshot.messages.length === 0 ? <p className="empty-state">История пуста.</p> : (
-          snapshot.messages.map((message) => (
-            <p key={message.id}><strong>{message.role === 'user' ? 'Клиент' : 'Ассистент'}:</strong> {message.text}</p>
-          ))
+          <ol className="message-list">{snapshot.messages.map((message) => (
+            <li key={message.id} className={`message message-${message.role}`}>
+              <span className="message-role">{message.role === 'user' ? 'Клиент' : 'Ассистент'}</span>
+              <p>{message.text}</p>
+            </li>
+          ))}</ol>
         )}
       </div>
       <form onSubmit={handleSubmit}>
@@ -52,7 +93,8 @@ export function ConversationPanel({ runtime, snapshot }: Props) {
           placeholder="Введите запрос на русском или казахском" maxLength={10_000} disabled={!ready} />
         <button type="submit" disabled={!ready || !text.trim()}>Отправить</button>
       </form>
-      <VoiceControls />
+      <p className="muted debug-id">session_id: {snapshot.sessionId ?? 'создаётся при старте'}</p>
+      <details className="developer-tools"><summary>Голосовой ввод (ещё не подключён)</summary><VoiceControls /></details>
     </section>
   );
 }

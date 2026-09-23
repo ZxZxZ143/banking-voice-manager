@@ -11,7 +11,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 ## Current implementation status
 
 - **Implemented:** FastAPI startup, validated data, health endpoint, React/Vite shell,
-  frontend conversation runtime, browser TTS playback and typed integration adapters, backend typed contracts,
+  frontend conversation runtime, browser TTS playback, supervisor trace view and typed integration adapters, backend typed contracts,
   bounded copied memory state/traces, catalog, read-only repositories,
   provisional deterministic policy, scenario-requirements inspection and action registry.
 - **Partial:** one SDK agent factory/strict output schema; minimal STT and buffered TTS
@@ -47,6 +47,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
 | `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
+| `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
@@ -63,7 +64,12 @@ accepts text through `sendText()` or an STT callback through `handleTranscript()
 the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
 `onend`; `onstart` gives first-audio latency. A no-audio adapter remains for tests.
 The voice check panel has Russian/Kazakh samples, selected voice and playback timings.
-Mock agent replies are labeled and enabled only by `VITE_USE_MOCK_AGENT=true` in Vite dev.
+The conversation panel shows runtime and backend conversation status. The trace panel
+renders only supplied fields, keeps multi-intent order, and uses browser STT/TTS first-audio
+timings only when corresponding backend trace timings are absent. It does not show raw trace
+data or infer routing decisions. Voice tools are in a disclosure below the main panels.
+Mock agent replies and trace fixtures are visibly labeled and enabled only by
+`VITE_USE_MOCK_AGENT=true` in Vite dev.
 With the current backend and HTTP mode, `/api/message` returns a visible 404.
 
 Planned: browser → STT → triage → Router Agent ↔ dialog state → policy → scenario engine
@@ -80,6 +86,9 @@ measured application-level traces, never hidden chain-of-thought. This pipeline 
   conversation_status: "active" | "awaiting_user" | "awaiting_confirmation" |
   "handoff" | "ended"}` and optionally `routing`, `state`, `trace` (untyped JSON).
   Frontend rejects malformed replies, times out after 20 seconds, and never substitutes a mock.
+  Optional `trace` fields shown in the browser include turn, transcript, language, scenarios,
+  alternatives, concise reason, slots, actions, clarification, handoff and `latency_ms`.
+  Optional `state` fields shown include active_scenario, scenario_stack and pending_scenarios.
 - `WS /api/v1/voice`: accepts, sends the same not-implemented error, closes 1013.
 - `agent/schemas.py`: RouterDecision has language, semantic segments, ordered selections,
   alternatives, slots and continuation. SDK transport uses a named-slot list for closed JSON
@@ -137,7 +146,7 @@ Frontend (second terminal, repository root): `cd frontend`, `npm ci`, copy
 `.env.example` to `.env.local` and set `VITE_USE_MOCK_AGENT=true` for independent UI
 development, then `npm run dev`. Switch it to `false` when Agent Core serves `/api/message`.
 Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
-`npm run test:tts`. Browser speech needs a supported browser and an installed voice;
+`npm run test:tts`, `npm run test:trace`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.

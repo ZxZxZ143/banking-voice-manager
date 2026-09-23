@@ -19,6 +19,7 @@ export interface ConversationSnapshot {
   latestTrace: unknown;
   latestState: unknown;
   sttLatencyMs: number | null;
+  ttsFirstAudioMs: number | null;
 }
 
 const initialSnapshot = (): ConversationSnapshot => ({
@@ -31,6 +32,7 @@ const initialSnapshot = (): ConversationSnapshot => ({
   latestTrace: null,
   latestState: null,
   sttLatencyMs: null,
+  ttsFirstAudioMs: null,
 });
 
 function errorMessage(cause: unknown): string {
@@ -125,7 +127,7 @@ export class ConversationRuntime {
     if (!text || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
 
     const generation = this.generation;
-    this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null });
+    this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null });
     try {
       await this.voiceInput?.stopListening();
       if (!this.isCurrent(generation)) return;
@@ -146,8 +148,9 @@ export class ConversationRuntime {
         conversationStatus: response.conversation_status,
         runtimeStatus: 'speaking',
       });
-      await this.tts.speak(response.response_text, transcript.language);
+      const ttsResult = await this.tts.speak(response.response_text, transcript.language);
       if (!this.isCurrent(generation)) return;
+      this.update({ ttsFirstAudioMs: ttsResult.firstAudioMs ?? null });
       if (response.conversation_status === 'handoff' || response.conversation_status === 'ended') {
         this.update({ runtimeStatus: response.conversation_status });
         return;

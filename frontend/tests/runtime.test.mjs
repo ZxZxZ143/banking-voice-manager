@@ -22,15 +22,17 @@ test('two turns reuse the session and listening resumes only after playback', as
   assert.equal(runtime.getSnapshot().runtimeStatus, 'speaking');
   assert.equal(runtime.getSnapshot().sttLatencyMs, 42);
   assert.equal(starts.length, 1);
-  finishPlayback({ totalMs: 5 });
+  finishPlayback({ firstAudioMs: 3, totalMs: 5 });
   await first;
   assert.equal(runtime.getSnapshot().runtimeStatus, 'listening');
+  assert.equal(runtime.getSnapshot().ttsFirstAudioMs, 3);
   assert.equal(starts.length, 2);
 
   const second = runtime.sendText('Второй вопрос');
   await new Promise((resolve) => setImmediate(resolve));
   finishPlayback({});
   await second;
+  assert.equal(runtime.getSnapshot().ttsFirstAudioMs, null);
   assert.equal(requests.length, 2);
   assert.equal(requests[0].session_id, requests[1].session_id);
   assert.deepEqual(requests.map((request) => request.text), ['Первый вопрос', 'Второй вопрос']);

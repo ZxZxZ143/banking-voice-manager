@@ -60,11 +60,19 @@ export class HttpAgentClient implements AgentClient {
 
 /** Explicit development fixture; never selected as a fallback after HTTP failure. */
 export class MockAgentClient implements AgentClient {
-  async sendMessage(_request: AgentMessageRequest): Promise<AgentMessageResponse> {
+  async sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse> {
     return {
       response_text: '[MOCK] Сообщение получено. Агент пока не подключён.',
       conversation_status: 'awaiting_user',
-      trace: { mode: 'mock', note: 'No routing or business action was performed.' },
+      state: { active_scenario: 'DEMO-SC01' },
+      trace: {
+        mode: 'mock',
+        transcript: request.text,
+        scenarios: [{ scenario_id: 'DEMO-SC01', name: 'Демо сценарий', confidence: 0.92 }],
+        alternatives: [{ scenario_id: 'DEMO-SC02', name: 'Демо альтернатива', confidence: 0.31 }],
+        reason: 'Демонстрационная трассировка. Реальная маршрутизация не выполнялась.',
+        latency_ms: { router: 287, response: 170, total: 457 },
+      },
     };
   }
 }

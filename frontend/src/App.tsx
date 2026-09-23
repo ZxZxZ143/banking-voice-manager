@@ -1,6 +1,7 @@
 import { useState, useSyncExternalStore } from 'react';
 import { ConversationPanel } from './components/conversation/ConversationPanel';
 import { TracePanel } from './components/trace/TracePanel';
+import { createTraceViewModel } from './components/trace/traceViewModel';
 import { TtsDebugPanel } from './components/voice/TtsDebugPanel';
 import { useHealth } from './hooks/useHealth';
 import { ConversationRuntime } from './runtime/ConversationRuntime';
@@ -16,6 +17,7 @@ export default function App() {
     tts,
   ));
   const snapshot = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
+  const traceView = createTraceViewModel(snapshot);
   const { health, retry } = useHealth();
 
   return (
@@ -36,10 +38,13 @@ export default function App() {
         </button>
       </section>
       <div className="workspace">
-        <ConversationPanel runtime={runtime} snapshot={snapshot} />
-        <TracePanel trace={snapshot.latestTrace} />
+        <ConversationPanel runtime={runtime} snapshot={snapshot} view={traceView} />
+        <TracePanel view={traceView} />
       </div>
-      <TtsDebugPanel tts={tts} runtimeStatus={snapshot.runtimeStatus} />
+      <details className="developer-tools tts-tools">
+        <summary>Инструменты разработчика · проверка голоса</summary>
+        <TtsDebugPanel tts={tts} runtimeStatus={snapshot.runtimeStatus} />
+      </details>
     </main>
   );
 }
