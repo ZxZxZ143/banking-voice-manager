@@ -1,0 +1,36 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #18212c;
+  background: #f5f6f8;
+  font-synthesis: none;
+  line-height: 1.5;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+h1, h2, h3, p { margin: 0 0 12px; }
+h1 { font-size: 28px; }
+h2 { font-size: 20px; }
+h3 { font-size: 16px; }
+header { margin-bottom: 20px; }
+.health { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; }
+.health p { margin: 0; }
+.workspace { display: grid; grid-template-columns: 3fr 2fr; gap: 20px; }
+.panel { min-width: 0; padding: 20px; background: white; border: 1px solid #d6dce3; border-radius: 8px; }
+.empty-state { padding: 20px 0; color: #4b596b; }
+label { display: block; margin-bottom: 6px; font-weight: 600; }
+textarea { width: 100%; padding: 10px; resize: vertical; border: 1px solid #8290a1; border-radius: 4px; }
+textarea, button { font: inherit; }
+button { padding: 8px 14px; background: #1d477d; color: white; border: 1px solid #1d477d; border-radius: 4px; cursor: pointer; }
+button:disabled { background: #e8ebef; border-color: #d6dce3; color: #5e6875; cursor: not-allowed; }
+button:focus-visible, textarea:focus-visible { outline: 3px solid #4d83bd; outline-offset: 2px; }
+.muted { margin-top: 8px; color: #4b596b; font-size: 14px; }
+.error { margin-top: 12px; color: #a02420; overflow-wrap: anywhere; }
+.voice-controls { border-top: 1px solid #d6dce3; margin-top: 24px; padding-top: 20px; }
+pre { max-height: 600px; overflow: auto; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+  main { padding: 16px; }
+  .workspace { grid-template-columns: 1fr; }
+  .health { align-items: flex-start; flex-direction: column; }
+}
