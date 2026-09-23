@@ -14,10 +14,11 @@ Only Core `ended`/`handoff` ends the automatic loop; local Stop preserves Core s
 The voice-input toggle provides genuine text-only fallback without background capture.
 Current-turn text follows historical context; reply language has conservative RU/KK guards.
 
-## Executed checks before integration commit
+## Executed checks (repeated on pushed main)
 
 - Backend: **307 tests passed**; Ruff lint and format checks passed (77 files).
 - Frontend: **24 tests passed**, TypeScript check and production build passed.
+- Post-merge health/proxy and browser page verified after restarting the Vite process.
 - Live baseline API: 9 routed turns + closed-session 409 passed. Covers RU, KK, mixed,
   multi-intent, unclear, out-of-scope, continued slots, goodbye and retained session/history.
 - Additional live API: 6 requests passed: clarification → office answer, explicit handoff

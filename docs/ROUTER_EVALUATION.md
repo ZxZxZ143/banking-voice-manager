@@ -220,3 +220,40 @@ Latest root `predictions.json` / `.report.txt` / `.details.json` contain this ru
 Artifacts remain ignored. Post-evaluation integration fixes affect policy, deterministic
 RU/KK response rendering, current-turn reply language and transport, not the Router prompt
 or selected-scenario evaluation. Live browser/API regression results are in MVP_VALIDATION.md.
+
+## Final main input-order validation — 2026-09-23 12:39 UTC
+
+After a live multi-turn test exposed stale-context selection, the input builder now puts
+the current utterance **after** dialogue history. Catalog/instruction text is unchanged,
+so the instructions hash above is unchanged; the input builder is different. The following
+is a new complete run, not selective retries. Concurrency1, minimum interval3s (previous4s),
+104/104 calls, no provider failures, one invalid output, 326.4s wall time including pacing.
+
+| Group | n | Primary | Full match |
+|---|---:|---:|---:|
+| All | 104 | 91.35% | 90.38% |
+| RU | 52 | 92.31% | 90.38% |
+| KK | 45 | 88.89% | 88.89% |
+| Mixed | 7 | 100% | 100% |
+| Single | 84 | 94.05% | 94.05% |
+| Multi-intent | 13 | 92.31% | 84.62% |
+| Unclear | 3 | 100% | 100% |
+| Out of scope | 4 | 25% | 25% |
+
+Multi-intent recall: **24/26 = 92.31%**. Compared with the preceding integrated run:
+primary92.31% → 91.35%, full90.38% → 90.38%, recall76.92% → 92.31%. Out-of-scope worsened;
+do not call this an overall routing-quality improvement. These are single stochastic runs,
+with a pacing difference, not a controlled statistical experiment.
+
+Errors: U012→UNCLEAR; U030→SC16; U035→SC14; U061 invalid output; U076→UNCLEAR;
+U087 missing SC19; U090 missing SC18; U098/U099/U101→UNCLEAR instead of OUT_OF_SCOPE.
+Fresh-state evaluation does not prove dialogue quality. In the browser, RU→KK office
+answers in one session passed; a later multi-intent request needed one manual retry after
+a safe502. Independent direct reproduction succeeded, so no speculative validation bypass
+or utterance-specific route was added. Wrong-language context leakage also motivated narrow
+RU/KK reply guards in MessageService; these do not alter Router evaluation selections.
+
+Final artifacts: root predictions.json/report/details and the preserved
+`work/router-eval/mvp-current-turn-last.*`. Earlier runs remain untouched in work/.
+Post-merge main validation:307 backend tests,24 frontend tests, lint/format/typecheck/build
+passed. The frontend was restarted after checkout so Vite reloaded its proxy configuration.
