@@ -25,6 +25,7 @@ class ScenarioCatalog:
     def get_compact_router_catalog(self) -> dict[str, JsonValue]:
         """All scenarios and system intents; omit execution/response templates."""
         return {
+            "reference_date": self._dataset.meta.as_of_date.isoformat(),
             "scenarios": [
                 {
                     "scenario_id": scenario.scenario_id,
@@ -32,9 +33,10 @@ class ScenarioCatalog:
                     "description": scenario.description,
                     "not_this_if": [rule.model_dump() for rule in scenario.not_this_if],
                     "priority": scenario.priority,
+                    "slots": scenario.slots.model_dump(),
                     "examples": {
-                        "ru": scenario.examples.ru[:1],
-                        "kk": scenario.examples.kk[:1],
+                        "ru": scenario.examples.ru[:2],
+                        "kk": scenario.examples.kk[:2],
                     },
                 }
                 for scenario in self._dataset.scenarios

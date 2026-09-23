@@ -2,7 +2,7 @@
 
 HackAlem contact-center simulation for fictional **Saqta Insurance**. The core task is
 LLM scenario routing in Russian, Kazakh and mixed-language dialogue. This branch is
-the runnable technical foundation, not a completed voice robot.
+the integrated local voice MVP, with read-only synthetic business data.
 
 ```text
 Browser → STT → Triage → Router Agent ↔ Dialog State
@@ -25,7 +25,7 @@ From the repository root:
 
 ```powershell
 python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev]'
+./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
 ```
 
@@ -41,9 +41,14 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. The shell shows real backend health, a text field,
-disabled voice controls, and an empty supervisor panel. Sending text displays the
-backend's explicit `501 not_implemented` error. No conversation or trace is fabricated.
+Open `http://localhost:5173`. Keep `VITE_USE_MOCK_AGENT=false` (the default).
+The stand provides microphone/file STT, text fallback, live Agent Core replies,
+browser TTS, a reused session ID and supervisor traces. Allow microphone access,
+click Start Conversation and wait for the listening indicator before speaking.
+TTS completes before microphone capture resumes; only `ended` or `handoff` stops
+the conversation. Text fallback also works without microphone permission.
+For text-only checks, uncheck «Голосовой ввод» before Start: the same session and TTS
+remain active, without capturing room speech between typed messages.
 
 Vite dev/preview proxies target `127.0.0.1:8000`; update `frontend/vite.config.ts`
 if you change the backend port. Run one backend process while state is in memory.
@@ -56,8 +61,12 @@ Never commit credentials or place them in frontend environment variables.
 
 Configuration names: `OPENAI_API_KEY`, `OPENAI_ROUTER_MODEL`, `BACKEND_HOST`,
 `BACKEND_PORT`, `FRONTEND_ORIGIN`, optional `STARTER_KIT_PATH`. Empty values use
-application defaults. OpenAI settings are reserved for the next router integration;
-speech adapters require explicit model/voice constructor arguments.
+application defaults. Live `/api/message` and evaluation require both OpenAI settings;
+there is no default model or mock fallback. Optional `ROUTER_TIMEOUT_SECONDS` defaults
+to 45 and `ROUTER_MAX_OUTPUT_TOKENS` to 2500. OPENAI_API_KEY also enables streaming STT.
+The voice extra supplies local acoustic endpointing, not a second routing model. See
+[the voice setup and contract](docs/VOICE_STREAMING_CONTRACT.md) for startup, automatic
+end-of-utterance detection, file replay and latency measurements.
 
 ## Checks
 
@@ -78,6 +87,24 @@ npm run build
 policy, state, transport errors and speech adapters using offline fixtures. They do
 not measure live OpenAI quality or routing accuracy.
 
+## Text routing and evaluation
+
+`POST /api/message` accepts nonblank string `session_id` and `text`; reuse the same ID
+to retain context. It returns `response_text`, `routing`, `state`, `trace` and
+`conversation_status` plus the session ID. One agent makes one structured call per turn.
+RU/KK/mixed, independent multi-intent requests, topic switching and slot continuation
+are supported by the routing contract/prompt. API tests use explicitly scripted responses;
+live measurements are recorded in `docs/ROUTER_EVALUATION.md`. The integrated frontend
+uses `/api/message`; the old `/api/v1/turns/text` stub is not used.
+
+Replies ask a clarification/slot question, return a system response or use a small grounded
+read-only slice (offices, payments, app help, owned demo policy/claim). No business writes or
+actual operator transfer occur. Completed answers leave the conversation open; only goodbye
+ends it. State/history/traces are bounded in-memory,
+lost on restart; same-session requests are serialized. This local demo has no authentication.
+Use a new ID after `ended`/`handoff`. Missing configuration returns 503, provider/output
+errors 502, timeout 504, invalid input 422; failed turns do not advance state.
+
 ## Starter kit and next module
 
 The original synthetic dataset lives only in `data/starter_kit/`, including seven JSON
@@ -85,18 +112,46 @@ files, three READMEs and unmodified `evaluate.py`. There are 40 business scenari
 three system intents. Reference date: **2026-10-01**. Company, insurance and client
 data are fictional.
 
-Next: **Router v1 + evaluation on all 104 dev utterances**. The adapter in
+**Live evaluation on all 104 dev utterances.** The adapter in
 `backend/app/evaluation/runner.py` accepts a Router and produces the exact
-`{utterance_id: [scenario_id, ...]}` prediction format. Once real predictions exist,
-run from the repository root:
+`{utterance_id: [scenario_id, ...]}` prediction format. With model/key configured, run:
 
 ```powershell
-./.venv/Scripts/python.exe data/starter_kit/evaluate.py predictions.json data/starter_kit/dev_utterances.json
+./.venv/Scripts/python.exe -X utf8 -m app.evaluation --run --output predictions.json --concurrency 1 --min-interval-seconds 4 --continue-on-error
 ```
 
-Routing execution, full scenario workflows, response generation and browser voice
-transport remain unimplemented. STT/TTS adapters exist but are not wired into the UI
-and have not been tested against a live provider.
+The CLI uses unchanged `evaluate.py` and creates sibling `.report.txt` and `.details.json`
+files with metrics, timings and safe error metadata; it never overwrites a previous run.
+Choose another output name on subsequent runs. `--limit N` selects a subset. Default mode
+aborts on failure; explicit `--continue-on-error` counts failed calls as empty predictions.
+Expected labels never enter the router. See `docs/ROUTER_EVALUATION.md` for before/after.
+
+Full scenario workflows, complete localized business responses and actual operator
+transfer remain outside this MVP. Irreversible actions are disabled; no write is
+represented as successful. Any future write must use preview → explicit confirmation
+→ execute. Browser streaming STT uses OpenAI and local Silero VAD (default pause 2.5 s).
+Browser TTS depends on installed voices; Kazakh voice availability varies by machine.
+
+## Manual Agent Core stand
+
+Set `ENABLE_DEV_STAND=true` in the ignored root `.env`, configure `OPENAI_API_KEY` and
+`OPENAI_ROUTER_MODEL`, then run `./.venv/Scripts/python.exe -m app.main` from repository root.
+Open `http://127.0.0.1:8000/dev`. Type a message, inspect reply/status/routing/state/trace,
+then send another message without changing the session ID. Reload creates a new ID;
+you can paste a prior ID while the same backend process is running. No npm build is needed.
+Keep this unauthenticated synthetic-data stand bound to loopback; the route is off by default.
+
+Configurable policy: `ROUTER_ACCEPT_THRESHOLD`, `ROUTER_LOW_THRESHOLD`,
+`ROUTER_HANDOFF_AFTER`, `ROUTER_MAX_UNCLEAR_TURNS` (defaults .75/.45/2/3).
+The optional smoke scripts make real, billable model calls, with no automatic retries:
+
+```powershell
+./.venv/Scripts/python.exe -X utf8 scripts/smoke_agent_core.py --pace-seconds 4
+node scripts/smoke_teammate_runtime.mjs origin/feature/conversation-runtime http://127.0.0.1:8000
+```
+
+The latter reads fetched teammate source without checking out or modifying its branch,
+uses a 60-second client timeout and a visibly synthetic/silent TTS fixture, not real voice.
 
 Start future tasks with `AGENTS.md` and [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md).
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) documents module ownership and contracts.

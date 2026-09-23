@@ -14,3 +14,5 @@ dist/
 coverage/
 work/
 predictions.json
+predictions.report.txt
+predictions.details.json

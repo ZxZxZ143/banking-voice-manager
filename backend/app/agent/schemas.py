@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
@@ -23,6 +23,8 @@ class SemanticSegment(ScenarioSelection):
 
 class RouterDecision(Contract):
     language: Language
+    response_language: Literal["ru", "kk"] | None = None
+    clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
     segments: list[SemanticSegment] = Field(default_factory=list)
     scenarios: list[ScenarioSelection] = Field(min_length=1)
     alternatives: list[ScenarioScore] = Field(default_factory=list)
@@ -55,9 +57,11 @@ class RouterAgentOutput(Contract):
     """SDK transport schema; adapter restores the starter-kit slots object."""
 
     language: Language
-    segments: list[SemanticSegment]
-    scenarios: list[ScenarioSelection]
-    alternatives: list[ScenarioScore]
+    response_language: Literal["ru", "kk"] | None = None
+    clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
+    segments: list[SemanticSegment] = Field(min_length=1)
+    scenarios: list[ScenarioSelection] = Field(min_length=1)
+    alternatives: list[ScenarioScore] = Field(max_length=2)
     slots: list[ExtractedSlot]
     is_continuation: bool
 
@@ -67,6 +71,8 @@ class RouterAgentOutput(Contract):
             raise ValueError("Extracted slot names must be unique")
         return RouterDecision(
             language=self.language,
+            response_language=self.response_language,
+            clarification_question=self.clarification_question,
             segments=self.segments,
             scenarios=self.scenarios,
             alternatives=self.alternatives,
