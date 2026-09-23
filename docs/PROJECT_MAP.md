@@ -91,6 +91,8 @@ of this future pipeline are not wired yet.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, optional clarification_question and continuation. SDK transport uses a named-slot list for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
+  SDK selections/segments are nonempty even for system intents. Fresh routing input omits
+  storage language defaults; source enum spellings normalize before strict validation.
 - `dialog/models.py`: DialogueState includes session/language/response_language/client,
   active scenario, stack, pending scenarios, slots, confirmation flag, turn number,
   unclear and consecutive-low-confidence counts, clarification_options, conversation_status and bounded history.
@@ -146,6 +148,14 @@ codes, model/prompt/data fingerprints and routing timings. Outputs are exclusive
 Default failure aborts; explicit `--continue-on-error` records null decision/empty prediction
 and counts it wrong, never fabricating a route. `--limit N` is an explicit subset run.
 Concurrency and call-start pacing are configurable; use serial paced runs for comparison.
+Allowlisted validation_reason distinguishes output contract failures without saving raw
+rejected values. Live manual slot misses/unstable output rejection remain documented in the
+evaluation report; a high scenario score is not evidence of complete business behavior.
+Final 104-case comparison (gpt-4.1-mini, serial paced): primary 95.19%→92.31%, full
+93.27%→91.35%, multi-intent recall 84.62%→73.08%; regression is explicitly retained.
+Unclear improved 33.33%→100%; valid monolingual reply-language match 53.76%→95.70%.
+Final run has zero provider failures and four invalid outputs. See full subgroup/error
+breakdown and manual limitations in `docs/ROUTER_EVALUATION.md`; routing is not quality-approved.
 
 ## Configuration and commands
 
@@ -169,7 +179,7 @@ python -m venv .venv
 ./.venv/Scripts/ruff.exe format --check backend/app backend/tests
 ./.venv/Scripts/python.exe -X utf8 -m app.evaluation --check-data
 ./.venv/Scripts/python.exe -X utf8 -m app.evaluation --run --output predictions.json --concurrency 1 --min-interval-seconds 4 --continue-on-error
-./.venv/Scripts/python.exe -X utf8 scripts/smoke_agent_core.py --interval-seconds 4
+./.venv/Scripts/python.exe -X utf8 scripts/smoke_agent_core.py --pace-seconds 4
 node scripts/smoke_teammate_runtime.mjs origin/feature/conversation-runtime http://127.0.0.1:8000
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/message -ContentType 'application/json; charset=utf-8' -Body '{"session_id":"abc123","text":"Сколько стоит страховка на машину?"}'
 ```

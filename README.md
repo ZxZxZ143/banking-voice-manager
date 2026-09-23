@@ -136,7 +136,7 @@ Configurable policy: `ROUTER_ACCEPT_THRESHOLD`, `ROUTER_LOW_THRESHOLD`,
 The optional smoke scripts make real, billable model calls, with no automatic retries:
 
 ```powershell
-./.venv/Scripts/python.exe -X utf8 scripts/smoke_agent_core.py --interval-seconds 4
+./.venv/Scripts/python.exe -X utf8 scripts/smoke_agent_core.py --pace-seconds 4
 node scripts/smoke_teammate_runtime.mjs origin/feature/conversation-runtime http://127.0.0.1:8000
 ```
 

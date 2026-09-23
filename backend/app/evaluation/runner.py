@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from time import monotonic, perf_counter
 
-from app.agent.errors import RouterError
+from app.agent.errors import ROUTER_VALIDATION_REASONS, RouterError, RouterOutputError
 from app.agent.router import Router
 from app.agent.schemas import RouterDecision
 from app.data.models import DevDataset
@@ -32,6 +32,10 @@ class EvaluationRunError(RuntimeError):
 def safe_router_error(error: RouterError) -> dict:
     """Capture allowlisted provider metadata without serializing a provider exception/body."""
     details = {"code": error.code, "message": error.message}
+    if isinstance(error, RouterOutputError):
+        reason = error.validation_reason
+        if isinstance(reason, str) and reason in ROUTER_VALIDATION_REASONS:
+            details["validation_reason"] = reason
     cause = error.__cause__
     status = getattr(cause, "status_code", None)
     if type(status) is int and 400 <= status <= 599:

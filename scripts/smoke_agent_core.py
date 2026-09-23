@@ -24,7 +24,13 @@ import httpx
 
 STATUSES = {"active", "awaiting_user", "awaiting_confirmation", "handoff", "ended"}
 LANGUAGES = {"ru", "kk", "mixed"}
-READ_ONLY_ACTIONS = {"kb_lookup", "get_offices", "find_client", "get_policy", "get_claim"}
+READ_ONLY_ACTIONS = {
+    "kb_lookup",
+    "get_offices",
+    "find_client",
+    "get_policy",
+    "get_claim",
+}
 SCENARIO_ID = re.compile(r"(?:SC\d{2}|SYS_(?:UNCLEAR|OUT_OF_SCOPE|GOODBYE))\Z")
 
 
@@ -104,7 +110,14 @@ CASES = (
 def validate_contract(body: object, session_id: str, text: str, turn: int) -> list[str]:
     require(isinstance(body, dict), "response must be an object")
     require(
-        {"session_id", "response_text", "routing", "state", "trace", "conversation_status"}
+        {
+            "session_id",
+            "response_text",
+            "routing",
+            "state",
+            "trace",
+            "conversation_status",
+        }
         <= body.keys(),
         "response is missing required fields",
     )
@@ -114,19 +127,29 @@ def validate_contract(body: object, session_id: str, text: str, turn: int) -> li
         "response_text must be a nonblank string",
     )
     status = body["conversation_status"]
-    require(isinstance(status, str) and status in STATUSES, "invalid conversation status")
+    require(
+        isinstance(status, str) and status in STATUSES, "invalid conversation status"
+    )
     routing, state, trace = (body[key] for key in ("routing", "state", "trace"))
-    require(all(isinstance(value, dict) for value in (routing, state, trace)), "invalid objects")
+    require(
+        all(isinstance(value, dict) for value in (routing, state, trace)),
+        "invalid objects",
+    )
     language = routing.get("language")
-    require(isinstance(language, str) and language in LANGUAGES, "invalid routing language")
+    require(
+        isinstance(language, str) and language in LANGUAGES, "invalid routing language"
+    )
     selections = routing.get("scenarios")
-    require(isinstance(selections, list) and bool(selections), "missing scenario selections")
+    require(
+        isinstance(selections, list) and bool(selections), "missing scenario selections"
+    )
     ids = []
     for selection in selections:
         require(isinstance(selection, dict), "invalid scenario selection")
         scenario_id = selection.get("scenario_id")
         require(
-            isinstance(scenario_id, str) and SCENARIO_ID.fullmatch(scenario_id) is not None,
+            isinstance(scenario_id, str)
+            and SCENARIO_ID.fullmatch(scenario_id) is not None,
             "invalid scenario identifier",
         )
         confidence = selection.get("confidence")
@@ -135,33 +158,58 @@ def validate_contract(body: object, session_id: str, text: str, turn: int) -> li
         ids.append(scenario_id)
     require(len(ids) == len(set(ids)), "duplicate scenario selections")
     require(isinstance(routing.get("slots"), dict), "routing slots must be an object")
-    require(isinstance(routing.get("alternatives"), list), "routing alternatives must be a list")
+    require(
+        isinstance(routing.get("alternatives"), list),
+        "routing alternatives must be a list",
+    )
     require(state.get("session_id") == session_id, "state session ID mismatch")
     require(state.get("turn_number") == turn, "state turn did not advance exactly once")
-    require(state.get("conversation_status") == status, "state conversation status mismatch")
+    require(
+        state.get("conversation_status") == status, "state conversation status mismatch"
+    )
     require(state.get("language") == language, "state language mismatch")
     require(state.get("response_language") in ("ru", "kk"), "invalid response language")
     require(isinstance(state.get("slots"), dict), "state slots must be an object")
     require(isinstance(state.get("scenario_stack"), list), "state stack must be a list")
-    require(isinstance(state.get("pending_scenarios"), list), "pending scenarios must be a list")
+    require(
+        isinstance(state.get("pending_scenarios"), list),
+        "pending scenarios must be a list",
+    )
     history = state.get("history")
-    require(isinstance(history, list) and len(history) == turn * 2, "unexpected history length")
-    require(history[-2] == {"role": "user", "text": text}, "latest user history mismatch")
+    require(
+        isinstance(history, list) and len(history) == turn * 2,
+        "unexpected history length",
+    )
+    require(
+        history[-2] == {"role": "user", "text": text}, "latest user history mismatch"
+    )
     require(
         history[-1] == {"role": "assistant", "text": body["response_text"]},
         "latest assistant history mismatch",
     )
     require(trace.get("session_id") == session_id, "trace session ID mismatch")
-    require(trace.get("turn") == turn and trace.get("turn_number") == turn, "trace turn mismatch")
+    require(
+        trace.get("turn") == turn and trace.get("turn_number") == turn,
+        "trace turn mismatch",
+    )
     require(trace.get("transcript") == text, "trace transcript mismatch")
     require(trace.get("conversation_status") == status, "trace status mismatch")
-    require(trace.get("active_scenario") == state.get("active_scenario"), "trace active mismatch")
-    require(trace.get("pending_scenarios") == state["pending_scenarios"], "trace pending mismatch")
+    require(
+        trace.get("active_scenario") == state.get("active_scenario"),
+        "trace active mismatch",
+    )
+    require(
+        trace.get("pending_scenarios") == state["pending_scenarios"],
+        "trace pending mismatch",
+    )
     require(trace.get("scenarios") == selections, "trace selections mismatch")
     actions = trace.get("actions")
     require(isinstance(actions, list), "trace actions must be a list")
     require(
-        all(isinstance(action, str) and action in READ_ONLY_ACTIONS for action in actions),
+        all(
+            isinstance(action, str) and action in READ_ONLY_ACTIONS
+            for action in actions
+        ),
         "unexpected non-read-only action",
     )
     require(isinstance(trace.get("source_keys"), list), "missing trace source keys")
@@ -170,7 +218,9 @@ def validate_contract(body: object, session_id: str, text: str, turn: int) -> li
     for component in ("router", "policy", "response", "total"):
         require(number(latency.get(component)), f"invalid {component} latency")
     for component in ("router", "policy", "response"):
-        require(latency[component] <= latency["total"], "component latency exceeds total")
+        require(
+            latency[component] <= latency["total"], "component latency exceeds total"
+        )
     return ids
 
 
@@ -183,10 +233,14 @@ class SmokeRunner:
         self.summary = ""
         self.requests = 0
 
-    def request(self, label: str, session_id: str, text: str) -> tuple[httpx.Response, float]:
+    def request(
+        self, label: str, session_id: str, text: str
+    ) -> tuple[httpx.Response, float]:
         self.label, self.summary = label, ""
         if self.last_finished is not None:
-            time.sleep(max(0.0, self.pace_seconds - (time.monotonic() - self.last_finished)))
+            time.sleep(
+                max(0.0, self.pace_seconds - (time.monotonic() - self.last_finished))
+            )
         started = time.perf_counter()
         self.requests += 1
         try:
@@ -194,7 +248,9 @@ class SmokeRunner:
                 "api/message", json={"session_id": session_id, "text": text}
             )
         except httpx.HTTPError as exc:
-            raise SmokeFailure(f"HTTP transport failed ({type(exc).__name__}); no retry") from None
+            raise SmokeFailure(
+                f"HTTP transport failed ({type(exc).__name__}); no retry"
+            ) from None
         finally:
             self.last_finished = time.monotonic()
         return response, (time.perf_counter() - started) * 1000
@@ -221,29 +277,60 @@ class SmokeRunner:
             f"http_ms={elapsed:.0f} router_ms={timing['router']:.0f} total_ms={timing['total']:.0f}"
         )
         require(set(ids) == set(case.scenarios), "unexpected scenario selection")
-        require(body["routing"]["language"] == case.language, "unexpected detected language")
-        require(body["conversation_status"] == case.status, "unexpected conversation status")
+        require(
+            body["routing"]["language"] == case.language, "unexpected detected language"
+        )
+        if case.language in {"ru", "kk"}:
+            require(
+                body["state"]["response_language"] == case.language,
+                "unexpected response language for monolingual smoke input",
+            )
+        require(
+            body["conversation_status"] == case.status, "unexpected conversation status"
+        )
         require(state["active_scenario"] == case.active, "unexpected active scenario")
-        require(state["pending_scenarios"] == list(case.pending), "unexpected pending scenarios")
+        require(
+            state["pending_scenarios"] == list(case.pending),
+            "unexpected pending scenarios",
+        )
         if previous is not None:
             require(
-                state["history"][:-2] == previous["state"]["history"], "earlier history changed"
+                state["history"][:-2] == previous["state"]["history"],
+                "earlier history changed",
             )
         if case.name == "unclear":
-            require(trace.get("clarification") is True, "unclear request did not clarify")
-            require(trace.get("policy_outcome") == "clarify", "unclear policy outcome mismatch")
+            require(
+                trace.get("clarification") is True, "unclear request did not clarify"
+            )
+            require(
+                trace.get("policy_outcome") == "clarify",
+                "unclear policy outcome mismatch",
+            )
         if case.name == "renewal-number":
-            require(state["slots"].get("policy_number") == "SQ-OGPO-731204", "policy slot lost")
-            require(trace.get("policy_outcome") == "continue", "follow-up did not continue")
+            require(
+                state["slots"].get("policy_number") == "SQ-OGPO-731204",
+                "policy slot lost",
+            )
+            require(
+                trace.get("policy_outcome") == "continue", "follow-up did not continue"
+            )
         print(f"PASS {case.name}: {self.summary}", flush=True)
         return body
 
     def closed_session(self, session_id: str) -> None:
-        response, elapsed = self.request("closed-session", session_id, "Есть ещё один вопрос.")
+        response, elapsed = self.request(
+            "closed-session", session_id, "Есть ещё один вопрос."
+        )
         require(response.status_code == 409, "closed session must return HTTP 409")
         body = self.json_body(response)
-        require(isinstance(body, dict) and isinstance(body.get("error"), dict), "invalid error")
-        require(body["error"].get("code") == "session_closed", "wrong closed-session error code")
+        require(
+            isinstance(body, dict) and isinstance(body.get("error"), dict),
+            "invalid error",
+        )
+        require(
+            body["error"].get("code") == "session_closed",
+            "wrong closed-session error code",
+        )
         print(f"PASS closed-session: HTTP=409 http_ms={elapsed:.0f}", flush=True)
 
 
@@ -251,7 +338,9 @@ def nonnegative(value: str) -> float:
     try:
         parsed = float(value)
     except ValueError:
-        raise argparse.ArgumentTypeError("must be a nonnegative finite number") from None
+        raise argparse.ArgumentTypeError(
+            "must be a nonnegative finite number"
+        ) from None
     if not math.isfinite(parsed) or parsed < 0:
         raise argparse.ArgumentTypeError("must be a nonnegative finite number")
     return parsed
@@ -269,11 +358,15 @@ def base_url(value: str) -> str:
             and not parsed.fragment
             and parsed.path in {"", "/"}
         )
-        parsed.port  # Validate port syntax without including the original URL in errors.
+        _ = (
+            parsed.port
+        )  # Validate port syntax without including the original URL in errors.
     except ValueError:
         valid = False
     if not valid:
-        raise argparse.ArgumentTypeError("use an HTTP(S) origin without credentials or query")
+        raise argparse.ArgumentTypeError(
+            "use an HTTP(S) origin without credentials or query"
+        )
     return value.rstrip("/") + "/"
 
 
@@ -298,7 +391,8 @@ def main() -> int:
     if args.timeout_seconds == 0:
         parser.error("--timeout-seconds must be greater than zero")
     print(
-        "LIVE API smoke: 9 routed turns + closed-session check; sequential, no retries.", flush=True
+        "LIVE API smoke: 9 routed turns + closed-session check; sequential, no retries.",
+        flush=True,
     )
     with httpx.Client(
         base_url=args.base_url, timeout=args.timeout_seconds, follow_redirects=False
@@ -344,7 +438,10 @@ def main() -> int:
                 print(f"  {runner.summary}", file=sys.stderr, flush=True)
             return 1
         except KeyboardInterrupt:
-            print("Interrupted; current request outcome may be unconfirmed.", file=sys.stderr)
+            print(
+                "Interrupted; current request outcome may be unconfirmed.",
+                file=sys.stderr,
+            )
             return 130
     print(f"PASS all checks ({runner.requests} HTTP requests).", flush=True)
     return 0

@@ -44,7 +44,7 @@ def build_router_agent(
 
 
 class RouterAgent:
-    """One bounded SDK run, one structured model call, and no state mutations or repairs."""
+    """One structured model call, source enum normalization, no state mutations/repair calls."""
 
     def __init__(
         self,
@@ -94,6 +94,7 @@ class RouterAgent:
             if not isinstance(result.final_output, RouterAgentOutput):
                 raise RouterOutputError()
             decision = result.final_output.to_decision()
+            self._normalize_enums(decision)
             self._validate_decision(decision, state)
             if decision.response_language is None:
                 decision.response_language = (
@@ -115,6 +116,27 @@ class RouterAgent:
         ) as exc:
             raise RouterOutputError() from exc
 
+    def _normalize_enums(self, decision: RouterDecision) -> None:
+        """Normalize exact source enum spellings; never choose or repair scenario IDs."""
+        for name, value in decision.slots.items():
+            definition = self._slot_definitions.get(name)
+            if definition is None or definition.type != "enum" or not isinstance(value, str):
+                continue
+            choices = {
+                choice.casefold(): choice
+                for choice in definition.values or []
+                if isinstance(choice, str)
+            }
+            if value.casefold() in choices:
+                decision.slots[name] = choices[value.casefold()]
+            elif name == "region" and "other" in choices:
+                # The source prices only named regions plus 'other', while its city
+                # enum has more locations. This is domain normalization, not routing.
+                city = self._slot_definitions.get("city")
+                cities = {str(item).casefold() for item in city.values or []} if city else set()
+                if value.casefold() in cities:
+                    decision.slots[name] = choices["other"]
+
     def _validate_decision(self, decision: RouterDecision, state: DialogState) -> None:
         selections = [item.scenario_id for item in decision.scenarios]
         alternatives = [item.scenario_id for item in decision.alternatives]
@@ -122,26 +144,28 @@ class RouterAgent:
             self.catalog.get_by_id(item) is None and self.catalog.get_system_intent(item) is None
             for item in selections + alternatives
         ):
-            raise RouterOutputError()
+            raise RouterOutputError("unknown_scenario")
         if len(alternatives) > 2 or len(alternatives) != len(set(alternatives)):
-            raise RouterOutputError()
+            raise RouterOutputError("alternatives")
         if set(selections) & set(alternatives):
-            raise RouterOutputError()
+            raise RouterOutputError("alternatives")
         if (
             any(self.catalog.get_system_intent(item) for item in selections)
             and len(selections) != 1
         ):
-            raise RouterOutputError()
+            raise RouterOutputError("system_mix")
         if {segment.scenario_id for segment in decision.segments} != set(selections):
-            raise RouterOutputError()
+            raise RouterOutputError("segment_coverage")
         if decision.is_continuation and (
             state.active_scenario is None or selections != [state.active_scenario]
         ):
-            raise RouterOutputError()
+            raise RouterOutputError("continuation")
         for name, value in decision.slots.items():
             definition = self._slot_definitions.get(name)
-            if definition is None or not _valid_slot_value(definition, value):
-                raise RouterOutputError()
+            if definition is None:
+                raise RouterOutputError("unknown_slot")
+            if not _valid_slot_value(definition, value):
+                raise RouterOutputError("invalid_slot")
 
 
 def _valid_slot_value(slot: SlotDefinition, value: object) -> bool:

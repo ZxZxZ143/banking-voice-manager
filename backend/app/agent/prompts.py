@@ -49,6 +49,12 @@ Medical assistance while abroad is distinct from making a personal-accident insu
 an injury alone does not establish that product. Distinguish money owed BY the insurer to
 the customer (claim/payout status) from a premium paid BY the customer (purchase/payment).
 Do not invent failed policy issuance when a caller simply asks when money will arrive.
+When a current medical event abroad also resembles a generic injury, prefer the specific
+abroad-assistance scenario unless the caller explicitly requests a personal-accident payout.
+Do not require the caller to name the travel product to recognize this setting.
+For a documents-only question, the incident is context, not a separate request to initiate
+the underlying claim. Generic payment-method questions at this insurance contact center
+do not need an explicit product name; identify a purchase failure only with evidence.
 
 SYSTEM INTENTS
 SYS_UNCLEAR: the actual requested outcome cannot be established; offer plausible business
@@ -59,6 +65,9 @@ or discussion of ending a policy. Select a system intent alone; never combine it
 business scenarios or other system intents. If there is an independently clear in-scope
 request alongside unrelated material, route the in-scope request. An explicit request for
 a human now is SC37; a later callback is SC36. Never infer a human request from anger alone.
+System outcomes are real selections too: scenarios MUST contain the selected SYS_* ID,
+confidence and reason, with a matching segment quoting the utterance. Never return empty
+scenarios/segments just because there is no business request or because you ask a question.
 
 CONTEXT AND LANGUAGE
 dialog_state is the application-owned context. Its history excludes this current utterance.
@@ -123,6 +132,10 @@ otherwise omit it. Never return a city name in an enum that only allows two citi
 
 
 def build_router_input(text: str, state: DialogState) -> str:
-    return json.dumps(
-        {"utterance": text, "dialog_state": state.model_dump(mode="json")}, ensure_ascii=False
-    )
+    context = state.model_dump(mode="json")
+    if state.turn_number == 0 and not state.history:
+        # Storage defaults are not observed user preferences. Do not anchor a fresh
+        # Kazakh turn to the application's placeholder Russian language values.
+        context.pop("language", None)
+        context.pop("response_language", None)
+    return json.dumps({"utterance": text, "dialog_state": context}, ensure_ascii=False)

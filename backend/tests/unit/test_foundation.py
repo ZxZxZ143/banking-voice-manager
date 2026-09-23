@@ -59,7 +59,9 @@ def test_sdk_output_is_strict_and_builds_one_agent(catalog):
 def test_sdk_slots_adapt_without_mutation():
     output = RouterAgentOutput(
         language="kk",
-        segments=[],
+        segments=[
+            {"text": "Fixture", "scenario_id": "SC01", "confidence": 0.8, "reason": "Fixture"}
+        ],
         scenarios=[{"scenario_id": "SC01", "confidence": 0.8, "reason": "Fixture"}],
         alternatives=[],
         slots=[{"name": "drivers_iin", "value": ["fixture-id"]}],

@@ -59,9 +59,9 @@ class RouterAgentOutput(Contract):
     language: Language
     response_language: Literal["ru", "kk"] | None = None
     clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
-    segments: list[SemanticSegment]
-    scenarios: list[ScenarioSelection]
-    alternatives: list[ScenarioScore]
+    segments: list[SemanticSegment] = Field(min_length=1)
+    scenarios: list[ScenarioSelection] = Field(min_length=1)
+    alternatives: list[ScenarioScore] = Field(max_length=2)
     slots: list[ExtractedSlot]
     is_continuation: bool
 

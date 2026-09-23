@@ -10,9 +10,10 @@ import pytest
 from agents import AgentOutputSchema
 from agents.exceptions import MaxTurnsExceeded, ModelBehaviorError, ModelRefusalError
 from openai import APIError, AsyncOpenAI
+from pydantic import ValidationError
 
 from app.agent.errors import RouterConfigurationError, RouterOutputError, RouterProviderError
-from app.agent.prompts import build_router_instructions
+from app.agent.prompts import build_router_input, build_router_instructions
 from app.agent.router import RouterAgent
 from app.agent.schemas import RouterAgentOutput
 from app.core.config import Settings
@@ -169,6 +170,30 @@ def test_sdk_schema_has_closed_objects_and_required_fields():
                 check(child)
 
     check(schema.json_schema())
+    properties = schema.json_schema()["properties"]
+    assert properties["scenarios"]["minItems"] == 1
+    assert properties["segments"]["minItems"] == 1
+    assert properties["alternatives"]["maxItems"] == 2
+
+
+@pytest.mark.parametrize("field", ["scenarios", "segments"])
+def test_sdk_schema_rejects_empty_system_selection_before_domain_adapter(field):
+    payload = output("SYS_UNCLEAR").model_dump()
+    payload[field] = []
+    with pytest.raises(ValidationError):
+        RouterAgentOutput.model_validate(payload)
+
+
+def test_source_enum_spelling_and_known_city_region_bucket(kit, settings, sdk):
+    sdk.run.return_value = SimpleNamespace(
+        final_output=output("SC01", slots={"region": "Karaganda", "city": "astana"})
+    )
+    result = asyncio.run(
+        RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots).route(
+            "Synthetic location slots", DialogState(session_id="s")
+        )
+    )
+    assert result.slots == {"region": "other", "city": "Astana"}
 
 
 def test_clarification_question_survives_closed_schema_adapter():
@@ -192,6 +217,18 @@ def test_general_prompt_regressions_do_not_embed_dev_utterances(kit):
     ):
         assert principle in prompt
     assert "dev_utterances" not in prompt
+
+
+def test_fresh_input_does_not_present_storage_language_defaults_as_preferences():
+    state = DialogState(session_id="fresh")
+    context = json.loads(build_router_input("Сәлеметсіз бе", state))["dialog_state"]
+    assert "language" not in context and "response_language" not in context
+    assert state.language is None and state.response_language == "ru"
+    state.turn_number = 1
+    state.language = "kk"
+    state.response_language = "kk"
+    context = json.loads(build_router_input("123", state))["dialog_state"]
+    assert context["language"] == "kk" and context["response_language"] == "kk"
 
 
 def test_slot_answer_continues_active_scenario_without_changing_state(kit, settings, sdk):
@@ -273,7 +310,7 @@ def test_invalid_decisions_rejected(kit, settings, sdk, invalid):
     elif invalid == "mix":
         answer = output("SC01", "SYS_GOODBYE")
     elif invalid == "segments":
-        answer.segments = []
+        answer.segments[0].scenario_id = "SC02"
     elif invalid == "alternative":
         answer.alternatives = [{"scenario_id": "SC99", "confidence": 0.1}]
     elif invalid == "continuation":
@@ -285,6 +322,52 @@ def test_invalid_decisions_rejected(kit, settings, sdk, invalid):
                 "Offline fixture", DialogState(session_id="s")
             )
         )
+    sdk.run.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("invalid", "reason"),
+    [
+        ("unknown", "unknown_scenario"),
+        ("alternative_duplicate", "alternatives"),
+        ("alternative_overlap", "alternatives"),
+        ("system_mix", "system_mix"),
+        ("segments", "segment_coverage"),
+        ("continuation", "continuation"),
+        ("unknown_slot", "unknown_slot"),
+        ("invalid_slot", "invalid_slot"),
+    ],
+)
+def test_invalid_output_exposes_only_fixed_validation_reason(kit, settings, sdk, invalid, reason):
+    answer = output("SC01")
+    if invalid == "unknown":
+        answer = output("SC99")
+    elif invalid == "alternative_duplicate":
+        answer.alternatives = [{"scenario_id": "SC02", "confidence": 0.1}] * 2
+    elif invalid == "alternative_overlap":
+        answer.alternatives = [{"scenario_id": "SC01", "confidence": 0.1}]
+    elif invalid == "system_mix":
+        answer = output("SC01", "SYS_GOODBYE")
+    elif invalid == "segments":
+        answer = output("SC01", "SC02")
+        answer.segments = answer.segments[:1]
+    elif invalid == "continuation":
+        answer.is_continuation = True
+    elif invalid == "unknown_slot":
+        answer = output("SC01", slots={"private_slot_name": "private_slot_value"})
+    elif invalid == "invalid_slot":
+        answer = output("SC01", slots={"phone": "private_slot_value"})
+    sdk.run.return_value = SimpleNamespace(final_output=answer)
+    with pytest.raises(RouterOutputError) as failure:
+        asyncio.run(
+            RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots).route(
+                "Offline fixture", DialogState(session_id="s")
+            )
+        )
+    assert failure.value.validation_reason == reason
+    assert failure.value.code == "router_invalid_output"
+    assert failure.value.message == RouterOutputError().message
+    assert "private_slot" not in str(failure.value)
     sdk.run.assert_awaited_once()
 
 

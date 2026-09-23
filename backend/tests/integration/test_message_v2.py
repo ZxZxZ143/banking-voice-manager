@@ -349,7 +349,10 @@ def test_corrected_phone_replaces_conflicting_old_iin(kit):
     owner, other = kit.mock_backend.clients[:2]
     policy = next(p for p in kit.mock_backend.policies if p.client_id == owner.client_id)
     router = ScriptedRouter(
-        decision("SC25", slots={"phone": owner.phone, "iin": other.iin}),
+        decision(
+            "SC25",
+            slots={"phone": owner.phone, "iin": other.iin, "policy_number": policy.policy_number},
+        ),
         decision("SC25", slots={"phone": owner.phone}, continuation=True),
     )
     with TestClient(create_app(settings(), router_override=router)) as client:

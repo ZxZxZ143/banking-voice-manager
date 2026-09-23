@@ -8,7 +8,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.agent.errors import RouterOutputError, RouterProviderError
+from app.agent.errors import ROUTER_VALIDATION_REASONS, RouterOutputError, RouterProviderError
 from app.agent.schemas import RouterDecision
 from app.core.config import Settings
 from app.data.loaders import load_starter_kit
@@ -230,6 +230,27 @@ def test_provider_diagnostics_reject_untrusted_status_code_and_retry_headers(sta
     assert runner.safe_router_error(failure) == {"code": failure.code, "message": failure.message}
 
 
+@pytest.mark.parametrize("reason", sorted(ROUTER_VALIDATION_REASONS))
+def test_output_diagnostics_capture_only_fixed_validation_reasons(reason):
+    failure = RouterOutputError(reason)
+    failure.__cause__ = RuntimeError("private provider body and slot value")
+    assert runner.safe_router_error(failure) == {
+        "code": failure.code,
+        "message": failure.message,
+        "validation_reason": reason,
+    }
+    assert failure.code == "router_invalid_output"
+    assert failure.message == RouterOutputError().message
+    assert reason not in failure.message
+
+
+def test_output_diagnostics_do_not_capture_unknown_validation_reason():
+    failure = RouterOutputError("private slot value")
+    assert failure.validation_reason == "invalid_structure"
+    failure.validation_reason = "private slot value"
+    assert runner.safe_router_error(failure) == {"code": failure.code, "message": failure.message}
+
+
 def test_continue_on_error_records_safe_failure_and_does_not_retry(dataset):
     calls = []
     failure = RouterOutputError()
@@ -250,7 +271,11 @@ def test_continue_on_error_records_safe_failure_and_does_not_retry(dataset):
     assert details["failure_count"] == 1 and details["continue_on_error"] is True
     capture = details["utterances"][1]
     assert capture["decision"] is None and capture["router_latency_ms"] >= 0
-    assert capture["error"] == {"code": failure.code, "message": failure.message}
+    assert capture["error"] == {
+        "code": failure.code,
+        "message": failure.message,
+        "validation_reason": "invalid_structure",
+    }
     assert "private-provider-body" not in json.dumps(details)
 
 

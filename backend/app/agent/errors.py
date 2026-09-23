@@ -1,5 +1,18 @@
 """Safe, actionable router failures; provider payloads never become API messages."""
 
+ROUTER_VALIDATION_REASONS = frozenset(
+    {
+        "invalid_structure",
+        "unknown_scenario",
+        "alternatives",
+        "system_mix",
+        "segment_coverage",
+        "continuation",
+        "unknown_slot",
+        "invalid_slot",
+    }
+)
+
 
 class RouterError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
@@ -27,7 +40,12 @@ class RouterProviderError(RouterError):
 
 
 class RouterOutputError(RouterError):
-    def __init__(self) -> None:
+    def __init__(self, validation_reason: str = "invalid_structure") -> None:
+        self.validation_reason = (
+            validation_reason
+            if isinstance(validation_reason, str) and validation_reason in ROUTER_VALIDATION_REASONS
+            else "invalid_structure"
+        )
         super().__init__(
             "router_invalid_output",
             "The routing provider returned an invalid decision; "
