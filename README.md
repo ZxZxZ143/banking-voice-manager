@@ -42,7 +42,7 @@ npm run dev
 ```
 
 Open `http://localhost:5173`. The shell shows real backend health, a text field,
-disabled voice controls, and an empty supervisor panel. Sending text displays the
+a working voice test bench, and an empty supervisor panel. Sending text displays the
 backend's explicit `501 not_implemented` error. No conversation or trace is fabricated.
 
 Vite dev/preview proxies target `127.0.0.1:8000`; update `frontend/vite.config.ts`
@@ -56,8 +56,10 @@ Never commit credentials or place them in frontend environment variables.
 
 Configuration names: `OPENAI_API_KEY`, `OPENAI_ROUTER_MODEL`, `BACKEND_HOST`,
 `BACKEND_PORT`, `FRONTEND_ORIGIN`, optional `STARTER_KIT_PATH`. Empty values use
-application defaults. OpenAI settings are reserved for the next router integration;
-speech adapters require explicit model/voice constructor arguments.
+application defaults. OPENAI_API_KEY also enables the streaming voice test bench. Install the voice extra
+with `pip install -c backend/requirements.lock -e "./backend[dev,voice]"`. See
+[the voice setup and contract](docs/VOICE_STREAMING_CONTRACT.md) for startup, automatic
+end-of-utterance detection, file replay and latency measurements.
 
 ## Checks
 
@@ -94,9 +96,10 @@ run from the repository root:
 ./.venv/Scripts/python.exe data/starter_kit/evaluate.py predictions.json data/starter_kit/dev_utterances.json
 ```
 
-Routing execution, full scenario workflows, response generation and browser voice
-transport remain unimplemented. STT/TTS adapters exist but are not wired into the UI
-and have not been tested against a live provider.
+Routing execution, full scenario workflows, response generation and browser TTS
+remain unimplemented. Browser streaming STT is implemented and live-tested with
+OpenAI, using local Silero VAD to finish utterances automatically after a configurable
+pause (default 2.5 seconds). The result populates the text field; routing is separate.
 
 Start future tasks with `AGENTS.md` and [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md).
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) documents module ownership and contracts.

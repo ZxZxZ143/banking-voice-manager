@@ -28,6 +28,12 @@ button:focus-visible, textarea:focus-visible { outline: 3px solid #4d83bd; outli
 .muted { margin-top: 8px; color: #4b596b; font-size: 14px; }
 .error { margin-top: 12px; color: #a02420; overflow-wrap: anywhere; }
 .voice-controls { border-top: 1px solid #d6dce3; margin-top: 24px; padding-top: 20px; }
+.voice-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.voice-controls label { margin-top: 16px; }
+.voice-controls input[type="range"], .voice-controls progress { width: 100%; }
+.voice-controls input[type="file"] { max-width: 100%; margin-bottom: 10px; }
+.voice-status { margin-top: 16px; font-weight: 600; }
+.voice-controls textarea { margin-bottom: 12px; }
 pre { max-height: 600px; overflow: auto; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 800px) {
   main { padding: 16px; }

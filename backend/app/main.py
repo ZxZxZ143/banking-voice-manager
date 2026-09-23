@@ -21,6 +21,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
 
     application = FastAPI(title="Voice Router", version="0.1.0", lifespan=lifespan)
+    application.state.settings = config
+    application.state.voice_connections = 0
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[config.frontend_origin],

@@ -29,7 +29,7 @@ All backend paths below are relative to `backend/app/`.
 | Boundary | Source | Implemented now / remaining work |
 |---|---|---|
 | Application composition | `main.py`, `core/services.py`, `core/config.py` | FastAPI lifespan loads and validates the seven JSON datasets once, then constructs shared services. Invalid or missing data prevents startup. Importing the app does not call OpenAI. |
-| API transport | `api/routes/`, `api/websocket/` | Working health endpoint and explicit unavailable text/voice endpoints; no turn orchestration. |
+| API transport | `api/routes/`, `api/websocket/` | Working health and streaming voice endpoints; text endpoint unavailable; no turn orchestration. |
 | Speech input | `speech/stt/` | Typed recorded-audio interface and actual OpenAI transcription adapter with bounded timeout/retry. Not connected to API or microphone; no live-provider verification. |
 | Triage | `triage/` | Trims whitespace, retains optional supplied language hint, measures elapsed time. Language detection, spoken-number/phone/IIN/plate/date normalization, urgency, and decomposition remain unimplemented. |
 | Semantic routing | `agent/` | Prompt builders, `Router` protocol, output contracts, and a factory constructing one Agents SDK `Agent` with no tools/handoffs. `RouterAgent.route()` raises `NotImplementedError`; Runner execution is future work. |
@@ -52,7 +52,7 @@ Speech adapters require explicit model settings (and a voice for TTS) when const
 |---|---|---|
 | `GET /health` | None | HTTP 200 after successful startup; actual loaded counts and `mode: "foundation"`. This does not probe OpenAI readiness. |
 | `POST /api/v1/turns/text` | JSON `{ "session_id": "<UUID>", "text": "<nonblank text>" }`; text up to 10,000 characters | Valid requests return HTTP 501 with `error.code: "not_implemented"`; no routing, state mutation, or action. Invalid requests return FastAPI validation errors (422). |
-| `WS /api/v1/voice` | WebSocket connection | Accepts, sends an error object with `code: "not_implemented"`, then closes with code **1013** and reason `Voice transport not implemented`. No audio exchange. |
+| `WS /api/v1/voice` | WebSocket connection | PCM24 browser streaming to OpenAI with Silero automatic endpointing, partial/final transcripts and timings. See `VOICE_STREAMING_CONTRACT.md`; no routing/TTS orchestration. |
 
 The health payload with the supplied files is:
 
@@ -119,4 +119,4 @@ The prediction format is `{ "U001": ["SC01"], "U085": ["SC27", "SC04"] }`. Once 
 .venv\Scripts\python.exe data/starter_kit/evaluate.py predictions.json data/starter_kit/dev_utterances.json
 ```
 
-The evaluator measures first-scenario accuracy, set-based full match, and multi-intent recall, with language/type breakdowns. It does not validate scenario execution or conversational history. The recommended next module is **Router v1 + evaluation on all 104 dev utterances**, followed by text-turn orchestration, generic scenario execution, trace integration, and connected voice transport.
+The evaluator measures first-scenario accuracy, set-based full match, and multi-intent recall, with language/type breakdowns. It does not validate scenario execution or conversational history. The recommended next module is **Router v1 + evaluation on all 104 dev utterances**, followed by text-turn orchestration, generic scenario execution, trace integration, and routing integration with the implemented voice test bench.

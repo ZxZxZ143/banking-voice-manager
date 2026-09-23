@@ -17,11 +17,24 @@ Business specification: `data/starter_kit/README.ru.md`.
   adapters with bounded calls and explicit credential errors; evaluation adapter; triage
   only trims whitespace and preserves a supplied language hint.
 - **Scaffold only:** SDK Runner execution, text orchestration, scenario execution and
-  confirmation, response generation, voice transport and supervisor feed.
-  Text returns 501; voice sends an error then closes. No business action handlers exist.
+  confirmation, response generation and supervisor feed. Text returns 501.
+  No business action handlers exist.
+- **Voice bench implemented:** browser mic/file PCM -> backend WS -> OpenAI live
+  transcription, Silero automatic endpointing (default 2.5 s), partial/final text and timings.
+  No routing/TTS integration. See `docs/VOICE_STREAMING_CONTRACT.md`.
 - **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
 
 ## Navigation
+
+Voice recording tests: `scripts/transcribe_audio.py` is a standalone faster-whisper
+offline runner for A01-A27; see `docs/VOICE_TESTS.md`. It saves local transcripts and
+STT timings under ignored `work/voice/`; it does not implement live endpointing,
+TTS, or replace the backend STT adapter. Dependencies: `scripts/requirements-voice.txt`.
+`scripts/test_openai_stream.py` replays one recording in real time directly to OpenAI
+`gpt-live-transcribe`, using a server-side OPENAI_API_KEY from ignored .env. This
+standalone cloud probe records partials and post-commit latency. The integrated
+browser/automatic endpointing/backend test is `scripts/test_voice_backend.py`. See
+`docs/VOICE_STREAMING_CONTRACT.md`; dependencies: `scripts/requirements-cloud-voice.txt`.
 
 | Path | Responsibility |
 |---|---|
@@ -63,7 +76,12 @@ measured application-level traces, never hidden chain-of-thought. This pipeline 
 - `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
 - `POST /api/v1/turns/text`: UUID session_id, nonblank text up to 10,000 characters;
   valid input → 501 `{error: {code: not_implemented, message}}`; invalid input → 422.
-- `WS /api/v1/voice`: accepts, sends the same not-implemented error, closes 1013.
+- `WS /api/v1/voice`: start(UUID, sample_rate=24000, channels=1, pause_ms), PCM16
+  binary frames; ready/activity/partial/committed/final/empty/error events. Origin
+  restricted; two sessions per process. See `docs/VOICE_STREAMING_CONTRACT.md`.
+- Voice code: `api/websocket/voice.py`, `speech/stt/endpointing.py`, frontend
+  `components/voice/VoiceControls.tsx`, `public/pcm-worklet.js`. Replay test:
+  `scripts/test_voice_backend.py`; results in ignored `work/voice/backend-stream/`.
 - `agent/schemas.py`: RouterDecision has language, semantic segments, ordered selections,
   alternatives, slots and continuation. SDK transport uses a named-slot list for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
@@ -98,8 +116,9 @@ Offline adapter tests are not model accuracy measurements.
 
 Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 optional STARTER_KIT_PATH. Root .env.example is placeholders only; root .env is optional/ignored.
-Health, UI and offline tests need no credentials. Model/voice selection and live provider
-verification remain future integration work.
+Health, UI and offline tests need no credentials. Streaming STT needs OPENAI_API_KEY
+and the backend voice extra (`pip install -e "./backend[dev,voice]"`). Live model is
+`gpt-live-transcribe`, languages kk/ru. Startup and limits are in the voice contract.
 
 PowerShell from repository root:
 
@@ -128,4 +147,4 @@ persistence; agri-rag-vision is irrelevant to current requirements.
 
 Next: **Router v1 + evaluation on all 104 dev utterances**. Select a model and supply
 credentials externally; connect a bounded SDK Runner, validate IDs/slots and measure
-baseline routing before prompt optimization and voice wiring.
+baseline routing before prompt optimization and integration with the voice bench.

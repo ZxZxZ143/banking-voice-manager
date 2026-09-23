@@ -48,7 +48,7 @@ export function ConversationPanel({ sessionId }: { sessionId: string }) {
         </button>
       </form>
       {error && <p className="error" role="alert">{error}</p>}
-      <VoiceControls />
+      <VoiceControls sessionId={sessionId} onTranscript={setText} />
     </section>
   );
 }
