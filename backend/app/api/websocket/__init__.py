@@ -1,0 +1,1 @@
+"""Voice WebSocket boundary."""

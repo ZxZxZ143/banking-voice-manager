@@ -1,69 +1,131 @@
 # Project Map
 
-## Project purpose
+## Purpose and requirements
 
-HackAlem AI Voice Router: a contact-center voice-robot simulation whose central problem is LLM-based selection of the correct business scenario from Russian, Kazakh, and mixed-language dialogue. It must handle ambiguity, context, topic changes, uncertainty, and operator handoff. Speech recognition and synthesis are required final-MVP interfaces, but routing quality is the main evaluated intelligence.
-
-## Repository structure
-
-- `README.md` — short repository identification.
-- `AGENTS.md` — persistent project rules and planned default stack.
-- `.agents/skills/` — reusable project-local Codex Skills; select only the Skills relevant to the task.
-- `docs/PROJECT_MAP.md` — this navigation and architecture map.
-
-## Application architecture and entry points
-
-**Implemented:** no application source, backend, frontend, API routes, Router Agent, configuration module, or startup entry point exists yet.
-
-**Planned architecture:** `User → STT → Router Agent → Scenario Handler / Tools → Response → TTS`. Start with text routing and retain text input as a development/debugging fallback. The Router Agent is the LLM-based primary scenario selector; it should produce a structured routing result when practical. A multi-agent design is not planned unless the actual starter-kit requirements justify it.
-
-## Data flow
-
-No implemented data flow. Planned routing must consider relevant conversation context and distinguish confident scenario selection from clarification or operator handoff.
-
-## Domain data, database, and storage
-
-No database client, Supabase configuration, schema, migration, row-level security policy, or file storage configuration exists. For the initial MVP, starter-kit JSON files and simple in-memory conversation state are sufficient. Persistent storage is planned only if a real requirement for it emerges.
-
-The starter kit is expected to supply authoritative scenario and evaluation inputs conceptually including `scenarios.json`, `dialogs_sample.json`, `knowledge_base.json`, `mock_backend.json`, `dev_utterances.json`, and `evaluate.py`. Their schemas have not been inspected and must not be assumed.
-
-## OpenAI / agent layer
-
-No OpenAI SDK usage, OpenAI Agents SDK usage, agents, tools, prompts, or evaluation tests exist. The planned routing layer must use an LLM for meaningful scenario selection; an encoder-based intent classifier must not be the primary selector, and evaluation utterances must not be hardcoded.
-
-Future routing outputs should support concise application-level supervisor trace data—selected scenario, confidence, alternatives, routing reason, topic-change signal, and latency measurements—without exposing hidden chain-of-thought.
-
-## Environment variables
-
-No environment template or environment-variable references exist. Do not create real credential files. Add a `.env.example` only when a selected implementation needs configuration, with names and placeholders only.
-
-## Project-local Codex Skills
-
-Seven reusable Skills are available under `.agents/skills/`. The current baseline is `agents-sdk`, `agent-evals`, `agent-debugging`, `security-review`, and `demo-readiness`. Use `supabase-data` only if persistence is later required. `agri-rag-vision` is currently irrelevant and remains only as a reusable Skill for changed requirements.
-
-## Important commands
-
-No dependency manifests, package manager lockfiles, scripts, Docker files, test configuration, linter, formatter, type checker, or runnable application commands exist.
-
-Git / inspection commands used during setup:
-
-```powershell
-git status --short --branch
-git remote -v
-git ls-tree -r --name-only HEAD
-```
+HackAlem Voice Router for fictional Saqta Insurance. Prioritize LLM-based scenario
+selection in Russian, Kazakh and mixed-language dialogue, context, ambiguity, topic
+changes, clarification and handoff. Final MVP requires voice; text remains available.
+No encoder intent classifier or hardcoded evaluation utterances.
+Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
-- **Implemented:** empty repository scaffold (README), project operating instructions, and local reusable Skills.
-- **Partially implemented:** none.
-- **Planned / not implemented:** starter-kit inspection, text routing, dialogue context, scenario execution, supervisor trace, STT, TTS, latency work, backend, frontend, tests, dependency setup, deployment, and environment template.
+- **Implemented:** FastAPI startup, validated data, health endpoint, React/Vite shell,
+  typed contracts, bounded copied memory state/traces, catalog, read-only repositories,
+  provisional deterministic policy, scenario-requirements inspection and action registry.
+- **Partial:** one SDK agent factory/strict output schema; minimal STT and buffered TTS
+  adapters with bounded calls and explicit credential errors; evaluation adapter; triage
+  only trims whitespace and preserves a supplied language hint.
+- **Scaffold only:** SDK Runner execution, text orchestration, scenario execution and
+  confirmation, response generation, voice transport and supervisor feed.
+  Text returns 501; voice sends an error then closes. No business action handlers exist.
+- **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
 
-## Known issues and blockers
+## Navigation
 
-- The actual starter-kit files and their schemas have not yet been inspected, so routing contracts and commands cannot be designed responsibly.
-- No application/dependency configuration exists, so there are no dependencies to install or runnable checks beyond Git inspection.
+| Path | Responsibility |
+|---|---|
+| `AGENTS.md` | Persistent engineering rules and Skills |
+| `backend/pyproject.toml`, `backend/requirements.lock` | Package, checks, tested dependencies |
+| `backend/app/main.py` | FastAPI factory, lifespan and startup command |
+| `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
+| `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
+| `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
+| `backend/app/triage/` | Text preparation; future language/normalization |
+| `backend/app/agent/` | Router protocol, SDK factory, prompts and output contracts |
+| `backend/app/dialog/` | DialogState, bounded history and copied memory store |
+| `backend/app/scenarios/` | Catalog, policy and non-executing requirements inspection |
+| `backend/app/tools/` | Action registry, ToolResult and errors |
+| `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
+| `backend/app/response/` | Separate response contract and unimplemented generator |
+| `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
+| `backend/app/evaluation/` | Data check CLI, router-to-predictions adapter |
+| `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
+| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health, conversation/voice/trace areas |
+| `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
+| `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
+| `data/starter_kit/` | One canonical copy of business/evaluation inputs |
+| `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
 
-## Next step
+Backend paths in this table are relative to `backend/app/` where abbreviated.
 
-Inspect the supplied starter kit and evaluation utility, identify the smallest text-routing user journey, then implement only the components needed to measure and demonstrate routing quality. Update this map with verified paths, contracts, and commands.
+## Actual and planned flow
+
+Startup loads seven JSON files once, checks shapes/references and constructs local services.
+The browser fetches real health through Vite; text submission ends in 501 without state changes.
+
+Planned: browser → STT → triage → Router Agent ↔ dialog state → policy → scenario engine
+→ allowed tools ↔ knowledge/mock backend → response → TTS → browser. Each stage supplies
+measured application-level traces, never hidden chain-of-thought. This pipeline is not wired yet.
+
+## API and domain contracts
+
+- `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
+- `POST /api/v1/turns/text`: UUID session_id, nonblank text up to 10,000 characters;
+  valid input → 501 `{error: {code: not_implemented, message}}`; invalid input → 422.
+- `WS /api/v1/voice`: accepts, sends the same not-implemented error, closes 1013.
+- `agent/schemas.py`: RouterDecision has language, semantic segments, ordered selections,
+  alternatives, slots and continuation. SDK transport uses a named-slot list for closed JSON
+  schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
+- `dialog/models.py`: session/language/client, active scenario, stack, pending scenarios,
+  slots, confirmation flag, turn number, low-confidence count and bounded history.
+- `tracing/models.py`: transcript, scenarios, alternatives, concise reason, slots, actions,
+  and measured timings (stt/triage/router/tools/response/tts_first_audio/total). Unmeasured = null.
+- `PolicySettings` defaults: accept 0.75, low 0.45, handoff after two low-confidence turns.
+  Policy is pure and does not perform operator transfer.
+- Engine inspection and awaiting_confirmation do not authorize execution. Irreversible
+  action registration/execution is blocked. No supervisor endpoint/authorization exists yet.
+
+## Data, state and evaluation
+
+`data/starter_kit/` contains scenarios.json (40 + 3 system intents), slots.json (43),
+actions.json (31), knowledge_base.json, mock_backend.json (11 clients, 11 policies,
+4 claims, 2 payments), dialogs_sample.json (10), dev_utterances.json (104), evaluate.py,
+README.md, README.ru.md and README.kz.md. All supplied data is synthetic; reference date
+**2026-10-01**. JSON files use metadata wrappers, not bare root arrays. Originals are unchanged;
+.DS_Store/AppleDouble files are excluded.
+
+Knowledge uses exact dotted-key lookups, not retrieval. Repository reads return copies.
+State/traces are bounded and per-process; restart loses them. Use one worker. Concurrent
+turns within a session will need serialization when orchestration is added.
+No database, migrations, RLS, persistent storage or upload service exists.
+
+Evaluation passes only text and fresh state to an injected Router, without expected labels,
+and writes `{utterance_id: [scenario_id, ...]}`. The supplied evaluator scores that output.
+Offline adapter tests are not model accuracy measurements.
+
+## Configuration and commands
+
+Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
+optional STARTER_KIT_PATH. Root .env.example is placeholders only; root .env is optional/ignored.
+Health, UI and offline tests need no credentials. Model/voice selection and live provider
+verification remain future integration work.
+
+PowerShell from repository root:
+
+```powershell
+python -m venv .venv
+./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev]'
+./.venv/Scripts/python.exe -m app.main
+./.venv/Scripts/python.exe -m pytest backend/tests -q
+./.venv/Scripts/ruff.exe check backend/app backend/tests
+./.venv/Scripts/ruff.exe format --check backend/app backend/tests
+./.venv/Scripts/python.exe -m app.evaluation --check-data
+./.venv/Scripts/python.exe data/starter_kit/evaluate.py predictions.json data/starter_kit/dev_utterances.json
+```
+
+Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run dev`.
+Frontend checks: `npm run typecheck`, `npm run build`.
+The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
+frontend localhost:5173. Update Vite proxy if changing backend port.
+Tested with Python 3.13 and Node 24.13; minimum Python 3.11.
+
+## Skills and next step
+
+Skills live in `.agents/skills/`; read only relevant ones: agents-sdk, agent-evals,
+agent-debugging, security-review, demo-readiness. supabase-data is conditional on future
+persistence; agri-rag-vision is irrelevant to current requirements.
+
+Next: **Router v1 + evaluation on all 104 dev utterances**. Select a model and supply
+credentials externally; connect a bounded SDK Runner, validate IDs/slots and measure
+baseline routing before prompt optimization and voice wiring.
