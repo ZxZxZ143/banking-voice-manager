@@ -5,18 +5,23 @@ and trace display. Attach the future modules at these two boundaries.
 
 ## Voice Input → ConversationRuntime
 
-Attach one controller before starting the conversation. Its methods may return `void` or a
-promise; resolve only after listening has actually started or stopped. Send final transcripts:
+`ConversationPanel` now attaches `VoiceControls` through `voiceRuntimeBridge.ts` before Start.
+The runtime starts microphone capture, stops it for each turn and restarts it after TTS.
+The one-utterance WebSocket is reopened for each turn with the **same runtime session ID**.
+Only `utterance.final` is mapped into a runtime turn:
 
 ```ts
-runtime.attachVoiceInput(controller); // startListening(), stopListening()
-await runtime.startConversation();
-await runtime.handleTranscript({ text: 'Сәлеметсіз бе', language: 'kk', stt_ms: 310 });
+runtime.attachVoiceInput(controller); // connected by ConversationPanel
+await runtime.startConversation();    // starts VoiceControls microphone capture
+await runtime.handleTranscript({ text: 'Сәлеметсіз бе', language: 'kk', stt_ms: 310 }); // bridge callback
 ```
 
 `language` may be `ru`, `kk`, or `mixed`, and `stt_ms` is optional. The runtime passes the
 language through to TTS without detecting it. Browser TTS uses `ru-RU` for `mixed` or an
-absent hint. Call `runtime.attachVoiceInput(null)` after the controller is stopped/removed.
+absent hint. The current STT final event normally has `language: null`, so the bridge omits
+the hint. Its `stt_after_commit_ms` becomes `stt_ms` when valid; this excludes endpointing
+silence and connection setup. Partials, empty results and errors never create user turns.
+Call `runtime.attachVoiceInput(null)` after the controller is stopped/removed.
 Text input uses the same turn path through `runtime.sendText(text)`.
 
 ## ConversationRuntime → Agent Core
@@ -59,8 +64,13 @@ In `frontend/.env.local`, set `VITE_API_BASE_URL` to the backend origin or leave
 the existing Vite proxy to `127.0.0.1:8000`. Keep `VITE_USE_MOCK_AGENT=false` for real HTTP;
 set it to `true` only for labeled fixtures in Vite development. Run from `frontend`:
 `npm run dev`, `npm run build`, `npm run test:runtime`, `npm run test:tts`,
-`npm run test:trace`, and `npm run test:integration`.
+`npm run test:trace`, `npm run test:integration`, and `npm run test:voice-bridge`.
 
-When both teammate modules arrive, attach their controller, verify `/api/message` with the
-same session ID on two turns, check `ru`/`kk`/`mixed`, reset during an in-flight turn, and
-confirm that `handoff`/`ended` do not restart listening. Check errors and timing in HTTP mode.
+For this Voice Input integration stage, set `VITE_USE_MOCK_AGENT=true`. The STT backend
+still needs `OPENAI_API_KEY`; see `docs/VOICE_STREAMING_CONTRACT.md` for backend startup.
+
+In the browser: Start Conversation, allow the mic, wait for “Говорите”, speak twice and
+check that each final transcript creates one message, TTS completes before mic resumes,
+and the session ID stays fixed. Reset during capture and verify old callbacks are ignored.
+When Agent Core arrives, set mock mode to false and verify `/api/message`, terminal states,
+errors and trace timings in HTTP mode.

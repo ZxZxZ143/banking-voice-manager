@@ -2,7 +2,8 @@
 
 Implemented: browser microphone or phone recording -> `/api/v1/voice` -> OpenAI
 `gpt-live-transcribe`, with concurrent audio upload and transcript events. Russian,
-Kazakh and mixed speech are enabled. No routing, response generation or TTS runs here.
+Kazakh and mixed speech are enabled. The frontend now passes final transcripts to
+ConversationRuntime; Agent Core remains mocked for the current integration test.
 
 ## Run locally
 
@@ -14,9 +15,10 @@ in the ignored root `.env`. Start the backend:
 ./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --ws-max-size 8192 --ws-max-queue 16
 ```
 
-In another terminal: `cd frontend`, `npm ci`, `npm run dev`. Open
-http://127.0.0.1:5173. Click «Начать говорить», permit the microphone, wait for
-«Говорите», then speak. One click starts one utterance; completion is automatic.
+In another terminal: `cd frontend`, `npm ci`, set `VITE_USE_MOCK_AGENT=true`, then
+`npm run dev`. Open http://127.0.0.1:5173. Click «Начать разговор», permit the microphone,
+wait for «Говорите», then speak. Runtime resumes capture after browser TTS finishes.
+Each WebSocket run handles one utterance and uses the same conversation session ID.
 Alternatively choose an M4A recording and click «Проверить файл». File replay is
 paced in real time and appends synthetic silence (configured pause + 1 second).
 The JSON download includes source name, transcript and measured timings.
@@ -45,9 +47,10 @@ Server events:
 - `empty`: no speech detected; no client turn is created.
 - `error`: safe code/message, without API credentials or provider headers.
 
-The final transcript populates the existing text field. It is not automatically
-submitted to the text endpoint, which still returns 501. Partials never trigger
-business actions. The provider does not return detected language labels.
+The final transcript populates the voice text field and calls
+`ConversationRuntime.handleTranscript()` once. It does not call the old text endpoint,
+which still returns 501. Partials never trigger runtime turns. The provider does not
+return detected language labels; `language: null` is omitted at the runtime boundary.
 
 ## Automatic end of utterance
 

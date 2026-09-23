@@ -28,6 +28,9 @@ button:focus-visible, textarea:focus-visible, summary:focus-visible, select:focu
 .muted { margin-top: 8px; color: #4b596b; font-size: 14px; }
 .error { margin-top: 12px; color: #a02420; overflow-wrap: anywhere; }
 .voice-controls { border-top: 1px solid #d6dce3; margin-top: 24px; padding-top: 20px; }
+.voice-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.voice-status { font-weight: 600; color: #174b81; }
+.voice-controls progress { display: block; width: 100%; margin: 12px 0; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .history { min-height: 180px; max-height: 420px; overflow: auto; border-top: 1px solid #d6dce3; border-bottom: 1px solid #d6dce3; margin: 16px 0; padding: 12px 0; }
 .history p { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -14,6 +14,7 @@
     "test:tts": "node --experimental-transform-types --test tests/tts.test.mjs",
     "test:trace": "node --experimental-transform-types --test tests/trace.test.mjs",
     "test:integration": "node --experimental-transform-types --test tests/integration.test.mjs",
+    "test:voice-bridge": "node --experimental-transform-types --test tests/voiceBridge.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

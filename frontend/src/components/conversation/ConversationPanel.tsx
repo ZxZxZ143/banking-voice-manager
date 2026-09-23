@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { ConversationRuntime, ConversationSnapshot } from '../../runtime/ConversationRuntime';
 import type { ConversationStatus, RuntimeStatus } from '../../types/agent';
 import type { TraceViewModel } from '../trace/traceViewModel';
 import { VoiceControls } from '../voice/VoiceControls';
+import { createVoiceInputController, type VoiceControlsHandle } from '../voice/voiceRuntimeBridge';
 
 interface Props {
   runtime: ConversationRuntime;
@@ -22,7 +23,13 @@ const conversationLabels: Record<ConversationStatus, string> = {
 
 export function ConversationPanel({ runtime, snapshot, view }: Props) {
   const [text, setText] = useState('');
+  const voiceControls = useRef<VoiceControlsHandle | null>(null);
   const ready = snapshot.runtimeStatus === 'listening';
+
+  useEffect(() => {
+    runtime.attachVoiceInput(createVoiceInputController(runtime, () => voiceControls.current));
+    return () => runtime.attachVoiceInput(null);
+  }, [runtime]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,7 +101,8 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
         <button type="submit" disabled={!ready || !text.trim()}>Отправить</button>
       </form>
       <p className="muted debug-id">session_id: {snapshot.sessionId ?? 'создаётся при старте'}</p>
-      <details className="developer-tools"><summary>Голосовой ввод (ещё не подключён)</summary><VoiceControls /></details>
+      <VoiceControls ref={voiceControls} sessionId={snapshot.sessionId ?? ''} enabled={ready}
+        onTranscript={(transcript) => { void runtime.handleTranscript(transcript); }} />
     </section>
   );
 }

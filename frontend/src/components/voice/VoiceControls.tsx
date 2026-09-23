@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import type { VoiceTranscript } from '../../types/agent';
+import { finalVoiceTranscript, type VoiceControlsHandle } from './voiceRuntimeBridge';
 
 type Run = {
   cancelled: boolean;
@@ -22,9 +24,11 @@ function release(run: Run) {
   run.ws?.close();
 }
 
-export function VoiceControls({ sessionId, onTranscript }: {
-  sessionId: string; onTranscript: (text: string) => void;
-}) {
+export const VoiceControls = forwardRef<VoiceControlsHandle, {
+  sessionId: string;
+  enabled: boolean;
+  onTranscript: (transcript: VoiceTranscript) => void;
+}>(function VoiceControls({ sessionId, enabled, onTranscript }, ref) {
   const active = useRef<Run | null>(null);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -54,8 +58,10 @@ export function VoiceControls({ sessionId, onTranscript }: {
     stop(run);
   }
 
-  async function start(selectedFile?: File) {
+  async function start(selectedFile?: File, sessionOverride?: string) {
     if (active.current) return;
+    const runSessionId = sessionOverride ?? sessionId;
+    if (!runSessionId) { setError('Сначала начните разговор.'); return; }
     const run: Run = { cancelled: false, sending: false, completed: false };
     active.current = run;
     setBusy(true); setRecording(false); setText(''); setError(''); setMetrics(null); setSilence(0);
@@ -94,9 +100,12 @@ export function VoiceControls({ sessionId, onTranscript }: {
         }
         ws.send(buffer);
       };
-      ws.onopen = () => ws.send(JSON.stringify({
-        type: 'start', session_id: sessionId, sample_rate: 24000, channels: 1, pause_ms: pauseMs,
-      }));
+      ws.onopen = () => {
+        if (run.cancelled || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify({
+          type: 'start', session_id: runSessionId, sample_rate: 24000, channels: 1, pause_ms: pauseMs,
+        }));
+      };
       ws.onerror = () => fail(run, 'Не удалось подключиться к backend. Проверьте, что он запущен.');
       ws.onclose = () => {
         if (!run.cancelled) fail(run, 'Соединение закрылось до получения результата.');
@@ -153,8 +162,11 @@ export function VoiceControls({ sessionId, onTranscript }: {
           run.node?.disconnect();
         } else if (event.type === 'utterance.final') {
           run.completed = true;
-          setText(event.text); setMetrics(event); setStatus('Готово');
-          onTranscript(event.text); stop(run);
+          const transcript = finalVoiceTranscript(event);
+          setText(typeof event.text === 'string' ? event.text : '');
+          setMetrics(event); setStatus(transcript ? 'Готово' : 'Пустая транскрипция');
+          stop(run);
+          if (transcript) onTranscript(transcript);
         } else if (event.type === 'empty') {
           setText(''); setStatus('Речь не обнаружена'); stop(run);
         } else if (event.type === 'error') {
@@ -174,6 +186,11 @@ export function VoiceControls({ sessionId, onTranscript }: {
     else { run.sending = false; run.ws?.send(JSON.stringify({ type: 'finish' })); }
   }
 
+  useImperativeHandle(ref, () => ({
+    startListening: (activeSessionId) => { void start(undefined, activeSessionId); },
+    stopListening: () => { if (active.current) stop(active.current); },
+  }));
+
   function download() {
     const url = URL.createObjectURL(new Blob([JSON.stringify({ source, text, pause_ms: pauseMs, metrics }, null, 2)],
       { type: 'application/json' }));
@@ -182,28 +199,31 @@ export function VoiceControls({ sessionId, onTranscript }: {
   }
 
   return <section className="voice-controls" aria-labelledby="voice-title">
-    <h3 id="voice-title">Тестовый стенд · русский и казахский</h3>
-    <p className="muted">Аудио передаётся в OpenAI. Ответы бота и TTS пока не подключены.</p>
-    <label htmlFor="pause">Завершать после тишины: {(pauseMs / 1000).toFixed(1)} с</label>
-    <input id="pause" type="range" min={500} max={5000} step={100} value={pauseMs}
-      disabled={busy} onChange={event => setPauseMs(Number(event.target.value))} />
-    <p className="muted">2,5 с — запас для запинок. Более короткая пауза ускоряет результат, но может обрезать мысль.</p>
+    <h3 id="voice-title">Микрофон</h3>
+    <p className="muted">После начала разговора микрофон включается автоматически. Финальный текст идёт в тот же диалог.</p>
     <div className="voice-buttons">
-      <button disabled={busy} onClick={() => void start()}>Начать говорить</button>
-      <button disabled={!recording} onClick={finish}>Завершить сейчас</button>
-      <button disabled={!busy} onClick={() => { if (active.current) stop(active.current); setStatus('Отменено'); }}>Отмена</button>
+      <button type="button" disabled={busy || !enabled} onClick={() => void start()}>Начать говорить</button>
+      <button type="button" disabled={!recording} onClick={finish}>Завершить сейчас</button>
+      <button type="button" disabled={!busy} onClick={() => { if (active.current) stop(active.current); setStatus('Отменено'); }}>Отмена</button>
     </div>
-    <label htmlFor="audio-file">Или проверить запись с телефона</label>
-    <input id="audio-file" type="file" accept="audio/*,.m4a" disabled={busy}
-      onChange={event => setFile(event.target.files?.[0] ?? null)} />
-    <button disabled={busy || !file} onClick={() => file && void start(file)}>Проверить файл</button>
     <p role="status" className="voice-status">{status}</p>
-    <progress aria-label="Пауза до завершения" value={Math.min(silence, pauseMs)} max={pauseMs} />
     <label htmlFor="voice-transcript">Транскрипция {busy ? '· промежуточная' : ''}</label>
-    <textarea id="voice-transcript" rows={5} readOnly value={text} placeholder="Здесь появится распознанная речь…" />
-    {metrics && <p className="muted">Тишина до завершения: {metrics.endpoint_silence_ms} мс ·
-      STT после завершения: {metrics.stt_after_commit_ms} мс. Это не полная задержка ответа агента.</p>}
+    <textarea id="voice-transcript" rows={2} readOnly value={text} placeholder="Здесь появится распознанная речь…" />
     {error && <p className="error" role="alert">{error}</p>}
-    <button disabled={!metrics} onClick={download}>Скачать результат теста</button>
+    <details className="developer-tools">
+      <summary>Диагностика голоса · пауза, файл, задержки</summary>
+      <label htmlFor="pause">Завершать после тишины: {(pauseMs / 1000).toFixed(1)} с</label>
+      <input id="pause" type="range" min={500} max={5000} step={100} value={pauseMs}
+        disabled={busy} onChange={event => setPauseMs(Number(event.target.value))} />
+      <p className="muted">2,5 с — запас для запинок. Более короткая пауза ускоряет результат, но может обрезать мысль.</p>
+      <label htmlFor="audio-file">Или проверить запись с телефона</label>
+      <input id="audio-file" type="file" accept="audio/*,.m4a" disabled={busy}
+        onChange={event => setFile(event.target.files?.[0] ?? null)} />
+      <button type="button" disabled={busy || !file || !enabled} onClick={() => file && void start(file)}>Проверить файл</button>
+      <progress aria-label="Пауза до завершения" value={Math.min(silence, pauseMs)} max={pauseMs} />
+      {metrics && <p className="muted">Тишина до завершения: {metrics.endpoint_silence_ms} мс ·
+        STT после завершения: {metrics.stt_after_commit_ms} мс. Это не полная задержка ответа агента.</p>}
+      <button type="button" disabled={!metrics} onClick={download}>Скачать результат теста</button>
+    </details>
   </section>;
-}
+});
