@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "test:runtime": "node --experimental-transform-types --test tests/runtime.test.mjs",
+    "test:tts": "node --experimental-transform-types --test tests/tts.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

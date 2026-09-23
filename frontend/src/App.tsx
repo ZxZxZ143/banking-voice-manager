@@ -1,17 +1,19 @@
 import { useState, useSyncExternalStore } from 'react';
 import { ConversationPanel } from './components/conversation/ConversationPanel';
 import { TracePanel } from './components/trace/TracePanel';
+import { TtsDebugPanel } from './components/voice/TtsDebugPanel';
 import { useHealth } from './hooks/useHealth';
 import { ConversationRuntime } from './runtime/ConversationRuntime';
 import { HttpAgentClient, MockAgentClient } from './services/agentClient';
-import { NoopTtsService } from './services/tts';
+import { BrowserTtsService } from './services/tts/BrowserTtsService';
 
 const mockMode = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_AGENT === 'true';
 
 export default function App() {
+  const [tts] = useState(() => new BrowserTtsService());
   const [runtime] = useState(() => new ConversationRuntime(
     mockMode ? new MockAgentClient() : new HttpAgentClient(),
-    new NoopTtsService(),
+    tts,
   ));
   const snapshot = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
   const { health, retry } = useHealth();
@@ -21,7 +23,7 @@ export default function App() {
       <header>
         <h1>Voice Router</h1>
         <p>Saqta Insurance · интеграционный стенд</p>
-        <p className="muted">Agent: {mockMode ? 'MOCK (без маршрутизации)' : 'HTTP /api/message'} · TTS: без звука</p>
+        <p className="muted">Agent: {mockMode ? 'MOCK (без маршрутизации)' : 'HTTP /api/message'} · TTS: голос браузера</p>
       </header>
       <section className="health" aria-label="Состояние backend">
         <div role="status" aria-live="polite">
@@ -37,6 +39,7 @@ export default function App() {
         <ConversationPanel runtime={runtime} snapshot={snapshot} />
         <TracePanel trace={snapshot.latestTrace} />
       </div>
+      <TtsDebugPanel tts={tts} runtimeStatus={snapshot.runtimeStatus} />
     </main>
   );
 }

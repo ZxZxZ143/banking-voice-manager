@@ -11,7 +11,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 ## Current implementation status
 
 - **Implemented:** FastAPI startup, validated data, health endpoint, React/Vite shell,
-  frontend conversation runtime and typed integration adapters, backend typed contracts,
+  frontend conversation runtime, browser TTS playback and typed integration adapters, backend typed contracts,
   bounded copied memory state/traces, catalog, read-only repositories,
   provisional deterministic policy, scenario-requirements inspection and action registry.
 - **Partial:** one SDK agent factory/strict output schema; minimal STT and buffered TTS
@@ -45,7 +45,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
 | `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
-| `frontend/src/services/agentClient.ts`, `tts.ts` | HTTP/mock agent and no-audio TTS adapters |
+| `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
+| `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
@@ -59,7 +60,9 @@ Startup loads seven JSON files once, checks shapes/references and constructs loc
 The browser fetches real health through Vite. The frontend runtime creates one session ID,
 accepts text through `sendText()` or an STT callback through `handleTranscript()`, sends
 `POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
-the API says `handoff` or `ended`. The development TTS adapter produces no audio.
+the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
+`onend`; `onstart` gives first-audio latency. A no-audio adapter remains for tests.
+The voice check panel has Russian/Kazakh samples, selected voice and playback timings.
 Mock agent replies are labeled and enabled only by `VITE_USE_MOCK_AGENT=true` in Vite dev.
 With the current backend and HTTP mode, `/api/message` returns a visible 404.
 
@@ -133,7 +136,9 @@ python -m venv .venv
 Frontend (second terminal, repository root): `cd frontend`, `npm ci`, copy
 `.env.example` to `.env.local` and set `VITE_USE_MOCK_AGENT=true` for independent UI
 development, then `npm run dev`. Switch it to `false` when Agent Core serves `/api/message`.
-Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`.
+Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
+`npm run test:tts`. Browser speech needs a supported browser and an installed voice;
+Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.
 Tested with Python 3.13 and Node 24.13; minimum Python 3.11.
