@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Core · Local development stand</title>
+  <style>
+    :root { color-scheme: light; font: 16px/1.5 system-ui, sans-serif; color: #172033; background: #f1f4f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1440px; padding: 28px; margin: auto; }
+    h1 { margin: 8px 0; font-size: 1.8rem; }
+    h2 { font-size: 1.1rem; margin: 0 0 12px; }
+    p { margin: 6px 0 16px; }
+    .badge { font-size: .75rem; font-weight: 750; letter-spacing: .08em; color: #744200; background: #fff0cc; border: 1px solid #d6ad51; padding: 4px 8px; border-radius: 4px; }
+    .muted, .hint { color: #526078; }
+    .hint { font-size: .875rem; }
+    .card { background: white; border: 1px solid #cbd3df; border-radius: 10px; padding: 20px; margin-top: 18px; }
+    label { display: block; font-weight: 650; margin-bottom: 6px; }
+    input, textarea, button { font: inherit; border: 1px solid #98a5b8; border-radius: 6px; }
+    input, textarea { width: 100%; padding: 10px 12px; background: white; color: #172033; }
+    textarea { resize: vertical; min-height: 110px; }
+    button { padding: 10px 16px; cursor: pointer; background: #173e82; border-color: #173e82; color: white; font-weight: 650; }
+    button.secondary { color: #173e82; background: white; }
+    button:disabled { cursor: not-allowed; opacity: .55; }
+    input:disabled, textarea:disabled { background: #edf0f5; }
+    :focus-visible { outline: 3px solid #aa5b00; outline-offset: 3px; }
+    .session-row { display: flex; align-items: end; gap: 12px; }
+    .session-field { flex: 1; }
+    .session-row button { flex-shrink: 0; }
+    .send-row { display: flex; gap: 16px; align-items: center; margin-top: 10px; }
+    .metrics { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0; }
+    .metrics div { min-width: 160px; }
+    dt { font-size: .8rem; color: #526078; }
+    dd { margin: 2px 0 0; font-weight: 650; overflow-wrap: anywhere; }
+    .response { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .error { border-left: 4px solid #b42318; background: #fff3f1; color: #8f1910; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 16px; }
+    [hidden] { display: none !important; }
+    .json-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+    summary { cursor: pointer; font-weight: 700; }
+    pre { margin-bottom: 0; font: .8rem/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 580px; overflow: auto; }
+    @media (max-width: 900px) { .json-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 520px) { main { padding: 16px; } .session-row { align-items: stretch; flex-direction: column; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <span class="badge">LOCAL DEVELOPMENT</span>
+    <h1>Agent Core debug stand</h1>
+    <p class="muted">Text routing through <code>POST /api/message</code>. Development use on the local backend only.</p>
+    <p class="hint">A send uses the configured router and may call the model. Voice, scenario execution and real operator transfer are unavailable. Sessions are kept in backend memory and may be lost on restart or eviction.</p>
+  </header>
+
+  <form id="message-form" class="card">
+    <div class="session-row">
+      <div class="session-field">
+        <label for="session-id">Session ID</label>
+        <input id="session-id" name="session_id" required maxlength="128" autocomplete="off" aria-describedby="session-hint">
+      </div>
+      <button id="new-session" class="secondary" type="button">New session</button>
+    </div>
+    <p id="session-hint" class="hint">Reuse this ID for follow-up turns, or enter an existing ID. New session generates a fresh ID; it does not delete old sessions. Reloading this page starts a fresh ID.</p>
+    <label for="message-text">Message · Russian, Kazakh or mixed</label>
+    <textarea id="message-text" name="text" required maxlength="10000" placeholder="Хочу продлить полис. / Полисімді ұзартқым келеді."></textarea>
+    <div class="send-row">
+      <button id="send" type="submit">Send message</button>
+      <span id="request-status" class="hint" role="status" aria-live="polite">Ready.</span>
+    </div>
+    <div id="error" class="error" role="alert" hidden></div>
+  </form>
+
+  <section class="card" aria-labelledby="result-title">
+    <h2 id="result-title">Last successful result</h2>
+    <p id="result-context" class="hint">No confirmed response for this session.</p>
+    <dl class="metrics">
+      <div><dt>Conversation status · last result</dt><dd id="conversation-status">Unknown</dd></div>
+      <div><dt>Latest request · browser latency</dt><dd id="request-latency">—</dd></div>
+      <div><dt>Last result · backend total</dt><dd id="backend-latency">—</dd></div>
+    </dl>
+    <p id="response-text" class="response" aria-live="polite">Send a message to inspect the router response.</p>
+  </section>
+
+  <div class="json-grid">
+    <details class="card" open><summary>Routing</summary><pre id="routing-json" tabindex="0">No result yet.</pre></details>
+    <details class="card" open><summary>State</summary><pre id="state-json" tabindex="0">No result yet.</pre></details>
+    <details class="card" open><summary>Trace</summary><pre id="trace-json" tabindex="0">No result yet.</pre></details>
+  </div>
+</main>
+<script>
+  "use strict";
+  const byId = (id) => document.getElementById(id);
+  const form = byId("message-form");
+  const sessionInput = byId("session-id");
+  const textInput = byId("message-text");
+  const sendButton = byId("send");
+  const newSessionButton = byId("new-session");
+  const requestStatus = byId("request-status");
+  const errorBox = byId("error");
+  let currentSession = "";
+  let inFlight = false;
+  let sessionClosed = false;
+
+  function updateControls() {
+    sendButton.disabled = inFlight || sessionClosed;
+    sessionInput.disabled = inFlight || sessionClosed;
+    textInput.disabled = inFlight || sessionClosed;
+    newSessionButton.disabled = inFlight;
+    form.setAttribute("aria-busy", String(inFlight));
+  }
+
+  function clearError() {
+    errorBox.textContent = "";
+    errorBox.hidden = true;
+  }
+
+  function resetResult() {
+    byId("result-context").textContent = "No confirmed response for this session.";
+    byId("conversation-status").textContent = "Unknown";
+    byId("request-latency").textContent = "—";
+    byId("backend-latency").textContent = "—";
+    byId("response-text").textContent = "Send a message to inspect the router response.";
+    for (const key of ["routing", "state", "trace"]) {
+      byId(`${key}-json`).textContent = "No result yet.";
+    }
+    clearError();
+  }
+
+  function startSession() {
+    if (inFlight) return;
+    currentSession = globalThis.crypto?.randomUUID?.()
+      ?? `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    sessionInput.value = currentSession;
+    sessionClosed = false;
+    textInput.value = "";
+    resetResult();
+    requestStatus.textContent = "New session ready.";
+    updateControls();
+    textInput.focus();
+  }
+
+  function syncSession() {
+    const value = sessionInput.value.trim();
+    if (value !== currentSession) {
+      currentSession = value;
+      resetResult();
+      requestStatus.textContent = "Session changed; its state will be returned after sending.";
+    }
+  }
+
+  function showResult(result) {
+    byId("result-context").textContent = `Session ${result.session_id} · turn ${result.state.turn_number ?? "unknown"}`;
+    byId("response-text").textContent = result.response_text;
+    byId("conversation-status").textContent = result.conversation_status;
+    const total = result.trace.latency_ms?.total;
+    byId("backend-latency").textContent = typeof total === "number" ? `${total.toFixed(1)} ms` : "Not measured";
+    for (const key of ["routing", "state", "trace"]) {
+      byId(`${key}-json`).textContent = JSON.stringify(result[key], null, 2);
+    }
+    sessionClosed = ["ended", "handoff"].includes(result.conversation_status);
+    requestStatus.textContent = sessionClosed
+      ? `Session ${result.conversation_status}. Choose New session to continue.`
+      : "Response received. This session is ready for a follow-up.";
+  }
+
+  sessionInput.addEventListener("input", syncSession);
+  newSessionButton.addEventListener("click", startSession);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (inFlight || sessionClosed) return;
+    syncSession();
+    const session_id = currentSession;
+    const text = textInput.value.trim();
+    if (!session_id || !text) {
+      errorBox.textContent = "Enter a nonblank session ID and message.";
+      errorBox.hidden = false;
+      return;
+    }
+    sessionInput.value = session_id;
+    clearError();
+    inFlight = true;
+    updateControls();
+    requestStatus.textContent = "Waiting for the router…";
+    byId("request-latency").textContent = "Measuring…";
+    const startedAt = performance.now();
+    try {
+      const response = await fetch('/api/message', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id, text })
+      });
+      let result;
+      try { result = await response.json(); }
+      catch { throw new Error(`HTTP ${response.status}: response was not JSON. The request outcome is unconfirmed.`); }
+      if (!response.ok) {
+        if (response.status === 409) sessionClosed = true;
+        const message = result?.error?.message
+          ?? (result?.detail ? JSON.stringify(result.detail, null, 2) : response.statusText);
+        throw new Error(`HTTP ${response.status}: ${message || "Request failed"}`);
+      }
+      if (result?.session_id !== session_id || typeof result.response_text !== "string"
+          || typeof result.conversation_status !== "string" || !result.routing || !result.state || !result.trace) {
+        throw new Error("Unexpected response format. The request outcome is unconfirmed.");
+      }
+      showResult(result);
+      textInput.value = "";
+    } catch (error) {
+      errorBox.textContent = `${error instanceof Error ? error.message : "Request failed"}\nNo new result was confirmed. Any result below is from the last successful request; a network failure may occur after the server processed the turn.`;
+      errorBox.hidden = false;
+      requestStatus.textContent = sessionClosed
+        ? "Session is closed (HTTP 409). Choose New session to continue."
+        : "Request failed. Check the error before continuing.";
+    } finally {
+      byId("request-latency").textContent = `${(performance.now() - startedAt).toFixed(1)} ms`;
+      inFlight = false;
+      updateControls();
+      if (!sessionClosed) textInput.focus();
+    }
+  });
+
+  startSession();
+</script>
+</body>
+</html>

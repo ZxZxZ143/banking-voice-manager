@@ -5,6 +5,7 @@ import pytest
 from agents import AgentOutputSchema
 from pydantic import ValidationError
 
+from app.agent.errors import RouterConfigurationError
 from app.agent.prompts import build_router_input
 from app.agent.router import RouterAgent, build_router_agent
 from app.agent.schemas import RouterAgentOutput, RouterDecision
@@ -13,7 +14,7 @@ from app.data.loaders import load_starter_kit
 from app.dialog.models import DialogState, DialogTurn
 from app.dialog.state import append_turn
 from app.dialog.store import InMemoryDialogStore
-from app.evaluation.runner import generate_predictions, write_predictions
+from app.evaluation.runner import EvaluationRunError, generate_predictions, write_predictions
 from app.response.generator import ResponseInput, UnconfiguredResponseGenerator
 from app.scenarios.catalog import ScenarioCatalog
 from app.scenarios.decision_policy import DecisionPolicy, PolicySettings
@@ -122,6 +123,14 @@ def test_policy_urgency_preserves_other_order_and_continuation(catalog):
     assert policy.decide(decision("SC35", continuation=True), state).outcome == "accept"
 
 
+def test_confident_operator_request_is_not_lost_to_uncertain_secondary_intent(catalog):
+    routing = decision("SC37", "SC01", confidence=0.98)
+    routing.scenarios[1].confidence = 0.6
+    result = DecisionPolicy(catalog).decide(routing, DialogState(session_id="operator"))
+    assert result.outcome == "handoff"
+    assert result.scenario_ids == ["SC37"]
+
+
 def test_engine_only_reads_requirements(catalog):
     engine = ScenarioEngine(catalog)
     state = DialogState(session_id="s")
@@ -179,8 +188,13 @@ def test_triage_does_not_invent_language_or_slots():
 
 def test_unimplemented_boundaries_fail_explicitly(catalog):
     state = DialogState(session_id="s")
-    with pytest.raises(NotImplementedError, match="Router execution"):
-        asyncio.run(RouterAgent(catalog).route("fixture", state))
+    with pytest.raises(RouterConfigurationError):
+        asyncio.run(
+            RouterAgent(
+                catalog,
+                settings=Settings(_env_file=None, openai_api_key=None, openai_router_model=None),
+            ).route("fixture", state)
+        )
     context = ResponseInput(
         language="ru",
         scenario_id="SC01",
@@ -211,5 +225,16 @@ def test_evaluation_adapter_does_not_pass_labels_to_router(kit, tmp_path):
 
 
 def test_evaluation_aborts_on_missing_router(kit, catalog):
-    with pytest.raises(NotImplementedError):
-        asyncio.run(generate_predictions(kit.dev_utterances, RouterAgent(catalog)))
+    with pytest.raises(EvaluationRunError) as failure:
+        asyncio.run(
+            generate_predictions(
+                kit.dev_utterances,
+                RouterAgent(
+                    catalog,
+                    settings=Settings(
+                        _env_file=None, openai_api_key=None, openai_router_model=None
+                    ),
+                ),
+            )
+        )
+    assert isinstance(failure.value.__cause__, RouterConfigurationError)

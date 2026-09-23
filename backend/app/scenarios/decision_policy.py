@@ -12,6 +12,7 @@ class PolicySettings(Contract):
     accept_threshold: float = Field(default=0.75, ge=0, le=1)
     low_threshold: float = Field(default=0.45, ge=0, le=1)
     handoff_after: int = Field(default=2, ge=1)
+    max_unclear_turns: int = Field(default=3, ge=1)
 
     @model_validator(mode="after")
     def check_threshold_order(self) -> "PolicySettings":
@@ -47,9 +48,11 @@ class DecisionPolicy:
         low_count = (
             state.consecutive_low_confidence + 1 if confidence < self.settings.low_threshold else 0
         )
-        if low_count >= self.settings.handoff_after or (
-            "SC37" in ids and confidence >= self.settings.accept_threshold
-        ):
+        explicit_handoff = any(
+            item.scenario_id == "SC37" and item.confidence >= self.settings.accept_threshold
+            for item in decision.scenarios
+        )
+        if low_count >= self.settings.handoff_after or explicit_handoff:
             return PolicyResult(
                 outcome="handoff",
                 scenario_ids=["SC37"],
@@ -57,6 +60,13 @@ class DecisionPolicy:
                 reason="Operator assistance is required",
             )
         if confidence < self.settings.accept_threshold or "SYS_UNCLEAR" in ids:
+            if state.unclear_count + 1 >= self.settings.max_unclear_turns:
+                return PolicyResult(
+                    outcome="handoff",
+                    scenario_ids=["SC37"],
+                    consecutive_low_confidence=low_count,
+                    reason="Clarification limit reached; operator assistance is required",
+                )
             return PolicyResult(
                 outcome="clarify",
                 scenario_ids=["SYS_UNCLEAR"],

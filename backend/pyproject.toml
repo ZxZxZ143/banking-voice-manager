@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.10,<3",
-    "openai-agents>=0.4,<1",
+    "openai-agents>=0.22.3,<1",
     "openai>=3.19,<4",
     "uvicorn>=0.35,<1",
 ]
@@ -25,6 +25,9 @@ voice-router = "app.main:run"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["dev_stand/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
