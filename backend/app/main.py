@@ -26,6 +26,8 @@ def create_app(
         yield
 
     application = FastAPI(title="Voice Router", version="0.1.0", lifespan=lifespan)
+    application.state.settings = config
+    application.state.voice_connections = 0
     application.add_middleware(
         CORSMiddleware,
         allow_origins=[config.frontend_origin],
@@ -47,7 +49,13 @@ app = create_app()
 def run() -> None:
     settings = Settings()
     configure_logging()
-    uvicorn.run("app.main:app", host=settings.backend_host, port=settings.backend_port)
+    uvicorn.run(
+        "app.main:app",
+        host=settings.backend_host,
+        port=settings.backend_port,
+        ws_max_size=8192,
+        ws_max_queue=16,
+    )
 
 
 if __name__ == "__main__":

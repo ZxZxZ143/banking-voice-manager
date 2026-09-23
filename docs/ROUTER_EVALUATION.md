@@ -180,3 +180,43 @@ From repository root (the commands make real, billable calls; outputs never over
 Manual stand: set ENABLE_DEV_STAND=true and model/key in ignored root .env; run
 `.venv\Scripts\python.exe -m app.main`, open `http://127.0.0.1:8000/dev`.
 The model remains configurable; no credential appears in source, frontend or these artifacts.
+
+## Integrated MVP rerun — 2026-09-23 12:15 UTC
+
+The historical sections above describe the pre-integration milestone. The full stand now
+integrates Agent Core, conversation-runtime and streaming voice; see PROJECT_MAP.md.
+All 104 inputs were rerun with the same gpt-4.1-mini prompt (SHA256
+`cf4da795b0efaf6df0c2fd09a0150b28e018e933efbdb109bb835f6674f8397b`), serial calls,
+4-second minimum start interval, no retries and no expected labels in model input.
+Official evaluate.py was run unchanged. No dev utterance was hardcoded.
+
+| Group | n | Primary | Full match |
+|---|---:|---:|---:|
+| All | 104 | 92.31% | 90.38% |
+| RU | 52 | 90.38% | 88.46% |
+| KK | 45 | 93.33% | 91.11% |
+| Mixed | 7 | 100% | 100% |
+| Single | 84 | 92.86% | 92.86% |
+| Multi-intent | 13 | 84.62% | 69.23% |
+| Unclear | 3 | 100% | 100% |
+| Out of scope | 4 | 100% | 100% |
+
+Multi-intent recall: **20/26 = 76.92%**. Two invalid outputs, zero provider failures.
+102 valid calls: median 2,491.8 ms, p95 4,460.7 ms; full paced run 443.2 s.
+Compared with the immediately preceding same-prompt run: primary unchanged at 92.31%,
+full 91.35% → 90.38%, multi recall 73.08% → 76.92%. This is repeat-run variability,
+not evidence of a prompt improvement.
+
+Remaining valid-output errors: U012 travel/visa → unclear; U030 medical assistance abroad
+→ accident; U034 payout timing → unclear; U035 document checklist → incident; U061 payment
+method → unclear; U075 suspicious agent → out of scope; U086 missed independent payment
+question; U090 missed independent document request. U081/U088 failed output validation.
+These expose scenario boundaries, over-clarification and multi-intent omissions. The MVP
+does not claim perfect routing or guaranteed understanding of every input. Invalid output
+returns a safe API error without advancing state; it is never replaced with a fake success.
+
+Latest root `predictions.json` / `.report.txt` / `.details.json` contain this run. Its copy is
+`work/router-eval/mvp-final.*`; the previous root artifacts are preserved as `pre-mvp.*`.
+Artifacts remain ignored. Post-evaluation integration fixes affect policy, deterministic
+RU/KK response rendering, current-turn reply language and transport, not the Router prompt
+or selected-scenario evaluation. Live browser/API regression results are in MVP_VALIDATION.md.

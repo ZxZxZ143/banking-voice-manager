@@ -138,4 +138,5 @@ def build_router_input(text: str, state: DialogState) -> str:
         # Kazakh turn to the application's placeholder Russian language values.
         context.pop("language", None)
         context.pop("response_language", None)
-    return json.dumps({"utterance": text, "dialog_state": context}, ensure_ascii=False)
+    # Put the current turn last: history is background, never the new user request.
+    return json.dumps({"dialog_state": context, "utterance": text}, ensure_ascii=False)

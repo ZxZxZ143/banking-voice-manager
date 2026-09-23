@@ -1,3 +1,4 @@
+import re
 from time import perf_counter
 
 from app.agent.errors import RouterOutputError
@@ -15,6 +16,54 @@ from app.tracing.models import LatencyRecord, TraceRecord
 
 class SessionClosedError(Exception):
     pass
+
+
+def reply_language_for_turn(text: str, decision: RouterDecision) -> str | None:
+    """Protect a clearly Kazakh turn from a stale Russian context label.
+
+    This is only a reply-language guard, not intent classification. A borrowed
+    Kazakh place name or greeting in a longer Russian sentence does not suffice.
+    Mixed-language turns retain the router's predominant-language choice.
+    """
+    words = re.findall(r"[А-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]+", text)
+    marked = sum(bool(re.search(r"[ӘәҒғҚқҢңӨөҰұҮүҺһІі]", word)) for word in words)
+    # Conservative language-only evidence, never business/intent keywords.
+    russian_markers = {
+        "и",
+        "в",
+        "на",
+        "по",
+        "как",
+        "где",
+        "когда",
+        "что",
+        "или",
+        "ли",
+        "мой",
+        "мне",
+        "меня",
+        "моего",
+        "ваш",
+        "хочу",
+        "нужно",
+        "можно",
+        "ещё",
+    }
+    if (
+        decision.language == "kk"
+        and not marked
+        and sum(word.casefold() in russian_markers for word in words) >= 2
+    ):
+        return "ru"
+    if (
+        decision.language == "ru"
+        and marked
+        and ((len(words) == 1) or (marked >= 2 and marked * 2 >= len(words)))
+    ):
+        return "kk"
+    if decision.language in ("ru", "kk"):
+        return decision.language
+    return decision.response_language
 
 
 class MessageResult(Contract):
@@ -50,6 +99,17 @@ class MessageService:
             router_started = perf_counter()
             # Snapshot isolation: a failed/misbehaving router cannot mutate stored state.
             decision = await self.router.route(text, previous.model_copy(deep=True))
+            # The current request language wins over a stale conversation preference.
+            # Do not reuse a clarification generated in the wrong reply language.
+            reply_language = reply_language_for_turn(text, decision)
+            if reply_language is not None and decision.response_language != reply_language:
+                decision = decision.model_copy(
+                    update={
+                        "response_language": reply_language,
+                        "clarification_question": None,
+                    },
+                    deep=True,
+                )
             router_ms = (perf_counter() - router_started) * 1000
             policy_started = perf_counter()
             try:

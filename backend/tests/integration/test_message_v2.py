@@ -38,6 +38,7 @@ def decision(
 ) -> RouterDecision:
     return RouterDecision(
         language="ru",
+        response_language="ru",
         scenarios=[
             ScenarioSelection(
                 scenario_id=scenario_id,
@@ -101,8 +102,9 @@ def test_office_completion_allows_new_business_until_explicit_goodbye(kit):
     )
     with TestClient(create_app(settings(), router_override=router)) as client:
         first = send(client, "office-then-renewal", "Где ваш офис в Астане?")
-        assert office["address"] in first["response_text"]
-        assert office["hours"] in first["response_text"]
+        assert "Мәңгілік Ел, 55" in first["response_text"]
+        assert "понедельник–пятница 09:00–18:00, суббота 10:00–15:00" in first["response_text"]
+        assert office["address"] not in first["response_text"]
         assert first["state"]["active_scenario"] is None
         assert first["conversation_status"] == "active"
         assert_trace(
@@ -258,8 +260,9 @@ def test_owned_claim_status_is_grounded_and_completes_only_the_scenario(kit):
     with TestClient(create_app(settings(), router_override=router)) as client:
         body = send(client, "claim-status", "Как продвигается рассмотрение заявления?")
         assert claim.claim_number in body["response_text"]
-        assert claim.status in body["response_text"]
-        assert claim.next_step in body["response_text"]
+        assert "выплачено" in body["response_text"]
+        assert "Выплата выполнена 2026-05-29" in body["response_text"]
+        assert claim.next_step not in body["response_text"]
         assert body["state"]["active_scenario"] is None
         assert body["conversation_status"] == "active"
         assert_trace(
@@ -276,10 +279,15 @@ def test_public_knowledge_answers_are_grounded_and_do_not_end_session(kit, scena
     with TestClient(create_app(settings(), router_override=router)) as client:
         body = send(client, f"knowledge-{scenario_id}", "Подскажите информацию, пожалуйста.")
         if topic == "payments":
-            for method in kit.knowledge.payments["methods"]:
+            for method in (
+                "банковской картой",
+                "по ссылке из СМС",
+                "банковским переводом",
+                "терминал",
+            ):
                 assert method in body["response_text"]
         else:
-            assert kit.knowledge.app_help["login"] in body["response_text"]
+            assert "Войдите по номеру телефона и одноразовому СМС-коду" in body["response_text"]
         assert body["state"]["active_scenario"] is None
         assert body["conversation_status"] == "active"
         assert_trace(

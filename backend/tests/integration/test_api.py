@@ -42,11 +42,20 @@ def test_invalid_turn_input_rejected(client, text):
 
 
 def test_voice_reports_error_and_closes(client):
-    with client.websocket_connect("/api/v1/voice") as socket:
-        assert socket.receive_json()["error"]["code"] == "not_implemented"
+    with client.websocket_connect(
+        "/api/v1/voice", headers={"origin": "http://localhost:5173"}
+    ) as socket:
+        assert socket.receive_json()["code"] == "missing_api_key"
         with pytest.raises(WebSocketDisconnect) as closed:
             socket.receive_json()
         assert closed.value.code == 1013
+
+
+def test_voice_rejects_foreign_origin(client):
+    with pytest.raises(WebSocketDisconnect) as closed:
+        with client.websocket_connect("/api/v1/voice", headers={"origin": "https://other.test"}):
+            pass
+    assert closed.value.code == 1008
 
 
 def test_missing_starter_kit_fails_startup(tmp_path):

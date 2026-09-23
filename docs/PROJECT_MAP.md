@@ -14,15 +14,16 @@ Business specification: `data/starter_kit/README.ru.md`.
   strict ID/slot validation, RU/KK/mixed routing contract, single/multi-intent prompt,
   continuation/topic switching, bounded in-memory sessions/traces, confidence policy,
   clarification questions/options, basic grounded read-only replies, evaluation CLI and a
-  separate opt-in `/dev` manual stand. Existing data, health and production UI shell remain.
+  separate opt-in `/dev` manual stand. The integrated production frontend adds same-session
+  runtime, microphone/file streaming STT, browser TTS and supervisor traces.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
   transport with fixtures (one request even on provider failure), and official evaluator
   integration. Live 104-case before/after measurements are recorded in `ROUTER_EVALUATION.md`;
   offline fixture checks are not model-accuracy measurements.
 - **Still incomplete:** business writes/confirmation, actual identity verification, full
-  business answers, real operator transfer, production UI merge and supervisor feed.
-  Legacy `/api/v1/turns/text` remains 501; voice remains unavailable. Existing speech
-  adapters are unchanged and unused. Live routing uses the locally configured model/key.
+  business answers, real operator transfer and public supervisor feed.
+  Legacy `/api/v1/turns/text` remains 501 and is not used. Live routing/STT use the local key;
+  TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
 - **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
 
 ## Navigation
@@ -46,32 +47,57 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
-| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health, conversation/voice/trace areas |
+| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
+| `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
+| `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
+| `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
+| `frontend/src/components/voice/VoiceControls.tsx`, `voiceRuntimeBridge.ts` | Streaming mic/file capture UI and final-transcript bridge to runtime |
+| `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
 | `docs/ROUTER_EVALUATION.md` | Live measurements, failures, general prompt changes and remaining errors |
+| `docs/MVP_VALIDATION.md` | Integrated stand verification, startup and remaining demo limits |
 | `scripts/` | Live API/runtime smoke checks and saved evaluation comparison |
+| `docs/INTEGRATION.md` | Short frontend/Voice Input/Agent Core handoff contract and checks |
+| `docs/VOICE_STREAMING_CONTRACT.md` | PCM protocol, dependencies, endpointing and voice checks |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
 ## Actual and planned flow
 
 Startup loads seven JSON files once, checks shapes/references and constructs local services.
-The browser fetches real health through Vite; its legacy text submission still ends in 501.
-
 Implemented text API: request validation → per-session lock → prior-state snapshot → one
 Router Agent structured call → validation/policy → context transition → deterministic
 read-only lookup/slot/system reply → state + trace → wait for next turn. No second LLM,
 LLM tools, RAG, agent handoffs or provider-side conversation storage.
 The SDK uses `max_turns=1`, no SDK/client retries, 45-second timeout and disabled SDK tracing.
+The current utterance is serialized after background state/history to reduce stale-context
+selection; no expected labels or evaluation IDs enter the routing input.
 
-Planned: browser → STT → triage → Router Agent ↔ dialog state → policy → scenario engine
-→ allowed tools ↔ knowledge/mock backend → response → TTS → browser. Each stage supplies
-measured application-level traces, never hidden chain-of-thought. The business/voice stages
-of this future pipeline are not wired yet.
+The browser fetches real health through Vite. The frontend runtime creates one session ID,
+accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
+`POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
+the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
+`onend`; `onstart` gives first-audio latency. A no-audio adapter remains for tests.
+Voice controller start/stop calls are serialized so a delayed start is stopped on reset/end.
+VoiceControls opens one WebSocket per utterance using that same session ID; partials stay
+in the voice UI. Real HTTP mode is the default; no key enters the frontend.
+The voice check panel has Russian/Kazakh samples, selected voice and playback timings.
+The conversation panel shows runtime and backend conversation status. The trace panel
+renders only supplied fields, keeps multi-intent order, and uses browser STT/TTS first-audio
+timings only when corresponding backend trace timings are absent. It does not show raw trace
+data or infer routing decisions. Voice tools are in a disclosure below the main panels.
+Mock agent replies and trace fixtures are visibly labeled and enabled only by
+`VITE_USE_MOCK_AGENT=true` in Vite dev.
+Uncheck «Голосовой ввод» for text-only input with the same runtime/session/TTS. This stops
+capture, ignores late voice finals and prevents automatic microphone restart. The local Stop
+button does not overwrite backend conversation_status or supervisor trace with a fake end.
+The end-to-end path is browser → STT → Router Agent ↔ dialog state → policy → bounded
+read-only tools ↔ knowledge/mock backend → response → browser TTS → listen again.
+Application traces expose concise reasons and measured latency, never hidden chain-of-thought.
 
 ## API and domain contracts
 
@@ -87,7 +113,13 @@ of this future pipeline are not wired yet.
   latency. Text rendered safely; no key in browser. New session does not erase older sessions.
 - `POST /api/v1/turns/text`: UUID session_id, nonblank text up to 10,000 characters;
   valid input → 501 `{error: {code: not_implemented, message}}`; invalid input → 422.
-- `WS /api/v1/voice`: accepts, sends the same not-implemented error, closes 1013.
+- Frontend rejects blank/malformed replies, times out after 60 seconds, accepts additive
+  response fields, and never substitutes a mock.
+  Optional `trace` fields shown in the browser include turn, transcript, language, scenarios,
+  alternatives, concise reason, slots, actions, clarification, handoff and `latency_ms`.
+  Optional `state` fields shown include active_scenario, scenario_stack and pending_scenarios.
+- `WS /api/v1/voice`: one-utterance PCM16 streaming STT; final event includes text,
+  nullable language and `stt_after_commit_ms`. See `docs/VOICE_STREAMING_CONTRACT.md`.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, optional clarification_question and continuation. SDK transport uses a named-slot list for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
@@ -105,6 +137,8 @@ of this future pipeline are not wired yet.
   duration is included in response latency, not a separately measured tools span.
 - `PolicySettings` defaults: accept 0.75, low 0.45, handoff after two low-confidence turns
   or three unresolved clarifications. A confident SC37 request independently triggers handoff.
+  Confident urgent requests proceed even with a weak secondary intent; only confident
+  selections become active/pending, while original evidence remains in routing/history.
   Urgent requests precede normal requests; continuation preserves pending items and slots.
   Clarification/out-of-scope preserve active work; goodbye ends the session. Policy does not
   perform operator transfer, and the response explicitly says transfer is unavailable.
@@ -151,11 +185,15 @@ Concurrency and call-start pacing are configurable; use serial paced runs for co
 Allowlisted validation_reason distinguishes output contract failures without saving raw
 rejected values. Live manual slot misses/unstable output rejection remain documented in the
 evaluation report; a high scenario score is not evidence of complete business behavior.
-Final 104-case comparison (gpt-4.1-mini, serial paced): primary 95.19%→92.31%, full
-93.27%→91.35%, multi-intent recall 84.62%→73.08%; regression is explicitly retained.
-Unclear improved 33.33%→100%; valid monolingual reply-language match 53.76%→95.70%.
-Final run has zero provider failures and four invalid outputs. See full subgroup/error
-breakdown and manual limitations in `docs/ROUTER_EVALUATION.md`; routing is not quality-approved.
+Latest integrated 104-case run (gpt-4.1-mini, current utterance last, serial paced): primary
+91.35%, full 90.38%, multi-intent recall 92.31%; zero provider failures and one invalid output.
+Earlier before/after regressions and complete subgroup/error analysis are retained in
+`docs/ROUTER_EVALUATION.md`; no perfect-routing claim is made. Deterministic reply rendering
+uses grounded RU/KK translations. Current monolingual request language overrides stale reply
+language; a conflicting generated clarification is replaced with a localized fallback.
+A small Kazakh-orthography guard also protects reply language from stale Russian context
+labels; a borrowed place name or greeting in a longer Russian sentence is not enough.
+This affects replies only, not scenario selection or the recorded Router language label.
 
 ## Configuration and commands
 
@@ -167,12 +205,17 @@ Root .env.example contains no credentials; .env is ignored.
 Health, UI and offline tests need no credentials. Live routing/evaluation needs an explicit
 Responses/structured-output-compatible model and key. Local .env has a verified key and
 `gpt-4.1-mini`; the model remains configurable, with no implicit production default.
+Frontend
+`frontend/.env.example` defines `VITE_API_BASE_URL` (empty means Vite proxy) and
+`VITE_USE_MOCK_AGENT` (false by default; true works only in Vite dev).
+Streaming STT uses gpt-live-transcribe and local faster-whisper Silero VAD (voice extra).
+Browser TTS uses the backend response_language and installed OS/browser voices.
 
 PowerShell from repository root:
 
 ```powershell
 python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev]'
+./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
 ./.venv/Scripts/python.exe -m pytest backend/tests -q
 ./.venv/Scripts/ruff.exe check backend/app backend/tests
@@ -185,7 +228,11 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/message -ContentTy
 ```
 
 Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run dev`.
-Frontend checks: `npm run typecheck`, `npm run build`.
+Keep `VITE_USE_MOCK_AGENT=false` for the full live stand; true is for isolated dev fixtures only.
+Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
+`npm run test:tts`, `npm run test:trace`, `npm run test:integration`,
+`npm run test:voice-bridge`. Browser speech needs a supported browser and an installed voice;
+Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.
 Tested with Python 3.13 and Node 24.13; minimum Python 3.11.
@@ -196,16 +243,12 @@ Skills live in `.agents/skills/`; read only relevant ones: agents-sdk, agent-eva
 agent-debugging, security-review, demo-readiness. supabase-data is conditional on future
 persistence; agri-rag-vision is irrelevant to current requirements.
 
-`git fetch origin` inspected teammate `origin/feature/conversation-runtime` at
-`876b038ae8b2b61283e7899eac60f598333b3ba4` without checking out or editing that branch.
-Its HttpAgentClient/ConversationRuntime consume the new contract; the compatibility smoke
-imports their exact Git blobs without overwriting the working frontend. Transcript language
-and STT timing stay on the runtime side; only session_id/text cross this API boundary.
-Production follow-ups: raise runtime's 20s default client timeout above the backend's 45s
-budget, and use `state.response_language` for TTS rather than the input transcript language.
-The production UI has not been merged into this dirty branch; `/dev` is intentionally separate.
+Integrated `feature/agent-core-router-eval` with `origin/integration/voice-runtime` (0261acc),
+which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
+`origin/transcribtion` (138d5fb), without modifying teammate branches. Transcript language
+and STT timing stay on the runtime side; only session_id/text cross the Core API boundary.
+`/dev` remains an optional separate text debugger, not the full voice stand.
 
-Next: resolve remaining measured routing errors, improve full RU/KK business wording, add
-explicit preview/confirmation for one business workflow, then integrate production UI/voice.
-Multi-intent confidence policy still uses the minimum selected confidence; independent urgent
-acceptance with secondary clarification remains a follow-up. No DB or extra agent was added.
+Next: resolve measured routing errors, improve complete RU/KK business wording and actual
+identity verification, then implement one preview/confirmation workflow when needed.
+No DB or extra agent was added; irreversible execution remains blocked.

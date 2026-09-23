@@ -2,7 +2,7 @@
 
 HackAlem contact-center simulation for fictional **Saqta Insurance**. The core task is
 LLM scenario routing in Russian, Kazakh and mixed-language dialogue. This branch is
-the runnable technical foundation, not a completed voice robot.
+the integrated local voice MVP, with read-only synthetic business data.
 
 ```text
 Browser → STT → Triage → Router Agent ↔ Dialog State
@@ -25,7 +25,7 @@ From the repository root:
 
 ```powershell
 python -m venv .venv
-./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev]'
+./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
 ```
 
@@ -41,9 +41,14 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5173`. The shell shows real backend health, a text field,
-disabled voice controls, and an empty supervisor panel. Sending text displays the
-backend's explicit `501 not_implemented` error. No conversation or trace is fabricated.
+Open `http://localhost:5173`. Keep `VITE_USE_MOCK_AGENT=false` (the default).
+The stand provides microphone/file STT, text fallback, live Agent Core replies,
+browser TTS, a reused session ID and supervisor traces. Allow microphone access,
+click Start Conversation and wait for the listening indicator before speaking.
+TTS completes before microphone capture resumes; only `ended` or `handoff` stops
+the conversation. Text fallback also works without microphone permission.
+For text-only checks, uncheck «Голосовой ввод» before Start: the same session and TTS
+remain active, without capturing room speech between typed messages.
 
 Vite dev/preview proxies target `127.0.0.1:8000`; update `frontend/vite.config.ts`
 if you change the backend port. Run one backend process while state is in memory.
@@ -58,7 +63,10 @@ Configuration names: `OPENAI_API_KEY`, `OPENAI_ROUTER_MODEL`, `BACKEND_HOST`,
 `BACKEND_PORT`, `FRONTEND_ORIGIN`, optional `STARTER_KIT_PATH`. Empty values use
 application defaults. Live `/api/message` and evaluation require both OpenAI settings;
 there is no default model or mock fallback. Optional `ROUTER_TIMEOUT_SECONDS` defaults
-to 45 and `ROUTER_MAX_OUTPUT_TOKENS` to 2500. Speech remains outside this milestone.
+to 45 and `ROUTER_MAX_OUTPUT_TOKENS` to 2500. OPENAI_API_KEY also enables streaming STT.
+The voice extra supplies local acoustic endpointing, not a second routing model. See
+[the voice setup and contract](docs/VOICE_STREAMING_CONTRACT.md) for startup, automatic
+end-of-utterance detection, file replay and latency measurements.
 
 ## Checks
 
@@ -86,8 +94,8 @@ to retain context. It returns `response_text`, `routing`, `state`, `trace` and
 `conversation_status` plus the session ID. One agent makes one structured call per turn.
 RU/KK/mixed, independent multi-intent requests, topic switching and slot continuation
 are supported by the routing contract/prompt. API tests use explicitly scripted responses;
-live measurements are recorded in `docs/ROUTER_EVALUATION.md`. The working production
-shell still uses the legacy endpoint; teammate runtime compatibility is checked separately.
+live measurements are recorded in `docs/ROUTER_EVALUATION.md`. The integrated frontend
+uses `/api/message`; the old `/api/v1/turns/text` stub is not used.
 
 Replies ask a clarification/slot question, return a system response or use a small grounded
 read-only slice (offices, payments, app help, owned demo policy/claim). No business writes or
@@ -118,9 +126,11 @@ Choose another output name on subsequent runs. `--limit N` selects a subset. Def
 aborts on failure; explicit `--continue-on-error` counts failed calls as empty predictions.
 Expected labels never enter the router. See `docs/ROUTER_EVALUATION.md` for before/after.
 
-Full scenario workflows, complete localized business responses and browser voice transport
-remain unimplemented. STT/TTS adapters exist but are not wired into the UI
-and have not been tested against a live provider.
+Full scenario workflows, complete localized business responses and actual operator
+transfer remain outside this MVP. Irreversible actions are disabled; no write is
+represented as successful. Any future write must use preview → explicit confirmation
+→ execute. Browser streaming STT uses OpenAI and local Silero VAD (default pause 2.5 s).
+Browser TTS depends on installed voices; Kazakh voice availability varies by machine.
 
 ## Manual Agent Core stand
 

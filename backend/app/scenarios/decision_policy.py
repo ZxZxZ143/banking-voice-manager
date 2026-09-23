@@ -52,7 +52,33 @@ class DecisionPolicy:
             item.scenario_id == "SC37" and item.confidence >= self.settings.accept_threshold
             for item in decision.scenarios
         )
-        if low_count >= self.settings.handoff_after or explicit_handoff:
+        if explicit_handoff:
+            return PolicyResult(
+                outcome="handoff",
+                scenario_ids=["SC37"],
+                consecutive_low_confidence=low_count,
+                reason="Operator assistance is required",
+            )
+        confident = [
+            item.scenario_id
+            for item in decision.scenarios
+            if item.confidence >= self.settings.accept_threshold
+        ]
+        if confidence < self.settings.accept_threshold and any(
+            priorities.get(scenario_id) == "urgent" for scenario_id in confident
+        ):
+            # A weak secondary request must not block a confident urgent request.
+            # Accept only confident selections; the original decision and transcript
+            # retain uncertain secondary evidence for a later clarification.
+            return PolicyResult(
+                outcome="accept",
+                scenario_ids=sorted(
+                    confident, key=lambda scenario_id: priorities.get(scenario_id) != "urgent"
+                ),
+                consecutive_low_confidence=0,
+                reason="Prioritize confident urgent requests; uncertain secondary intents deferred",
+            )
+        if low_count >= self.settings.handoff_after:
             return PolicyResult(
                 outcome="handoff",
                 scenario_ids=["SC37"],
