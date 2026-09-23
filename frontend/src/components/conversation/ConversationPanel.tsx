@@ -1,53 +1,57 @@
 import { useState, type FormEvent } from 'react';
-import { submitTextTurn } from '../../api/client';
+import type { ConversationRuntime, ConversationSnapshot } from '../../runtime/ConversationRuntime';
 import { VoiceControls } from '../voice/VoiceControls';
 
-export function ConversationPanel({ sessionId }: { sessionId: string }) {
-  const [text, setText] = useState('');
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+interface Props {
+  runtime: ConversationRuntime;
+  snapshot: ConversationSnapshot;
+}
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+export function ConversationPanel({ runtime, snapshot }: Props) {
+  const [text, setText] = useState('');
+  const ready = snapshot.runtimeStatus === 'listening';
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!text.trim() || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      await submitTextTurn({ session_id: sessionId, text: text.trim() });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось отправить запрос.');
-    } finally {
-      setPending(false);
-    }
+    if (!ready || !text.trim()) return;
+    void runtime.sendText(text);
+    setText('');
   }
 
   return (
     <section className="panel" aria-labelledby="conversation-title">
       <h2 id="conversation-title">Диалог с клиентом</h2>
-      <div className="empty-state">
-        История пуста. Маршрутизация и ответы агента ещё не реализованы.
+      <div className="controls">
+        <button type="button" onClick={() => { void runtime.startConversation(); }}
+          disabled={!['idle', 'error'].includes(snapshot.runtimeStatus)
+            || snapshot.conversationStatus === 'ended' || snapshot.conversationStatus === 'handoff'}>
+          Начать разговор
+        </button>
+        <button type="button" onClick={() => { void runtime.endConversation(); }}
+          disabled={['idle', 'ended'].includes(snapshot.runtimeStatus)}>
+          Завершить
+        </button>
+        <button type="button" onClick={() => { void runtime.resetConversation(); setText(''); }}>
+          Сбросить
+        </button>
+      </div>
+      <p role="status">Состояние: {snapshot.runtimeStatus} · диалог: {snapshot.conversationStatus ?? '—'}</p>
+      <p className="muted debug-id">session_id: {snapshot.sessionId ?? 'создаётся при старте'}</p>
+      {snapshot.sttLatencyMs != null && <p className="muted">STT: {snapshot.sttLatencyMs} ms</p>}
+      {snapshot.error && <p className="error" role="alert">{snapshot.error}</p>}
+      <div className="history" aria-label="История разговора">
+        {snapshot.messages.length === 0 ? <p className="empty-state">История пуста.</p> : (
+          snapshot.messages.map((message) => (
+            <p key={message.id}><strong>{message.role === 'user' ? 'Клиент' : 'Ассистент'}:</strong> {message.text}</p>
+          ))
+        )}
       </div>
       <form onSubmit={handleSubmit}>
-        <label htmlFor="utterance">Текст клиента</label>
-        <textarea
-          id="utterance"
-          rows={4}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder="Введите запрос на русском или казахском"
-          aria-describedby="text-status"
-          required
-          maxLength={10_000}
-          disabled={pending}
-        />
-        <p id="text-status" className="muted">
-          Сейчас API возвращает 501 not_implemented. Текстовое поле проверяет соединение с ним.
-        </p>
-        <button type="submit" disabled={pending || !text.trim()}>
-          {pending ? 'Отправка…' : 'Отправить текст'}
-        </button>
+        <label htmlFor="utterance">Текст клиента (отладочный ввод)</label>
+        <textarea id="utterance" rows={3} value={text} onChange={(event) => setText(event.target.value)}
+          placeholder="Введите запрос на русском или казахском" maxLength={10_000} disabled={!ready} />
+        <button type="submit" disabled={!ready || !text.trim()}>Отправить</button>
       </form>
-      {error && <p className="error" role="alert">{error}</p>}
       <VoiceControls />
     </section>
   );

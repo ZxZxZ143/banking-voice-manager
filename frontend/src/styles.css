@@ -28,6 +28,11 @@ button:focus-visible, textarea:focus-visible { outline: 3px solid #4d83bd; outli
 .muted { margin-top: 8px; color: #4b596b; font-size: 14px; }
 .error { margin-top: 12px; color: #a02420; overflow-wrap: anywhere; }
 .voice-controls { border-top: 1px solid #d6dce3; margin-top: 24px; padding-top: 20px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.history { min-height: 100px; max-height: 360px; overflow: auto; border-top: 1px solid #d6dce3; border-bottom: 1px solid #d6dce3; margin: 16px 0; padding: 12px 0; }
+.history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.debug-id { overflow-wrap: anywhere; }
+form button { margin-top: 8px; }
 pre { max-height: 600px; overflow: auto; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 800px) {
   main { padding: 16px; }

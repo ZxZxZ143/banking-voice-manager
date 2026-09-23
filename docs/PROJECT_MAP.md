@@ -11,14 +11,16 @@ Business specification: `data/starter_kit/README.ru.md`.
 ## Current implementation status
 
 - **Implemented:** FastAPI startup, validated data, health endpoint, React/Vite shell,
-  typed contracts, bounded copied memory state/traces, catalog, read-only repositories,
+  frontend conversation runtime and typed integration adapters, backend typed contracts,
+  bounded copied memory state/traces, catalog, read-only repositories,
   provisional deterministic policy, scenario-requirements inspection and action registry.
 - **Partial:** one SDK agent factory/strict output schema; minimal STT and buffered TTS
   adapters with bounded calls and explicit credential errors; evaluation adapter; triage
   only trims whitespace and preserves a supplied language hint.
-- **Scaffold only:** SDK Runner execution, text orchestration, scenario execution and
+- **Scaffold only:** SDK Runner execution, backend text orchestration, scenario execution and
   confirmation, response generation, voice transport and supervisor feed.
-  Text returns 501; voice sends an error then closes. No business action handlers exist.
+  Existing backend text endpoint returns 501; voice sends an error then closes. The
+  frontend's expected `/api/message` endpoint does not exist yet. No business action handlers exist.
 - **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
 
 ## Navigation
@@ -41,7 +43,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data check CLI, router-to-predictions adapter |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
-| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health, conversation/voice/trace areas |
+| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
+| `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
+| `frontend/src/services/agentClient.ts`, `tts.ts` | HTTP/mock agent and no-audio TTS adapters |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
@@ -52,7 +56,12 @@ Backend paths in this table are relative to `backend/app/` where abbreviated.
 ## Actual and planned flow
 
 Startup loads seven JSON files once, checks shapes/references and constructs local services.
-The browser fetches real health through Vite; text submission ends in 501 without state changes.
+The browser fetches real health through Vite. The frontend runtime creates one session ID,
+accepts text through `sendText()` or an STT callback through `handleTranscript()`, sends
+`POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
+the API says `handoff` or `ended`. The development TTS adapter produces no audio.
+Mock agent replies are labeled and enabled only by `VITE_USE_MOCK_AGENT=true` in Vite dev.
+With the current backend and HTTP mode, `/api/message` returns a visible 404.
 
 Planned: browser → STT → triage → Router Agent ↔ dialog state → policy → scenario engine
 → allowed tools ↔ knowledge/mock backend → response → TTS → browser. Each stage supplies
@@ -63,6 +72,11 @@ measured application-level traces, never hidden chain-of-thought. This pipeline 
 - `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
 - `POST /api/v1/turns/text`: UUID session_id, nonblank text up to 10,000 characters;
   valid input → 501 `{error: {code: not_implemented, message}}`; invalid input → 422.
+- **Expected frontend integration, not implemented by backend:** `POST /api/message` with
+  `{session_id: string, text: string}`; response requires `{response_text: string,
+  conversation_status: "active" | "awaiting_user" | "awaiting_confirmation" |
+  "handoff" | "ended"}` and optionally `routing`, `state`, `trace` (untyped JSON).
+  Frontend rejects malformed replies, times out after 20 seconds, and never substitutes a mock.
 - `WS /api/v1/voice`: accepts, sends the same not-implemented error, closes 1013.
 - `agent/schemas.py`: RouterDecision has language, semantic segments, ordered selections,
   alternatives, slots and continuation. SDK transport uses a named-slot list for closed JSON
@@ -97,7 +111,9 @@ Offline adapter tests are not model accuracy measurements.
 ## Configuration and commands
 
 Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
-optional STARTER_KIT_PATH. Root .env.example is placeholders only; root .env is optional/ignored.
+optional STARTER_KIT_PATH. Root .env.example is backend placeholders only. Frontend
+`frontend/.env.example` defines `VITE_API_BASE_URL` (empty means Vite proxy) and
+`VITE_USE_MOCK_AGENT` (false by default; true works only in Vite dev).
 Health, UI and offline tests need no credentials. Model/voice selection and live provider
 verification remain future integration work.
 
@@ -114,8 +130,10 @@ python -m venv .venv
 ./.venv/Scripts/python.exe data/starter_kit/evaluate.py predictions.json data/starter_kit/dev_utterances.json
 ```
 
-Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run dev`.
-Frontend checks: `npm run typecheck`, `npm run build`.
+Frontend (second terminal, repository root): `cd frontend`, `npm ci`, copy
+`.env.example` to `.env.local` and set `VITE_USE_MOCK_AGENT=true` for independent UI
+development, then `npm run dev`. Switch it to `false` when Agent Core serves `/api/message`.
+Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.
 Tested with Python 3.13 and Node 24.13; minimum Python 3.11.
