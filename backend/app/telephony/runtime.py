@@ -1,0 +1,320 @@
+"""Half-duplex phone orchestration over the existing Agent and speech boundaries."""
+
+import asyncio
+import logging
+import math
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.events.models import ConversationEvent, EventType
+from app.events.response import response_events
+from app.events.store import EventStore, InMemoryEventStore
+from app.speech.stt.streaming import StreamingSTT, StreamInput
+from app.speech.tts.base import SpeechLanguage, TTSProvider
+from app.telephony.agent_bridge import AgentBridge, AgentProcessor, AgentResponse
+from app.telephony.audio import AudioNormalizer, PcmPassThroughNormalizer
+from app.telephony.base import (
+    CallEnded,
+    CallStarted,
+    IncomingAudio,
+    ProviderAudio,
+    ProviderError,
+    TelephonyEvent,
+    TelephonyProvider,
+)
+from app.telephony.sessions import ActiveCallRegistry, PhoneSession, PhoneStatus
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _Capture:
+    queue: asyncio.Queue[StreamInput] = field(default_factory=lambda: asyncio.Queue(maxsize=16))
+    accepting: bool = True
+
+
+@dataclass
+class _Call:
+    session: PhoneSession
+    capture: _Capture | None = None
+    turn_task: asyncio.Task | None = None
+    capture_tasks: set[asyncio.Task] = field(default_factory=set)
+    final_ids: set[str] = field(default_factory=set)
+
+
+class PhoneRuntime:
+    def __init__(
+        self,
+        messages: AgentProcessor,
+        stt: StreamingSTT,
+        tts: TTSProvider,
+        provider: TelephonyProvider,
+        *,
+        normalizer: AudioNormalizer | None = None,
+        event_store: EventStore | None = None,
+        registry: ActiveCallRegistry | None = None,
+        turn_timeout_seconds: float = 180,
+        cleanup_timeout_seconds: float = 1,
+    ):
+        for value in (turn_timeout_seconds, cleanup_timeout_seconds):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("Phone timeouts must be finite and positive")
+        self.agent = AgentBridge(messages)
+        self.stt = stt
+        self.tts = tts
+        self.provider = provider
+        self.normalizer = normalizer if normalizer is not None else PcmPassThroughNormalizer()
+        self.event_store = event_store if event_store is not None else InMemoryEventStore()
+        self.registry = registry if registry is not None else ActiveCallRegistry()
+        self.turn_timeout_seconds = turn_timeout_seconds
+        self.cleanup_timeout_seconds = cleanup_timeout_seconds
+        self._calls: dict[str, _Call] = {}
+
+    def _current(self, call: _Call) -> bool:
+        return self._calls.get(call.session.call_id) is call
+
+    def _record(self, call: _Call, event_type: EventType, **fields: Any) -> None:
+        try:
+            fields["metadata"] = {**(fields.get("metadata") or {}), "call_id": call.session.call_id}
+            self.event_store.append(
+                ConversationEvent(
+                    session_id=call.session.session_id,
+                    channel="phone",
+                    event_type=event_type,
+                    **fields,
+                )
+            )
+        except Exception:
+            logger.warning("Phone event recording failed")
+
+    def start_call(self, event: CallStarted) -> PhoneSession:
+        session = self.registry.start(event.call_id, event.metadata)
+        if event.call_id not in self._calls:
+            call = _Call(session)
+            self._calls[event.call_id] = call
+            self._record(
+                call, "session.started", metadata={"channel_metadata": session.provider_metadata}
+            )
+        return session
+
+    async def handle_event(self, event: TelephonyEvent) -> None:
+        if isinstance(event, CallStarted):
+            self.start_call(event)
+        elif isinstance(event, IncomingAudio):
+            await self.feed_audio(event.call_id, event.audio)
+        elif isinstance(event, CallEnded):
+            await self.end_call(event.call_id, hangup=False)
+        elif isinstance(event, ProviderError):
+            await self._fail_call(event.call_id, "provider_error")
+        else:
+            raise ValueError("Unknown telephony event")
+
+    async def feed_audio(self, call_id: str, audio: ProviderAudio) -> bool:
+        call = self._calls.get(call_id)
+        if call is None or call.session.status not in ("active", "transcribing"):
+            # Half duplex: discard caller/echo frames while Agent, TTS or playback is busy.
+            return False
+        try:
+            pcm = self.normalizer.normalize(audio)
+            if call.capture is None or not call.capture.accepting:
+                call.capture = _Capture()
+                call.session.status = "transcribing"
+                task = asyncio.create_task(self._capture(call, call.capture))
+                call.capture_tasks.add(task)
+                task.add_done_callback(call.capture_tasks.discard)
+            call.capture.queue.put_nowait(StreamInput("audio", pcm))
+            return True
+        except Exception:
+            await self._fail_call(call_id, "audio_input_failed")
+            return False
+
+    async def finish_utterance(self, call_id: str) -> None:
+        """Optional manual endpoint for a provider/bench; Silero normally commits audio."""
+        call = self._calls.get(call_id)
+        if call is None or call.capture is None or not call.capture.accepting:
+            return
+        try:
+            call.capture.queue.put_nowait(StreamInput("finish"))
+        except asyncio.QueueFull:
+            await self._fail_call(call_id, "audio_input_failed")
+
+    async def _capture(self, call: _Call, capture: _Capture) -> None:
+        async def emit(event: dict[str, Any]) -> None:
+            if not self._current(call) or call.capture is not capture or not capture.accepting:
+                return
+            if event.get("type") in ("utterance.final", "empty"):
+                capture.accepting = False
+            if event.get("type") == "utterance.final":
+                if isinstance(event.get("text"), str) and len(event["text"].strip()) > 10000:
+                    raise ValueError("STT final exceeds Agent input limit")
+                # Release the STT relay after final admission; Agent/TTS are a separate task.
+                await self.handle_transcript(call.session.call_id, event, wait_for_completion=False)
+            elif event.get("type") == "error":
+                raise RuntimeError("Streaming STT failed")
+
+        try:
+            async with asyncio.timeout(150):
+                await self.stt.run(capture.queue.get, emit)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if self._current(call) and call.capture is capture:
+                await self._fail_call(call.session.call_id, "stt_failed")
+        finally:
+            capture.accepting = False
+            if self._current(call) and call.capture is capture:
+                call.capture = None
+                if call.session.status == "transcribing":
+                    call.session.status = "active"
+
+    async def handle_transcript(
+        self, call_id: str, event: dict[str, Any], *, wait_for_completion: bool = True
+    ) -> bool:
+        """Normalized STT boundary, also used by the offline final-transcript bench."""
+        call = self._calls.get(call_id)
+        if (
+            call is None
+            or call.session.status not in ("active", "transcribing")
+            or event.get("type") != "utterance.final"
+        ):
+            return False
+        text = event.get("text")
+        if not isinstance(text, str) or not text.strip():
+            return False
+        text = text.strip()
+        if len(text) > 10000:
+            await self._fail_call(call_id, "transcript_invalid")
+            return False
+        item_id = event.get("item_id")
+        if isinstance(item_id, str):
+            if item_id in call.final_ids:
+                return False
+            if len(call.final_ids) >= 1000 or len(item_id) > 128:
+                await self._fail_call(call_id, "transcript_invalid")
+                return False
+            call.final_ids.add(item_id)
+        # Admission is synchronous before any await; competing finals are rejected, not queued.
+        call.session.status = "processing"
+        if call.capture is not None:
+            call.capture.accepting = False
+        language = event.get("language")
+        if language in ("ru", "kk", "mixed"):
+            call.session.language = language
+        latency = event.get("stt_after_commit_ms")
+        self._record(
+            call,
+            "transcript.final",
+            text=text,
+            language=language if language in ("ru", "kk", "mixed") else None,
+            latency={"stt": latency} if isinstance(latency, (int, float)) else None,
+        )
+        task = asyncio.create_task(self._turn(call, text))
+        call.turn_task = task
+
+        def clear_turn(done: asyncio.Task) -> None:
+            if call.turn_task is done:
+                call.turn_task = None
+
+        task.add_done_callback(clear_turn)
+        if not wait_for_completion:
+            return True
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            if self._current(call):
+                raise
+        return True
+
+    @staticmethod
+    def _reply_language(response: AgentResponse, session: PhoneSession) -> SpeechLanguage:
+        for context in (response.state, response.routing):
+            if isinstance(context, dict) and context.get("response_language") in ("ru", "kk"):
+                return context["response_language"]
+        # Adapter fallback only; no language classification or business routing.
+        return session.language if session.language in ("ru", "kk", "mixed") else "ru"
+
+    async def _turn(self, call: _Call, text: str) -> None:
+        try:
+            async with asyncio.timeout(self.turn_timeout_seconds):
+                response = await self.agent.respond(call.session.session_id, text)
+                if not self._current(call):
+                    return
+                call.session.conversation_status = response.conversation_status
+                try:
+                    for event in response_events(
+                        call.session.session_id, "phone", response.model_dump(mode="json")
+                    ):
+                        self.event_store.append(
+                            event.model_copy(update={"metadata": {"call_id": call.session.call_id}})
+                        )
+                except Exception:
+                    logger.warning("Phone response event recording failed")
+                call.session.status = "speaking"
+                speech = await self.tts.synthesize(
+                    response.response_text, self._reply_language(response, call.session)
+                )
+                if not self._current(call):
+                    return
+                await self.provider.send_audio(call.session.call_id, speech)
+                if not self._current(call):
+                    return
+                if response.conversation_status in ("handoff", "ended"):
+                    await self._terminate(call, response.conversation_status, "agent_status", True)
+                else:
+                    call.session.status = "active"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if self._current(call):
+                await self._fail_call(call.session.call_id, "phone_turn_failed")
+
+    async def _fail_call(self, call_id: str, code: str) -> None:
+        if call := self._calls.get(call_id):
+            call.session.error_code = code
+            await self._terminate(call, "error", code, True)
+
+    async def end_call(self, call_id: str, *, cancel: bool = False, hangup: bool = True) -> None:
+        if call := self._calls.get(call_id):
+            await self._terminate(
+                call, "cancelled" if cancel else "ended", "cancel" if cancel else "call_end", hangup
+            )
+
+    async def _terminate(self, call: _Call, status: PhoneStatus, reason: str, hangup: bool) -> None:
+        if not self._current(call):
+            return
+        # Invalidate BEFORE cancelling tasks or awaiting provider cleanup.
+        del self._calls[call.session.call_id]
+        self.registry.remove(call.session.call_id)
+        call.session.status = status
+        self._record(
+            call,
+            "conversation.ended",
+            conversation_status=call.session.conversation_status,
+            metadata={"reason": reason, "phone_status": status},
+        )
+        tasks = set(call.capture_tasks)
+        if call.turn_task is not None:
+            tasks.add(call.turn_task)
+        tasks.discard(asyncio.current_task())
+        for task in tasks:
+            task.cancel()
+        try:
+            if hangup:
+                async with asyncio.timeout(self.cleanup_timeout_seconds):
+                    await self.provider.hangup(call.session.call_id)
+        except Exception:
+            logger.warning("Phone hangup failed")
+        finally:
+            try:
+                async with asyncio.timeout(self.cleanup_timeout_seconds):
+                    await self.provider.close(call.session.call_id)
+            except Exception:
+                logger.warning("Phone provider cleanup failed")
+        if tasks:
+            # A broken dependency that suppresses cancellation cannot hold the registry open.
+            await asyncio.wait(tasks, timeout=self.cleanup_timeout_seconds)
+
+    async def shutdown(self) -> None:
+        await asyncio.gather(
+            *(self.end_call(call_id, cancel=True) for call_id in tuple(self._calls))
+        )

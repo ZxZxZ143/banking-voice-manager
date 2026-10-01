@@ -81,6 +81,9 @@ export class ConversationRuntime {
     private readonly options: ConversationRuntimeOptions = {},
   ) {
     this.channel = structuredClone(options.channel ?? { channel: 'web' });
+    if (this.channel.channel !== 'web' && this.channel.channel !== 'phone') {
+      throw new Error('Unsupported conversation channel.');
+    }
     this.eventStore = options.eventStore ?? new InMemoryEventStore();
     if (options.sessionId) this.snapshot = { ...this.snapshot, sessionId: options.sessionId };
   }
@@ -129,7 +132,8 @@ export class ConversationRuntime {
     };
     this.record('agent.response', { ...fields, text: response.response_text });
     // Record supplied selections in their original order; never select a route here.
-    const scenarios = Array.isArray(trace.scenarios) ? trace.scenarios : routing.selections;
+    const scenarios = Array.isArray(trace.scenarios)
+      ? trace.scenarios : routing.scenarios ?? routing.selections;
     if (Array.isArray(scenarios)) {
       for (const scenario of scenarios) {
         const selection = record(scenario);

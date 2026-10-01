@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { createConversationEvent } from '../src/events/ConversationEvent.ts';
 import { InMemoryEventStore } from '../src/events/EventStore.ts';
 import { ConversationRuntime } from '../src/runtime/ConversationRuntime.ts';
@@ -12,6 +13,15 @@ const event = (id, session_id = 'a', channel = 'web') => createConversationEvent
   { session_id, event_type: 'transcript.final', channel, text: 'Сәлем' },
   { id, timestamp: '2026-10-01T00:00:00.000Z' },
 );
+
+test('only web and phone are declared and accepted as channels', () => {
+  const source = readFileSync(new URL('../src/channels/channel.ts', import.meta.url), 'utf8');
+  const declared = source.match(/export type Channel = ([^;]+);/)[1]
+    .split('|').map(value => value.trim().replaceAll("'", ''));
+  assert.deepEqual(declared, ['web', 'phone']);
+  assert.throws(() => new ConversationRuntime(new MockAgentClient(), tts,
+    { channel: { channel: 'unsupported' } }), /Unsupported conversation channel/);
+});
 
 test('event factory supports minimal shape, explicit identity, and optional Agent data', () => {
   assert.deepEqual(event('1'), {
@@ -139,6 +149,7 @@ test('clarification and handoff reflect explicit Agent fields; terminal event pr
 test('missing, null, malformed, or partial optional Agent payloads do not crash recording', async () => {
   for (const payload of [{}, { routing: null, state: null, trace: null, risk: null },
     { routing: { selections: [{ scenario_id: 'SC02', confidence: 0.5 }] }, trace: {} },
+    { routing: { scenarios: [{ scenario_id: 'SC03', confidence: 0.6 }] } },
     { routing: 'partial', state: [], trace: { scenarios: 'partial', actions: null }, risk: { signals: [] } }]) {
     const response = { response_text: 'Ответ', conversation_status: 'active', ...payload };
     const runtime = new ConversationRuntime({ sendMessage: async () => response }, tts);

@@ -1,6 +1,6 @@
 import type { VoiceTranscript } from '../types/agent';
 
-/** Provider-neutral audio framing. A provider adapter owns decoding and STT/TTS. */
+/** TypeScript transport reference. Live phone execution belongs to backend/app/telephony. */
 export interface AudioChunk {
   data: Uint8Array;
   encoding: string;
@@ -24,9 +24,7 @@ export interface TelephonyProvider {
   hangup(callId: string): Promise<void>;
 }
 
-/** The future STT adapter delivers finals only to runtime.handleTranscript().
- * Bind runtime start/stop through VoiceInputController and output through TtsService.
- */
+/** Reference only; phone transcripts and STT/TTS are processed on the backend. */
 export interface PhoneTranscriptSource {
   onFinalTranscript(callId: string, handler: (transcript: VoiceTranscript) => void): () => void;
 }

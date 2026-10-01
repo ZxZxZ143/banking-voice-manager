@@ -1,5 +1,5 @@
-/** Add channel IDs here; channel identity never controls Agent business decisions. */
-export type Channel = 'web' | 'phone' | 'mobile';
+/** The two supported user channels; identity never controls Agent business decisions. */
+export type Channel = 'web' | 'phone';
 
 export interface ChannelContext {
   readonly channel: Channel;

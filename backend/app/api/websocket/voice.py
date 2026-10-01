@@ -1,138 +1,36 @@
 """Local test bench: browser PCM24 -> OpenAI, automatic commit via Silero."""
 
 import asyncio
-import base64
 import json
-from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from websockets.asyncio.client import connect
 
+from app.speech.audio import PCM_CHANNELS, PCM_SAMPLE_RATE
 from app.speech.stt.endpointing import SpeechEndDetector
+from app.speech.stt.streaming import StreamInput, relay_stream
+from app.speech.stt.streaming_provider import configure_transcription
 
 router = APIRouter()
 
 
 async def relay(websocket: WebSocket, upstream, detector: SpeechEndDetector):
-    committed_at = None
-    ended = asyncio.Event()
-    total_bytes = 0
-    start = perf_counter()
+    async def receive():
+        message = await websocket.receive()
+        if message["type"] == "websocket.disconnect":
+            return StreamInput("cancel")
+        if message.get("bytes") is not None:
+            return StreamInput("audio", message["bytes"])
+        raw = message.get("text", "")
+        if len(raw) > 256:
+            raise ValueError("Control message too large")
+        kind = json.loads(raw).get("type")
+        if kind not in ("finish", "cancel"):
+            raise ValueError("Unknown control message")
+        return StreamInput(kind)
 
-    async def commit():
-        nonlocal committed_at
-        if committed_at is not None:
-            return
-        if not detector.tracker.has_speech:
-            await websocket.send_json({"type": "empty", "message": "Речь не обнаружена."})
-            ended.set()
-            return
-        committed_at = perf_counter()
-        await websocket.send_json({"type": "committed"})
-        await upstream.send(json.dumps({"type": "input_audio_buffer.commit"}))
-
-    async def receive_audio():
-        nonlocal total_bytes
-        while not ended.is_set():
-            message = await websocket.receive()
-            if message["type"] == "websocket.disconnect":
-                ended.set()
-                return
-            pcm = message.get("bytes")
-            if pcm is not None:
-                if committed_at is not None:
-                    continue
-                if not pcm or len(pcm) > 4800 or len(pcm) % 2:
-                    raise ValueError("Invalid PCM frame")
-                total_bytes += len(pcm)
-                if total_bytes > 48000 * 120:
-                    raise ValueError("Audio limit exceeded")
-                await upstream.send(
-                    json.dumps(
-                        {
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(pcm).decode("ascii"),
-                        }
-                    )
-                )
-                finished, probability = await asyncio.to_thread(detector.feed, pcm)
-                await websocket.send_json(
-                    {
-                        "type": "activity",
-                        "speech": probability >= 0.5,
-                        "has_speech": detector.tracker.has_speech,
-                        "silence_ms": detector.tracker.silence_ms,
-                        "audio_ms": round(total_bytes / 48),
-                    }
-                )
-                if finished:
-                    await commit()
-                elif not detector.tracker.has_speech and total_bytes >= 48000 * 15:
-                    await commit()
-            elif message.get("text"):
-                if len(message["text"]) > 256:
-                    raise ValueError("Control message too large")
-                control = json.loads(message["text"])
-                if control.get("type") == "cancel":
-                    ended.set()
-                elif control.get("type") == "finish":
-                    await commit()
-                else:
-                    raise ValueError("Unknown control message")
-
-    async def receive_text():
-        async for raw in upstream:
-            event = json.loads(raw)
-            kind = event.get("type", "")
-            if kind == "error" or kind.endswith(".failed"):
-                raise RuntimeError("Provider error")
-            if kind.endswith("input_audio_transcription.delta"):
-                await websocket.send_json(
-                    {
-                        "type": "transcript.partial",
-                        "delta": event.get("delta", ""),
-                        "item_id": event.get("item_id"),
-                        "received_ms": round((perf_counter() - start) * 1000),
-                    }
-                )
-            elif kind.endswith("input_audio_transcription.completed"):
-                if committed_at is None:
-                    raise RuntimeError("Unexpected completion")
-                await websocket.send_json(
-                    {
-                        "type": "utterance.final",
-                        "text": event["transcript"],
-                        "item_id": event.get("item_id"),
-                        "language": None,
-                        "stt_after_commit_ms": round((perf_counter() - committed_at) * 1000),
-                        "endpoint_silence_ms": detector.tracker.silence_ms,
-                        "audio_ms": round(total_bytes / 48),
-                    }
-                )
-                ended.set()
-                return
-        if not ended.is_set():
-            raise RuntimeError("Provider disconnected")
-
-    async def commit_deadline():
-        while not ended.is_set():
-            await asyncio.sleep(0.2)
-            if committed_at is not None and perf_counter() - committed_at > 30:
-                raise TimeoutError("Final transcript timeout")
-
-    tasks = [
-        asyncio.create_task(fn())
-        for fn in (receive_audio, receive_text, commit_deadline, ended.wait)
-    ]
-    try:
-        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in done:
-            task.result()
-    finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+    await relay_stream(receive, websocket.send_json, upstream, detector)
 
 
 @router.websocket("/api/v1/voice")
@@ -170,8 +68,8 @@ async def voice(websocket: WebSocket) -> None:
             pause = config.get("pause_ms", 2500)
             if (
                 config.get("type") != "start"
-                or config.get("sample_rate") != 24000
-                or config.get("channels") != 1
+                or config.get("sample_rate") != PCM_SAMPLE_RATE
+                or config.get("channels") != PCM_CHANNELS
                 or type(pause) is not int
                 or not 500 <= pause <= 5000
             ):
@@ -186,38 +84,7 @@ async def voice(websocket: WebSocket) -> None:
                 close_timeout=3,
                 max_size=2_000_000,
             ) as upstream:
-                await upstream.send(
-                    json.dumps(
-                        {
-                            "type": "session.update",
-                            "session": {
-                                "type": "transcription",
-                                "audio": {
-                                    "input": {
-                                        "format": {"type": "audio/pcm", "rate": 24000},
-                                        "transcription": {
-                                            "model": "gpt-live-transcribe",
-                                            "languages": ["kk", "ru"],
-                                            "delay": "medium",
-                                            "prompt": (
-                                                "Insurance customer speech in Kazakh "
-                                                "and Russian, sometimes mixed."
-                                            ),
-                                        },
-                                        "turn_detection": None,
-                                    }
-                                },
-                            },
-                        }
-                    )
-                )
-                async with asyncio.timeout(20):
-                    while True:
-                        event = json.loads(await upstream.recv())
-                        if event.get("type") == "error":
-                            raise RuntimeError("Provider configuration error")
-                        if event.get("type") == "session.updated":
-                            break
+                await configure_transcription(upstream)
                 await websocket.send_json({"type": "ready", "pause_ms": pause})
                 await relay(websocket, upstream, detector)
     except WebSocketDisconnect:
