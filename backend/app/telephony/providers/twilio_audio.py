@@ -1,9 +1,8 @@
 """Real G.711 and rate conversion using PyAV's bundled FFmpeg libraries."""
 
-from io import BytesIO
-
 import av
 
+from app.speech.conversion import speech_to_pcm
 from app.speech.tts.base import SpeechResult
 
 MAX_MULAW_FRAME = 800  # 100 ms; Twilio normally sends 20 ms.
@@ -32,34 +31,12 @@ class MulawInput:
 
 def speech_to_mulaw(speech: SpeechResult) -> bytes:
     """Decode actual MP3/WAV, downmix, resample, encode raw headerless G.711."""
-    formats = {"audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav"}
-    if speech.content_type not in formats or len(speech.audio) > 25_000_000:
-        raise ValueError("Unsupported or oversized TTS audio")
-    resampler = av.AudioResampler(format="s16", layout="mono", rate=8000)
+    pcm = speech_to_pcm(speech, rate=8000, max_seconds=MAX_OUTPUT_SECONDS)
+    frame = av.AudioFrame(format="s16", layout="mono", samples=len(pcm) // 2)
+    frame.sample_rate = 8000
+    frame.planes[0].update(pcm)
     encoder = av.CodecContext.create("pcm_mulaw", "w")
     encoder.sample_rate = 8000
     encoder.layout = "mono"
     encoder.format = "s16"
-    output = bytearray()
-    samples = 0
-
-    def encode(frames):
-        nonlocal samples
-        for frame in frames:
-            samples += frame.samples
-            if samples > MAX_OUTPUT_SECONDS * 8000:
-                raise ValueError("TTS audio duration exceeds limit")
-            for packet in encoder.encode(frame):
-                output.extend(bytes(packet))
-
-    with av.open(BytesIO(speech.audio), format=formats[speech.content_type]) as container:
-        if len(container.streams.audio) != 1:
-            raise ValueError("Expected one audio stream")
-        for frame in container.decode(audio=0):
-            encode(resampler.resample(frame))
-        encode(resampler.resample(None))
-    for packet in encoder.encode(None):
-        output.extend(bytes(packet))
-    if not output:
-        raise ValueError("TTS produced no phone audio")
-    return bytes(output)
+    return b"".join(bytes(packet) for packet in encoder.encode(frame) + encoder.encode(None))

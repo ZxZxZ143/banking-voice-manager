@@ -63,3 +63,9 @@ multidict==6.9.1
 propcache==0.5.4
 twilio==9.11.2
 yarl==1.25.1
+
+# Vonage Voice-only SDK additions verified on macOS / Python 3.12.
+vonage-voice==1.5.1
+vonage-http-client==1.5.2
+vonage-utils==1.1.4
+vonage-jwt==1.1.5

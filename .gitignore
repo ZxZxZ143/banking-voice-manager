@@ -16,3 +16,8 @@ work/
 predictions.json
 predictions.report.txt
 predictions.details.json
+
+# Vonage application keys must never be committed.
+private.key
+*.key
+*.pem

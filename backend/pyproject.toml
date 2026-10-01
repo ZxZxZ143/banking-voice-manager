@@ -17,6 +17,9 @@ dependencies = [
     "websockets>=15,<17",
     "twilio>=9.11.2,<10",
     "av>=15,<17",
+    "vonage-voice>=1.5.1,<2",
+    "vonage-http-client>=1.5.2,<2",
+    "PyJWT[crypto]>=2.14,<3",
 ]
 
 [project.optional-dependencies]

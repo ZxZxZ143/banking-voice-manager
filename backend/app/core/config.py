@@ -33,4 +33,12 @@ class Settings(BaseSettings):
     public_base_url: str | None = None
     backend_tts_model: str | None = None
     backend_tts_voice: str | None = None
+    vonage_enabled: bool = False
+    vonage_application_id: str | None = None
+    vonage_private_key_path: Path | None = Field(default=None, repr=False)
+    vonage_api_key: str | None = None
+    vonage_api_secret: SecretStr | None = None  # Not required for Voice application JWT.
+    vonage_signature_secret: SecretStr | None = None
+    vonage_test_from_number: str = "123456789"
+    vonage_test_to_number: str | None = Field(default=None, repr=False)
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"
