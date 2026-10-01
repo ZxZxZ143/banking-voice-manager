@@ -98,3 +98,12 @@ Browser file input is limited to 10 MB / 110 seconds. Slow upload fails explicit
 References:
 - https://developers.openai.com/api/docs/guides/realtime-transcription
 - https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime
+
+## Shared phone STT boundary
+
+The transport-neutral relay and provider configuration now live in
+`backend/app/speech/stt/streaming.py` and `streaming_provider.py`. Browser WS behavior and
+limits are preserved. Backend phone audio uses this same relay and SpeechEndDetector after
+normalization into the canonical mono PCM16LE/24kHz framing in `speech/audio.py`. Phone
+finals go directly to the existing MessageService; partials never invoke the Agent.
+See [PHONE_RUNTIME.md](PHONE_RUNTIME.md). No second STT engine or live phone provider exists.

@@ -16,9 +16,13 @@ Business specification: `data/starter_kit/README.ru.md`.
   clarification questions/options, basic grounded read-only replies, evaluation CLI and a
   separate opt-in `/dev` manual stand. The integrated production frontend adds same-session
   runtime, microphone/file streaming STT, browser TTS and supervisor traces.
-- **Implemented channel/data foundation:** runtime-local web/phone/mobile identity, seven
+- **Implemented channel/data foundation:** runtime-local web/phone identity, seven
   lifecycle event types, injectable bounded in-memory EventStore, optional opaque Agent risk
-  capture, and provider-neutral phone/audio/final-transcript interfaces. Phone/mobile adapters,
+  capture, and typed transport references. Only web and phone are supported.
+- **Implemented backend phone foundation:** active-call registry (one call/one Agent UUID),
+  half-duplex PhoneRuntime using the same MessageService, shared streaming STT/endpointing,
+  PCM normalization seam, existing backend TTS protocol, server events/store and offline bench.
+  No provider or phone endpoint is activated at startup. Real telephony, codec conversion,
   persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
   transport with fixtures (one request even on provider failure), and official evaluator
@@ -48,12 +52,14 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
 | `backend/app/response/` | Slot/system replies and SC17/25/31/33/34 grounded read-only slice |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
+| `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime and explicit mock provider |
+| `backend/app/events/` | Canonical server event envelope and bounded in-memory EventStore; no analytics API |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
 | `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
-| `frontend/src/channels/` | ChannelContext and provider-neutral telephony/audio/final-transcript contracts; no live phone adapter |
+| `frontend/src/channels/` | Web/phone ChannelContext; TS telephony contracts are references only, phone execution is backend-owned |
 | `frontend/src/events/` | ConversationEvent factory, EventStore contract and bounded in-memory implementation |
 | `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
@@ -63,7 +69,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
-| `docs/CHANNEL_EVENTS.md` | Event schema/types, recording lifecycle, store API and future phone boundary |
+| `docs/CHANNEL_EVENTS.md` | Frontend event schema/types, recording lifecycle and store API |
+| `docs/PHONE_RUNTIME.md` | Backend phone flow, provider contract, bounds, audio/TTS/event seams and offline bench |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
 | `docs/ROUTER_EVALUATION.md` | Live measurements, failures, general prompt changes and remaining errors |
 | `docs/MVP_VALIDATION.md` | Integrated stand verification, startup and remaining demo limits |
@@ -109,10 +116,19 @@ Application traces expose concise reasons and measured latency, never hidden cha
 The runtime also records session start, accepted final input, successful Agent responses,
 supplied scenario selections, explicit clarification/handoff, and closure into its injectable
 EventStore. Default store keeps the last 5,000 events in append order with defensive copies.
-Channel defaults to web; optional phone session ID/channel metadata stay outside Agent API.
+Channel defaults to web; channel metadata stays outside Agent API.
 Risk/routing/state/trace may be absent or partial; no frontend business scoring occurs.
 Recording failures do not break turns and async writes are not awaited. Local stop/reset/dispose
 closure reasons preserve the last backend status. See `docs/CHANNEL_EVENTS.md` for semantics.
+
+Implemented backend service flow: provider events → phone session → PCM normalization →
+shared streaming STT/Silero → final admission → the existing MessageService → backend TTS →
+provider playback acknowledgement → listen again. Phone calls never use React/browser TTS.
+Closure invalidates work before cancellation; pending/late results cannot reopen a call.
+Server events carry phone channel/call/session identity and preserve supplied Agent evidence.
+The store is in-memory only; shared web-event ingestion and Analytics/Event API are future work.
+Only web and phone exist. Browser TTS and Phone TTS are different output adapters for the same
+Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI change here.
 
 ## API and domain contracts
 
@@ -164,6 +180,17 @@ closure reasons preserve the last backend status. See `docs/CHANNEL_EVENTS.md` f
   not authentication. Unsupported business actions stay unavailable and never report success.
 - Engine inspection and awaiting_confirmation do not authorize execution. Irreversible
   action registration/execution is blocked. No supervisor endpoint/authorization exists yet.
+
+- `telephony/base.py`: typed start/audio/end/provider-error events; TelephonyProvider requires
+  playback-completing send_audio, hangup and idempotent resource close. Input normalization
+  supports only PCM16LE mono/24kHz frames ≤4,800 bytes; other codecs/rates require a real adapter.
+- `telephony/runtime.py`: dependency injection only, no new HTTP API or startup activation.
+  Same MessageService.process/session ID per call; partials never route. Backend TTS uses
+  existing SpeechResult and the 4,000-character SpeechRequest limit. Defaults: 180s turn timeout,
+  1s cleanup waits, 16-frame queues. Registry: 100 active/1,000 total IDs; refuses new calls at
+  the total budget rather than allowing closed-call replay. Use a single runtime/process.
+- `events/models.py`, `events/store.py`: same seven event types as frontend, opaque optional
+  JSON Agent values, append/session/filter reads and defensive copies; last 5,000 events.
 
 ## Data, state and evaluation
 
@@ -232,6 +259,7 @@ PowerShell from repository root:
 python -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
+./.venv/Scripts/python.exe scripts/smoke_phone_runtime.py
 ./.venv/Scripts/python.exe -m pytest backend/tests -q
 ./.venv/Scripts/ruff.exe check backend/app backend/tests
 ./.venv/Scripts/ruff.exe format --check backend/app backend/tests
@@ -264,6 +292,10 @@ which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
 and STT timing stay on the runtime side; only session_id/text cross the Core API boundary.
 `/dev` remains an optional separate text debugger, not the full voice stand.
 
-Next: resolve measured routing errors, improve complete RU/KK business wording and actual
+Channels/data next: implement one authenticated real-provider adapter against `docs/PHONE_RUNTIME.md`,
+including actual codec conversion and playback acknowledgement. No provider SDK, shared event API
+or real transfer exists yet. Offline mock flow: `python scripts/smoke_phone_runtime.py`.
+
+Agent workstream next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.
 No DB or extra agent was added; irreversible execution remains blocked.

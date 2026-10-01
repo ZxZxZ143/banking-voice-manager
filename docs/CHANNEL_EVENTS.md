@@ -4,15 +4,14 @@ Implemented in TypeScript alongside the existing frontend runtime. The current S
 Insurance demo and Agent Core are unchanged; finance intelligence is a separate workstream.
 
 ```text
-Channel (web today / phone adapter later)
+Web channel (browser runtime)
   → ConversationRuntime → AgentClient → POST /api/message → Agent Core
           ↓                    ↑ response
     ConversationEvent → EventStore
 ```
 
 Agent Core remains channel-agnostic: only `{session_id, text}` crosses `/api/message`.
-Channel identity is `web | phone | mobile` in `frontend/src/channels/channel.ts`; mobile is
-reserved, with no integration. Each runtime has a fixed channel context (web by default).
+Channel identity is exactly `web | phone` in `frontend/src/channels/channel.ts`. Each runtime has a fixed channel context (web by default).
 Channel metadata is copied into `event.metadata.channel_metadata` and must use synthetic,
 non-secret correlation data. It must not contain credentials or real customer data.
 
@@ -46,7 +45,7 @@ The seven event types are:
 - `agent.response`: after a current-generation successful response, before TTS. Keeps text
   and Agent routing/state/trace/risk unchanged; HTTP errors never produce a fabricated reply.
 - `scenario.selected`: one per supplied trace scenario, in source order; falls back to
-  `routing.selections` only when trace scenarios are absent. This records Agent selections,
+  `routing.scenarios` or `routing.selections` only when trace scenarios are absent. This records Agent selections,
   including uncertain/system selections, and does not assert policy acceptance/execution.
 - `clarification.requested`: explicit `trace.clarification === true` or nonblank
   `routing.clarification_question`; awaiting-user status alone does not imply clarification.
@@ -90,35 +89,19 @@ also copies data before dispatch so a sink cannot mutate Agent state. Default fa
 diagnostics are a static warning without payloads; optional `onEventError` receives the
 cause, and its failures are isolated too. A failed event is not retried in this foundation.
 
-## Future phone adapter
+## Backend phone runtime
 
-`frontend/src/channels/TelephonyProvider.ts` defines provider-neutral interfaces:
+Phone execution lives entirely in `backend/app/telephony/`, reusing the existing backend
+MessageService and server STT/TTS protocols. It does not instantiate a browser runtime or
+route phone audio through React. The old TypeScript telephony interfaces remain transport
+references only; the backend contracts are authoritative for phone integration.
+See [PHONE_RUNTIME.md](PHONE_RUNTIME.md) for session identity/lifecycle, canonical PCM,
+normalization, server events, test bench and the real-provider integration checklist.
 
-- `PhoneCall`: `callId`, `sessionId`, literal `channel: 'phone'`, optional metadata.
-- `AudioChunk`: bytes, encoding, sample rate, channel count; no provider framing assumption.
-- `TelephonyProvider`: incoming-call subscription with unsubscribe, incoming audio async
-  stream, outgoing audio async stream, and hangup.
-- `PhoneTranscriptSource`: subscription to final, normalized `VoiceTranscript` values.
-
-A future provider adapter owns audio framing, STT/TTS, stream cancellation and call
-lifecycle. It creates one runtime per call, using `options.sessionId = call.sessionId`
-(a valid `/api/message` correlation ID) and a phone channel context. It binds capture through
-the existing `VoiceInputController`, final STT through `handleTranscript`, and outgoing
-speech through an injected `TtsService`. Hangup uses local `endConversation()`/`dispose()`
-and the provider's `hangup()`; the provider owns that glue. These dependency boundaries
-allow a future adapter without changing Runtime or Agent Core. This contract is a skeleton,
-not a live phone integration; Twilio/Telnyx/SIP choice and SDKs are intentionally deferred.
-
-```ts
-const store = new InMemoryEventStore();
-const runtime = new ConversationRuntime(agentClient, phoneTts, {
-  sessionId: call.sessionId,
-  channel: { channel: 'phone', metadata: { call_id: call.callId } },
-  eventStore: store,
-});
-// Bind VoiceInputController and final transcript subscription, then start the runtime.
-const events = await store.getBySession(call.sessionId);
-```
+Browser TTS and Phone TTS are different output adapters for the same Agent response.
+Persistent storage and Analytics/Event API remain deferred; both event envelopes have the
+same semantics for future ingestion. All new Veyra frontend UI must use shadcn/ui as its
+primary design/component system. No UI redesign is included here.
 
 ## Verification
 
