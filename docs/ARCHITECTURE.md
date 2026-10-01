@@ -112,6 +112,11 @@ borrowed names/greetings in longer Russian sentences and leaves intent routing u
 
 ## Parallel ownership
 
+The channel/event foundation is documented in [CHANNEL_EVENTS.md](CHANNEL_EVENTS.md):
+Channel → ConversationRuntime → AgentClient, with lifecycle ConversationEvents recorded
+in a bounded in-memory EventStore. Agent Core remains channel-agnostic. Provider-specific
+telephony, persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
+
 | Workstream | Primary files | Shared boundary to coordinate |
 |---|---|---|
 | Router v1 / evaluation | `backend/app/agent/`, `backend/app/evaluation/` | `RouterDecision`, catalog format, dialog input, prediction format |

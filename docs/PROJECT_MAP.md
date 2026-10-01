@@ -16,6 +16,10 @@ Business specification: `data/starter_kit/README.ru.md`.
   clarification questions/options, basic grounded read-only replies, evaluation CLI and a
   separate opt-in `/dev` manual stand. The integrated production frontend adds same-session
   runtime, microphone/file streaming STT, browser TTS and supervisor traces.
+- **Implemented channel/data foundation:** runtime-local web/phone/mobile identity, seven
+  lifecycle event types, injectable bounded in-memory EventStore, optional opaque Agent risk
+  capture, and provider-neutral phone/audio/final-transcript interfaces. Phone/mobile adapters,
+  persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
   transport with fixtures (one request even on provider failure), and official evaluator
   integration. Live 104-case before/after measurements are recorded in `ROUTER_EVALUATION.md`;
@@ -49,6 +53,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
 | `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
+| `frontend/src/channels/` | ChannelContext and provider-neutral telephony/audio/final-transcript contracts; no live phone adapter |
+| `frontend/src/events/` | ConversationEvent factory, EventStore contract and bounded in-memory implementation |
 | `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
 | `frontend/src/components/voice/VoiceControls.tsx`, `voiceRuntimeBridge.ts` | Streaming mic/file capture UI and final-transcript bridge to runtime |
@@ -57,6 +63,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
+| `docs/CHANNEL_EVENTS.md` | Event schema/types, recording lifecycle, store API and future phone boundary |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
 | `docs/ROUTER_EVALUATION.md` | Live measurements, failures, general prompt changes and remaining errors |
 | `docs/MVP_VALIDATION.md` | Integrated stand verification, startup and remaining demo limits |
@@ -98,6 +105,14 @@ button does not overwrite backend conversation_status or supervisor trace with a
 The end-to-end path is browser → STT → Router Agent ↔ dialog state → policy → bounded
 read-only tools ↔ knowledge/mock backend → response → browser TTS → listen again.
 Application traces expose concise reasons and measured latency, never hidden chain-of-thought.
+
+The runtime also records session start, accepted final input, successful Agent responses,
+supplied scenario selections, explicit clarification/handoff, and closure into its injectable
+EventStore. Default store keeps the last 5,000 events in append order with defensive copies.
+Channel defaults to web; optional phone session ID/channel metadata stay outside Agent API.
+Risk/routing/state/trace may be absent or partial; no frontend business scoring occurs.
+Recording failures do not break turns and async writes are not awaited. Local stop/reset/dispose
+closure reasons preserve the last backend status. See `docs/CHANNEL_EVENTS.md` for semantics.
 
 ## API and domain contracts
 
@@ -231,7 +246,7 @@ Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run d
 Keep `VITE_USE_MOCK_AGENT=false` for the full live stand; true is for isolated dev fixtures only.
 Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
 `npm run test:tts`, `npm run test:trace`, `npm run test:integration`,
-`npm run test:voice-bridge`. Browser speech needs a supported browser and an installed voice;
+`npm run test:voice-bridge`, `npm run test:events`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.

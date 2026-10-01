@@ -3,6 +3,19 @@ import type {
 } from '../types/agent';
 import type { AgentClient } from '../services/agentClient';
 import type { TtsService } from '../services/tts';
+import type { ChannelContext } from '../channels/channel';
+import { createConversationEvent } from '../events/ConversationEvent.ts';
+import type { ConversationEvent, ConversationEventType } from '../events/ConversationEvent';
+import { InMemoryEventStore } from '../events/EventStore.ts';
+import type { EventStore } from '../events/EventStore';
+
+export interface ConversationRuntimeOptions {
+  channel?: ChannelContext;
+  /** A phone adapter can bind its incoming call correlation ID before starting. */
+  sessionId?: string;
+  eventStore?: EventStore;
+  onEventError?: (cause: unknown) => void;
+}
 
 export interface VoiceInputController {
   startListening(): Promise<void> | void;
@@ -58,11 +71,88 @@ export class ConversationRuntime {
   private disposed = false;
   private voiceInput: VoiceInputController | null = null;
   private voiceOperation: Promise<void> = Promise.resolve();
+  private sessionOpen = false;
+  readonly channel: ChannelContext;
+  readonly eventStore: EventStore;
 
   constructor(
     private readonly agentClient: AgentClient,
     private readonly tts: TtsService,
-  ) {}
+    private readonly options: ConversationRuntimeOptions = {},
+  ) {
+    this.channel = structuredClone(options.channel ?? { channel: 'web' });
+    this.eventStore = options.eventStore ?? new InMemoryEventStore();
+    if (options.sessionId) this.snapshot = { ...this.snapshot, sessionId: options.sessionId };
+  }
+
+  private record(eventType: ConversationEventType, fields: Partial<ConversationEvent> = {}): void {
+    if (!this.snapshot.sessionId) return;
+    const report = (cause: unknown) => {
+      try {
+        if (this.options.onEventError) this.options.onEventError(cause);
+        else console.warn('Conversation event recording failed.');
+      } catch { /* Diagnostics must not break the conversation either. */ }
+    };
+    try {
+      const event = createConversationEvent({
+        ...fields,
+        session_id: this.snapshot.sessionId,
+        event_type: eventType,
+        channel: this.channel.channel,
+        metadata: { ...fields.metadata, channel_metadata: this.channel.metadata },
+      });
+      // Do not await persistence or let it add latency/failure to a user turn.
+      void Promise.resolve(this.eventStore.append(structuredClone(event))).catch(report);
+    } catch (cause) { report(cause); }
+  }
+
+  private closeSession(reason: 'local_stop' | 'reset' | 'dispose' | 'agent_status'): void {
+    if (!this.sessionOpen) return;
+    this.sessionOpen = false;
+    this.record('conversation.ended', {
+      conversation_status: this.snapshot.conversationStatus ?? undefined,
+      metadata: { reason },
+    });
+  }
+
+  private recordResponse(response: AgentMessageResponse): void {
+    const record = (value: unknown): Record<string, unknown> =>
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? value as Record<string, unknown> : {};
+    const trace = record(response.trace);
+    const routing = record(response.routing);
+    const fields = {
+      conversation_status: response.conversation_status,
+      risk: response.risk, routing: response.routing, state: response.state, trace: response.trace,
+      language: typeof trace.language === 'string' ? trace.language : undefined,
+      action: trace.actions, latency: trace.latency_ms,
+    };
+    this.record('agent.response', { ...fields, text: response.response_text });
+    // Record supplied selections in their original order; never select a route here.
+    const scenarios = Array.isArray(trace.scenarios) ? trace.scenarios : routing.selections;
+    if (Array.isArray(scenarios)) {
+      for (const scenario of scenarios) {
+        const selection = record(scenario);
+        this.record('scenario.selected', {
+          ...fields, scenario,
+          confidence: typeof selection.confidence === 'number' ? selection.confidence : undefined,
+        });
+      }
+    }
+    if (trace.clarification === true
+      || (typeof routing.clarification_question === 'string' && routing.clarification_question.trim())) {
+      this.record('clarification.requested', {
+        ...fields,
+        clarification: typeof routing.clarification_question === 'string' ? routing.clarification_question : true,
+      });
+    }
+    if (trace.handoff === true || response.conversation_status === 'handoff') {
+      this.record('handoff.requested', { ...fields, handoff: true });
+    }
+    if (response.conversation_status === 'ended' || response.conversation_status === 'handoff') {
+      this.closeSession('agent_status');
+    }
+  }
 
   getSnapshot = (): ConversationSnapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
@@ -121,6 +211,10 @@ export class ConversationRuntime {
       runtimeStatus: 'listening',
       error: null,
     });
+    if (!this.sessionOpen) {
+      this.sessionOpen = true;
+      this.record('session.started');
+    }
     try {
       await this.runVoiceOperation('startListening');
     } catch (cause) {
@@ -130,6 +224,7 @@ export class ConversationRuntime {
 
   async endConversation(): Promise<void> {
     if (this.disposed) return;
+    this.closeSession('local_stop');
     this.generation += 1;
     const generation = this.generation;
     // Stopping local capture/playback does not close the Agent Core session.
@@ -144,6 +239,7 @@ export class ConversationRuntime {
 
   async resetConversation(): Promise<void> {
     if (this.disposed) return;
+    this.closeSession('reset');
     this.generation += 1;
     const generation = this.generation;
     this.update({ ...initialSnapshot(), voiceInputEnabled: this.snapshot.voiceInputEnabled, sessionId: crypto.randomUUID() });
@@ -170,6 +266,10 @@ export class ConversationRuntime {
     if (!text || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
 
     const generation = this.generation;
+    this.record('transcript.final', {
+      text, language: transcript.language,
+      latency: transcript.stt_ms === undefined ? undefined : { stt: transcript.stt_ms },
+    });
     this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null });
     try {
       await this.runVoiceOperation('stopListening');
@@ -191,6 +291,7 @@ export class ConversationRuntime {
         conversationStatus: response.conversation_status,
         runtimeStatus: 'speaking',
       });
+      this.recordResponse(response);
       const ttsResult = await this.tts.speak(response.response_text, replyLanguage(response, transcript));
       if (!this.isCurrent(generation)) return;
       this.update({ ttsFirstAudioMs: ttsResult.firstAudioMs ?? null });
@@ -207,6 +308,7 @@ export class ConversationRuntime {
 
   dispose(): void {
     if (this.disposed) return;
+    this.closeSession('dispose');
     this.generation += 1;
     this.disposed = true;
     this.listeners.clear();

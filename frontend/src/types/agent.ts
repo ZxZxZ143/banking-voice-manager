@@ -20,7 +20,9 @@ export interface AgentMessageRequest {
 }
 
 export interface AgentMessageResponse {
+  session_id?: string;
   response_text: string;
+  risk?: unknown;
   routing?: unknown;
   state?: unknown;
   trace?: unknown;
