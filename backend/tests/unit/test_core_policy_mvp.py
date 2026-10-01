@@ -126,7 +126,16 @@ def test_handoff_response_is_truthful_about_simulated_transfer(kit, language):
     )
     policy = DecisionPolicy(catalog).decide(decision(("SC37", 0.99)), state)
     reply = RoutingReplyGenerator(catalog, kit.slots).generate_result(state, policy)
-    assert ("не подключён" if language == "ru" else "іске қосылмаған") in reply.text
+    assert (
+        "передаю диалог оператору" if language == "ru" else "операторға тапсырамын"
+    ) in reply.text
+    assert (
+        reply.text
+        == {
+            "ru": "Конечно, передаю диалог оператору.",
+            "kk": "Әрине, диалогты операторға тапсырамын.",
+        }[language]
+    )
     assert reply.actions == [] and reply.completed is False
 
 

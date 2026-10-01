@@ -97,8 +97,35 @@ class MessageService:
             if previous.conversation_status in ("ended", "handoff"):
                 raise SessionClosedError("Session is closed; use a new session_id")
             router_started = perf_counter()
+            routing_error = None
             # Snapshot isolation: a failed/misbehaving router cannot mutate stored state.
-            decision = await self.router.route(text, previous.model_copy(deep=True))
+            try:
+                decision = await self.router.route(text, previous.model_copy(deep=True))
+            except RouterOutputError as exc:
+                # Do not repair, execute or invent a rejected business decision. The
+                # application records a safe clarification outcome; repeated failures
+                # follow the same bounded handoff policy as unresolved uncertainty.
+                routing_error = exc.validation_reason
+                language = previous.language or "ru"
+                decision = RouterDecision(
+                    language=language,
+                    response_language=previous.response_language,
+                    scenarios=[
+                        dict(
+                            scenario_id="SYS_UNCLEAR",
+                            confidence=0,
+                            reason="Invalid routing output; clarification required",
+                        )
+                    ],
+                    segments=[
+                        dict(
+                            scenario_id="SYS_UNCLEAR",
+                            confidence=0,
+                            text=text,
+                            reason="Invalid routing output; clarification required",
+                        )
+                    ],
+                )
             # The current request language wins over a stale conversation preference.
             # Do not reuse a clarification generated in the wrong reply language.
             reply_language = reply_language_for_turn(text, decision)
@@ -121,6 +148,8 @@ class MessageService:
             policy_ms = (perf_counter() - policy_started) * 1000
             response_started = perf_counter()
             reply = self.replies.generate_result(state, policy, decision)
+            if reply.handoff:
+                state.conversation_status = "handoff"
             response = reply.text
             completed_scenario = state.active_scenario if reply.completed else None
             if reply.completed:
@@ -140,7 +169,12 @@ class MessageService:
                 language=decision.language,
                 scenarios=decision.scenarios,
                 alternatives=decision.alternatives,
-                reason=policy.reason,
+                reason=(
+                    f"Routing output rejected ({routing_error}); {policy.reason}"
+                    if routing_error
+                    else policy.reason
+                ),
+                routing_error=routing_error,
                 slots=decision.slots,
                 actions=reply.actions,
                 source_keys=reply.source_keys,
@@ -149,6 +183,8 @@ class MessageService:
                 clarification=policy.outcome == "clarify",
                 active_scenario=state.active_scenario,
                 pending_scenarios=state.pending_scenarios,
+                scenario_stack=state.scenario_stack,
+                scenario_mode=state.scenario_mode,
                 conversation_status=state.conversation_status,
                 handoff=state.conversation_status == "handoff",
                 latency_ms=LatencyRecord(
@@ -230,7 +266,27 @@ class MessageService:
                 if item != selected
             )
         )
+        if previous.active_scenario != selected:
+            if previous.active_scenario:
+                state.scenario_slots[previous.active_scenario] = dict(previous.slots)
+            # Personal identifiers can be reused; scenario-specific parameters cannot
+            # silently leak from a previous trip/quote into a new independent request.
+            shared = {
+                key: value
+                for key, value in previous.slots.items()
+                if key in {"phone", "iin", "policy_number", "claim_number"}
+            }
+            state.slots = {**state.scenario_slots.get(selected, {}), **shared}
         self._merge_slots(state, decision)
+        # Keep slots supplied for independently requested deferred scenarios.
+        for scenario_id in policy.scenario_ids[1:]:
+            scenario = self.replies.catalog.get_by_id(scenario_id)
+            if scenario:
+                allowed = {*scenario.slots.required, *scenario.slots.optional}
+                state.scenario_slots[scenario_id] = {
+                    **state.scenario_slots.get(scenario_id, {}),
+                    **{key: value for key, value in decision.slots.items() if key in allowed},
+                }
         state.conversation_status = "awaiting_user"
         return state
 
@@ -249,6 +305,7 @@ class MessageService:
                 state.slots.pop(name, None)
             if changed:
                 state.client_id = None
+                state.scenario_slots = {}
                 for name in ("policy_number", "claim_number"):
                     if name not in incoming:
                         state.slots.pop(name, None)
@@ -258,6 +315,7 @@ class MessageService:
     def _finish_scenario(state: DialogState, current_requests: list[str]) -> None:
         """Complete a read-only answer, not the conversation; resume deferred work."""
         finished = state.active_scenario
+        state.scenario_slots.pop(finished, None)
         state.scenario_stack = [value for value in state.scenario_stack if value != finished]
         state.pending_scenarios = [value for value in state.pending_scenarios if value != finished]
         next_requested = next(
@@ -277,4 +335,19 @@ class MessageService:
         state.pending_scenarios = [
             value for value in state.pending_scenarios if value != state.active_scenario
         ]
+        if state.active_scenario:
+            state.slots = {
+                **state.scenario_slots.get(state.active_scenario, {}),
+                **{
+                    key: value
+                    for key, value in state.slots.items()
+                    if key in {"phone", "iin", "policy_number", "claim_number"}
+                },
+            }
+        else:
+            state.slots = {
+                key: value
+                for key, value in state.slots.items()
+                if key in {"phone", "iin", "policy_number", "claim_number"}
+            }
         state.conversation_status = "awaiting_user" if state.active_scenario else "active"

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.agent.errors import RouterOutputError, RouterProviderError
+from app.agent.errors import RouterProviderError
 from app.agent.schemas import RouterDecision, ScenarioScore, ScenarioSelection
 from app.core.config import Settings
 from app.dialog.models import DialogState
@@ -320,7 +320,6 @@ def test_message_missing_credentials_returns_unavailable_without_state_or_trace(
     [
         (RouterProviderError(), 502),
         (RouterProviderError(timeout=True), 504),
-        (RouterOutputError(), 502),
     ],
 )
 def test_message_failed_router_does_not_commit_mutations_or_expose_provider_errors(error, status):

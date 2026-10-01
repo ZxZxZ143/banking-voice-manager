@@ -85,11 +85,13 @@ export class BrowserTtsService implements TtsService {
       let utterance: SpeechSynthesisUtterance | null = null;
       let firstAudioMs: number | undefined;
       let cancelWait: (() => void) | null = null;
+      let playbackTimer: ReturnType<typeof setTimeout> | undefined;
       let settled = false;
 
       const finish = (error?: Error) => {
         if (settled) return;
         settled = true;
+        if (playbackTimer !== undefined) clearTimeout(playbackTimer);
         cancelWait?.();
         if (utterance) {
           utterance.onstart = null;
@@ -141,6 +143,12 @@ export class BrowserTtsService implements TtsService {
           utterance.onerror = (event) => {
             finish(new Error(`Speech playback failed: ${event.error}.`));
           };
+          // Some browser engines never emit onend/onerror. Bound that wait so
+          // a successful terminal response cannot leave the UI in speaking.
+          playbackTimer = setTimeout(() => {
+            finish(new Error('Speech playback timed out.'));
+            try { synthesis.cancel(); } catch { /* Playback has already settled. */ }
+          }, Math.min(180_000, Math.max(15_000, text.length * 120 + 5_000)));
           synthesis.speak(utterance);
         } catch (cause) {
           finish(cause instanceof Error ? cause : new Error(String(cause)));

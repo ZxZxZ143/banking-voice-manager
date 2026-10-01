@@ -31,6 +31,7 @@ class TraceRecord(Contract):
     scenarios: list[ScenarioSelection] = Field(default_factory=list)
     alternatives: list[ScenarioScore] = Field(default_factory=list)
     reason: str = Field(default="", max_length=500)
+    routing_error: str | None = None
     slots: Slots = Field(default_factory=dict)
     actions: list[str] = Field(default_factory=list)
     source_keys: list[str] = Field(default_factory=list)
@@ -39,6 +40,8 @@ class TraceRecord(Contract):
     clarification: bool = False
     active_scenario: str | None = None
     pending_scenarios: list[str] = Field(default_factory=list)
+    scenario_stack: list[str] = Field(default_factory=list)
+    scenario_mode: str = "insurance_manager"
     conversation_status: ConversationStatus = "active"
     handoff: bool = False
     latency_ms: LatencyRecord = Field(default_factory=LatencyRecord)

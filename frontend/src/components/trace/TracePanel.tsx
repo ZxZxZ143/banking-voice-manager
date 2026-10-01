@@ -30,6 +30,7 @@ export function TracePanel({ view }: { view: TraceViewModel }) {
           {view.turn !== null && <p className="trace-turn">Ход {view.turn}</p>}
           <div className="trace-summary">
             {view.language && <p><span className="field-label">Язык</span><strong>{view.language}</strong></p>}
+            {view.scenarioMode && <p><span className="field-label">Режим</span><strong>{view.scenarioMode}</strong></p>}
             {view.conversationStatus && <p><span className="field-label">Диалог</span><strong>{view.conversationStatus}</strong></p>}
           </div>
           {view.transcript && <section className="trace-section"><h3>Транскрипт</h3><p>{view.transcript}</p></section>}

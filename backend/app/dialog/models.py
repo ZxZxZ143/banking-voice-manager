@@ -15,6 +15,7 @@ ConversationStatus = Literal["active", "awaiting_user", "awaiting_confirmation",
 
 class DialogueState(Contract):
     session_id: str = Field(min_length=1, max_length=128)
+    scenario_mode: str = "insurance_manager"
     language: Language | None = None
     response_language: Literal["ru", "kk"] = "ru"
     client_id: str | None = None
@@ -22,6 +23,7 @@ class DialogueState(Contract):
     scenario_stack: list[str] = Field(default_factory=list)
     pending_scenarios: list[str] = Field(default_factory=list)
     slots: Slots = Field(default_factory=dict)
+    scenario_slots: dict[str, Slots] = Field(default_factory=dict)
     awaiting_confirmation: bool = False
     turn_number: int = Field(default=0, ge=0)
     consecutive_low_confidence: int = Field(default=0, ge=0)

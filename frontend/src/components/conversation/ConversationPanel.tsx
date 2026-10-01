@@ -13,12 +13,12 @@ interface Props {
 
 const runtimeLabels: Record<RuntimeStatus, string> = {
   idle: 'Готов к началу', listening: 'Слушаем', processing: 'Обрабатываем',
-  speaking: 'Ассистент говорит', handoff: 'Нужен оператор', ended: 'Завершён', error: 'Ошибка',
+  speaking: 'Ассистент говорит', handoff: 'Передаём диалог оператору…', ended: 'Завершён', error: 'Ошибка',
 };
 
 const conversationLabels: Record<ConversationStatus, string> = {
   active: 'Активен', awaiting_user: 'Ожидаем ответ клиента',
-  awaiting_confirmation: 'Ожидаем подтверждение', handoff: 'Нужен оператор', ended: 'Завершён',
+  awaiting_confirmation: 'Ожидаем подтверждение', handoff: 'Передача оператору', ended: 'Завершён',
 };
 
 export function ConversationPanel({ runtime, snapshot, view }: Props) {
@@ -85,7 +85,8 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
         </div>
       )}
       {snapshot.conversationStatus === 'handoff' && (
-        <div className="conversation-notice handoff-notice"><strong>Нужна помощь оператора</strong>
+        <div className="conversation-notice handoff-notice"><strong>Передаём диалог оператору…</strong>
+          <p>Автоматический разговор завершён. История сохранена на экране.</p>
           {view.handoff?.queue && <p>Очередь: {view.handoff.queue}</p>}
         </div>
       )}

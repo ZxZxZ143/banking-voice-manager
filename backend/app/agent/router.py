@@ -70,6 +70,7 @@ class RouterAgent:
 
         agent = build_router_agent(self.catalog, model.strip(), slots=self.slots)
         agent.model_settings = ModelSettings(
+            temperature=self.settings.router_temperature,
             max_tokens=self.settings.router_max_output_tokens,
             store=False,
             retry=ModelRetrySettings(max_retries=0),

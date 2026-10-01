@@ -27,6 +27,7 @@ export interface TraceViewModel {
   pendingScenarios: ScenarioView[];
   latency: { label: string; value: string; source: 'agent' | 'browser' }[];
   conversationStatus: ConversationStatus | null;
+  scenarioMode: string | null;
 }
 
 function record(value: unknown): Data | null {
@@ -125,7 +126,9 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     if (browserValue) latency.push({ label, value: browserValue, source: 'browser' });
   }
   const slots = record(trace?.slots) ?? record(routing?.slots);
-  const handoffInfo = handoff(trace?.handoff ?? state?.handoff);
+  const handoffInfo = trace?.handoff === true
+    ? { queue: null, summary: null, reason: string(trace.reason) }
+    : handoff(trace?.handoff ?? state?.handoff);
 
   return {
     hasData: trace !== null || routing !== null || state !== null || latency.length > 0,
@@ -138,12 +141,15 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     reason: string(trace?.reason) ?? string(routing?.reason),
     slots: slots ? Object.entries(slots).map(([key, value]) => ({ key, value: displayValue(value) })) : [],
     actions: actions(trace?.actions ?? routing?.actions),
-    clarification: message(trace?.clarification ?? routing?.clarification ?? state?.clarification),
+    clarification: trace?.clarification === true
+      ? string(snapshot.lastResponse?.response_text)
+      : message(trace?.clarification ?? routing?.clarification_question ?? state?.clarification),
     handoff: handoffInfo,
     activeScenario: scenario(state?.active_scenario),
     scenarioStack: scenarios(state?.scenario_stack),
     pendingScenarios: scenarios(state?.pending_scenarios),
     latency,
     conversationStatus: snapshot.conversationStatus,
+    scenarioMode: string(trace?.scenario_mode) ?? string(state?.scenario_mode),
   };
 }

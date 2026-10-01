@@ -88,9 +88,12 @@ export class ConversationRuntime {
 
   private runVoiceOperation(method: 'startListening' | 'stopListening'): Promise<void> {
     const controller = this.voiceInput;
+    const generation = this.generation;
     if (!controller) return Promise.resolve();
     const operation = this.voiceOperation.then(() => {
-      if (method === 'startListening' && !this.snapshot.voiceInputEnabled) return;
+      if (method === 'startListening' && (!this.isCurrent(generation)
+        || !this.snapshot.voiceInputEnabled || this.snapshot.runtimeStatus !== 'listening'
+        || this.snapshot.conversationStatus === 'handoff' || this.snapshot.conversationStatus === 'ended')) return;
       return controller[method]();
     });
     // A failed controller call is reported to its caller without blocking later stop/start calls.
@@ -105,6 +108,14 @@ export class ConversationRuntime {
   }
 
   private fail(cause: unknown): void {
+    // A playback/controller failure cannot undo a successful terminal API turn.
+    const terminal = this.snapshot.conversationStatus;
+    if (terminal === 'handoff' || terminal === 'ended') {
+      this.update({ runtimeStatus: terminal, error: null });
+      try { this.tts.stop(); } catch { /* The terminal reply remains visible. */ }
+      void this.runVoiceOperation('stopListening').catch(() => {});
+      return;
+    }
     this.update({ runtimeStatus: 'error', error: errorMessage(cause) });
   }
 
@@ -133,7 +144,8 @@ export class ConversationRuntime {
     this.generation += 1;
     const generation = this.generation;
     // Stopping local capture/playback does not close the Agent Core session.
-    this.update({ runtimeStatus: 'ended', error: null });
+    const terminal = this.snapshot.conversationStatus;
+    this.update({ runtimeStatus: terminal === 'handoff' ? 'handoff' : 'ended', error: null });
     try {
       this.tts.stop();
       await this.runVoiceOperation('stopListening');

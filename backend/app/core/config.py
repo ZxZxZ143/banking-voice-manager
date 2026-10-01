@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     openai_router_model: str | None = None
     router_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
     router_max_output_tokens: int = Field(default=2500, ge=256, le=10000)
+    router_temperature: float | None = Field(default=None, ge=0, le=2)
     router_accept_threshold: float = Field(default=0.75, ge=0, le=1)
     router_low_threshold: float = Field(default=0.45, ge=0, le=1)
     router_handoff_after: int = Field(default=2, ge=1, le=10)

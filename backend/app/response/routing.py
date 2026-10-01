@@ -119,6 +119,7 @@ class RoutingReplyResult(Contract):
     actions: list[str] = Field(default_factory=list)
     source_keys: list[str] = Field(default_factory=list)
     completed: bool = False
+    handoff: bool = False
 
 
 class RoutingReplyGenerator:
@@ -147,13 +148,8 @@ class RoutingReplyGenerator:
         if state.conversation_status == "handoff":
             return RoutingReplyResult(
                 text={
-                    "ru": (
-                        "Нужна помощь оператора. "
-                        "В этой версии перевод на оператора ещё не подключён."
-                    ),
-                    "kk": (
-                        "Оператордың көмегі қажет. Бұл нұсқада операторға қосу әлі іске қосылмаған."
-                    ),
+                    "ru": "Конечно, передаю диалог оператору.",
+                    "kk": "Әрине, диалогты операторға тапсырамын.",
                 }[language]
             )
         selected = policy.scenario_ids[0]
@@ -161,12 +157,50 @@ class RoutingReplyGenerator:
             # The source template requires option_a/option_b, which may be absent.
             # Do not invent alternatives or expose unfilled template placeholders.
             question = getattr(decision, "clarification_question", None)
-            if isinstance(question, str) and question.strip():
+            if (
+                isinstance(question, str)
+                and question.strip()
+                and not any(token in question for token in ("{", "}", "None", "null", "undefined"))
+            ):
                 return RoutingReplyResult(text=question.strip())
+            labels_by_id = {
+                "SC01": ("рассчитать цену ОГПО", "ОГПО бағасын есептеу"),
+                "SC02": ("оформить новый полис", "жаңа полис рәсімдеу"),
+                "SC04": ("добавить водителя", "жүргізушіні қосу"),
+                "SC06": ("оформить страховку для поездки", "сапар сақтандыруын рәсімдеу"),
+                "SC17": ("узнать статус заявления", "өтініш мәртебесін білу"),
+                "SC18": ("узнать список документов", "құжаттар тізімін білу"),
+                "SC19": ("оспорить решение по выплате", "төлем шешіміне шағымдану"),
+                "SC25": ("проверить срок полиса", "полис мерзімін тексеру"),
+                "SC26": ("получить документы", "құжаттарды алу"),
+                "SC27": ("продлить полис", "полисті ұзарту"),
+                "SC28": ("расторгнуть полис", "полисті тоқтату"),
+                "SC30": (
+                    "разобраться с оплатой и выпуском полиса",
+                    "төлем мен полис шығарылуын тексеру",
+                ),
+                "SC31": ("узнать способы оплаты", "төлем тәсілдерін білу"),
+                "SC34": ("решить проблему в приложении", "қолданба мәселесін шешу"),
+                "SC35": ("подать жалобу на обслуживание", "қызметке шағымдану"),
+            }
+            options = state.clarification_options
+            if len(options) == 2 and all(value in labels_by_id for value in options):
+                labels = [labels_by_id[value][0 if language == "ru" else 1] for value in options]
+                if labels:
+                    return RoutingReplyResult(
+                        text={
+                            "ru": f"Вы хотите {labels[0]} или {labels[1]}?",
+                            "kk": f"Сізге {labels[0]} керек пе, әлде {labels[1]} керек пе?",
+                        }[language]
+                    )
             return RoutingReplyResult(
                 text={
-                    "ru": "Уточните, пожалуйста, какой вопрос по страхованию вы хотите решить?",
-                    "kk": "Сақтандыру бойынша қандай мәселені шешкіңіз келетінін нақтылаңызшы.",
+                    "ru": (
+                        "Уточните, пожалуйста: вы хотите подобрать новый полис "
+                        "или разобраться с уже существующим?"
+                    ),
+                    "kk": "Жаңа полис таңдағыңыз келе ме, әлде қолданыстағы полис "
+                    "бойынша мәселе бар ма?",
                 }[language]
             )
         system = self.catalog.get_system_intent(selected)
@@ -177,6 +211,14 @@ class RoutingReplyGenerator:
             raise ValueError("Cannot respond to an unknown scenario")
         if scenario.scenario_id in {"SC25", "SC17"} and self.backend is not None:
             return self._private_reply(state, scenario.scenario_id)
+        if self.knowledge is not None and self.backend is not None:
+            from app.response.insurance import InsuranceReplies
+
+            result = InsuranceReplies(self.catalog, self.slots, self.knowledge, self.backend).reply(
+                state, scenario
+            )
+            if result is not None:
+                return RoutingReplyResult(**result)
         for name in scenario.slots.required:
             if state.slots.get(name) in (None, "", []):
                 return self._ask(state, name)
