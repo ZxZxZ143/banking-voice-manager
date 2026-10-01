@@ -31,6 +31,20 @@ test('confidence and latency are formatting only', () => {
   assert.equal(formatLatency(-1), null);
 });
 
+test('scenario pack metadata is additive and legacy traces remain readable', () => {
+  const view = createTraceViewModel(snapshot({ latestTrace: {
+    scenario_pack_id: 'insurance_manager', interaction_mode: 'consultative',
+    context_lifecycle: 'completed', scenario_mode: 'legacy',
+  } }));
+  assert.equal(view.scenarioMode, 'insurance_manager');
+  assert.equal(view.interactionMode, 'consultative');
+  assert.equal(view.contextLifecycle, 'completed');
+  const legacy = createTraceViewModel(snapshot({ latestTrace: { scenario_mode: 'insurance_manager' } }));
+  assert.equal(legacy.scenarioMode, 'insurance_manager');
+  assert.equal(legacy.interactionMode, null);
+  assert.equal(legacy.contextLifecycle, null);
+});
+
 test('boolean clarification and handoff from the real API retain visible details', () => {
   const clarification = createTraceViewModel(snapshot({
     latestTrace: { clarification: true, scenario_mode: 'insurance_manager' },

@@ -28,6 +28,8 @@ export interface TraceViewModel {
   latency: { label: string; value: string; source: 'agent' | 'browser' }[];
   conversationStatus: ConversationStatus | null;
   scenarioMode: string | null;
+  interactionMode: string | null;
+  contextLifecycle: string | null;
 }
 
 function record(value: unknown): Data | null {
@@ -150,6 +152,8 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     pendingScenarios: scenarios(state?.pending_scenarios),
     latency,
     conversationStatus: snapshot.conversationStatus,
-    scenarioMode: string(trace?.scenario_mode) ?? string(state?.scenario_mode),
+    scenarioMode: string(trace?.scenario_pack_id) ?? string(trace?.scenario_mode) ?? string(state?.scenario_mode),
+    interactionMode: string(trace?.interaction_mode),
+    contextLifecycle: string(trace?.context_lifecycle),
   };
 }
