@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "voice-router-backend"
 version = "0.1.0"
-description = "Voice Router hackathon foundation"
+description = "Insurance Manager conversational backend"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",

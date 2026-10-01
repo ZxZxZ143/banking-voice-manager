@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.env
+**/.env
+**/.env.*
+**/__pycache__
+**/*.pyc
+.venv
+**/node_modules
+**/dist
+work
+*.log
+.pytest_cache
+.ruff_cache
+**/*.egg-info
