@@ -239,9 +239,11 @@ def test_terminal_replies(language, intent, status):
     turn = handle(
         ProductFixture(
             ProductDecision(intent=intent, language=language, response_language=reply_language)
-        )
+        ),
+        ProductScenarioContext(last_question="category"),
     )
     assert turn.result.status == status and turn.complete_pack
+    assert not turn.trace.clarification and turn.context.last_question is None
     if status == "handoff":
         assert turn.response_text == (
             "Әрине, диалогты операторға тапсырамын."
@@ -264,6 +266,7 @@ def test_invalid_output_is_safe_and_bounded(bad):
             )
         )
         assert not turn.public_state.products and not turn.result.selected_product_id
+        assert turn.trace.clarification is (number < 2)
         context = turn.context
     assert turn.result.status == "handoff"
 

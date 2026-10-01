@@ -186,12 +186,23 @@ text checks ran with microphone disabled: Product preferences (amount=50000, KZT
 partial withdrawal) → Insurance SC06 travel slots → immediate Product resume with the same
 UUID/preferences → explicit application/callback interest (DEP-FLEX, high, completed lead,
 global active) → exact operator phrase and stopped loop. Product reply first audio was
-738 ms; interest 806 ms; operator 723 ms. Reset created a different UUID; goodbye was checked
-in that fresh conversation. Two opening events and six customer/API events form these
+738 ms; interest 806 ms; operator 723 ms. Reset created a different UUID; goodbye returned
+`ended` in that fresh conversation (first audio 759 ms). Three assistant opening events
+(including resume) and five customer/API events form these
 eight controlled browser events. No artificial customer opener was inserted.
 
 Screenshots: `work/stage3-human-product.png`, `work/stage3-human-lead.png`,
 `work/stage3-browser-handoff.png`; DOM evidence `work/stage3-browser-handoff.txt`.
+The final browser check revealed a stale discovery-question flag on goodbye. Product now
+sets clarification from the actual reply and clears questions on terminal outcomes; seeded
+RU/KK/mixed terminal regressions verify this. Final terminal DOM is also saved in
+`work/stage3-browser-goodbye.txt`.
+After the trace correction the full backend suite still passed **505** tests, including
+76 Product tests. Four final Docker HTTP events separately verify branded opener → goodbye
+and opener → operator, both with clarification=false and last_question cleared. Evidence:
+`work/stage3-final-tests3.log`, `work/stage3-terminal-tests.log`,
+`work/stage3-terminal-wire.json/.log`. Routing prompts, model inputs, conditions and reply
+text are unchanged by this trace correction, so the complete live evaluations remain applicable.
 
 Evidence: `work/stage3-voice-release.json/.log`, `work/stage3-voice-diagnostic.json/.log`,
 `work/stage3-insurance-voice.json/.log`; browser screenshots stay local in `work/`.
@@ -211,11 +222,13 @@ provider storage were introduced. Selector inputs, failure rollback, type valida
 unregistered targets have offline checks. Traces contain short supplied metadata, no prompt,
 environment or hidden reasoning.
 
-Secret scan passed intended files, frontend bundle, local logs and **397 historical Git blobs**.
+Secret scan passed intended files, frontend bundle, local logs and reachable historical Git blobs.
 `.env` is ignored. Both final image configs contain no baked API key; layer contents passed
 exact-key/pattern scanning: **15,662 backend files**, **995 frontend files**. Runtime backend
 credentials are not frontend build arguments. No security exception or public exposure
-was needed. Evidence: `work/stage3-security.log`, `work/stage3-docker-release.log`.
+was needed. Evidence: `work/stage3-security.log` and final rescan
+`work/stage3-security-final.log`; final startup after the trace correction is recorded in
+`work/stage3-docker-final.log` (both services healthy).
 
 Skills applied: agents-sdk, agent-evals, agent-debugging, security-review, demo-readiness,
 and computer-use for the real browser check. No new infrastructure or unrelated packs.

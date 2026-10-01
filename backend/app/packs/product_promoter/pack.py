@@ -201,6 +201,7 @@ class ProductPromoterPack:
             return pair[0 if ru else 1]
 
         status, outcome, complete = "active", "consulting", False
+        clarification = False
         shown = []
         context.last_intent = decision.intent
 
@@ -211,6 +212,7 @@ class ProductPromoterPack:
                 context.next_action = "operator_handoff"
                 response = terminal_reply(status, language)
             else:
+                clarification = True
                 response = pick(
                     (
                         "Уточните, пожалуйста, что хотите узнать о депозите или карте?",
@@ -336,6 +338,7 @@ class ProductPromoterPack:
                     ):
                         question = "card_priority"
                 if question:
+                    clarification = True
                     context.last_question = question
                     response = pick(QUESTIONS[question])
                 else:
@@ -412,6 +415,8 @@ class ProductPromoterPack:
                         )
                         context.last_question = "next_action"
         context.completed = complete
+        if status in ("handoff", "ended"):
+            context.last_question = None
         if first_response and status == "active":
             response = (
                 "Здравствуйте! Я консультант демонстрационного Merei Demo Bank. "
@@ -425,8 +430,7 @@ class ProductPromoterPack:
             language=decision.language,
             reason=f"Product consultation: {decision.intent}",
             routing_error="invalid_structure" if invalid else None,
-            clarification=context.last_question
-            in ("category", "currency", "liquidity", "card_priority"),
+            clarification=clarification,
             source_keys=[f"product_catalog.{p.id}" for p in shown],
             product_category=context.product_category,
             presented_products=[p.id for p in shown],
