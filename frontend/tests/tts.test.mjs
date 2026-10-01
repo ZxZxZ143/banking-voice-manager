@@ -4,10 +4,14 @@ import { BrowserTtsService, selectVoice } from '../src/services/tts/BrowserTtsSe
 
 const originalSynthesis = globalThis.speechSynthesis;
 const originalUtterance = globalThis.SpeechSynthesisUtterance;
+const originalSetTimeout = globalThis.setTimeout;
+const originalClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
   globalThis.speechSynthesis = originalSynthesis;
   globalThis.SpeechSynthesisUtterance = originalUtterance;
+  globalThis.setTimeout = originalSetTimeout;
+  globalThis.clearTimeout = originalClearTimeout;
 });
 
 function installSpeech(voices = [{ name: 'Russian', lang: 'ru-RU', default: true }]) {
@@ -32,6 +36,26 @@ function installSpeech(voices = [{ name: 'Russian', lang: 'ru-RU', default: true
 }
 
 const nextTick = () => new Promise((resolve) => setImmediate(resolve));
+
+test('a browser that emits no playback events is cancelled and does not hang', async () => {
+  const synthesis = installSpeech();
+  let timer;
+  let cleared = false;
+  globalThis.setTimeout = (callback, delay) => { timer = { callback, delay }; return timer; };
+  globalThis.clearTimeout = () => { cleared = true; };
+  const tts = new BrowserTtsService();
+  const playback = tts.speak('Конечно, передаю диалог оператору.', 'ru');
+  const rejected = assert.rejects(playback, /timed out/);
+  await nextTick();
+  assert.ok(timer.delay >= 15_000 && timer.delay <= 180_000);
+  timer.callback();
+  await rejected;
+  assert.equal(synthesis.cancelCount, 1);
+  assert.equal(cleared, true);
+  assert.equal(synthesis.utterances[0].onend, null);
+  tts.stop();
+  assert.equal(synthesis.cancelCount, 1);
+});
 
 test('voice selection uses exact locale, prefix, then browser default', () => {
   const voices = [

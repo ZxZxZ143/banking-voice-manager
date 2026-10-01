@@ -4,6 +4,41 @@ import { ConversationRuntime } from '../src/runtime/ConversationRuntime.ts';
 import { HttpAgentClient } from '../src/services/agentClient.ts';
 import { createTraceViewModel } from '../src/components/trace/traceViewModel.ts';
 
+for (const status of ['handoff', 'ended']) {
+  test(`${status} stays successful when TTS fails and rejects late transcripts`, async () => {
+    let requests = 0;
+    let starts = 0;
+    const trace = { conversation_status: status, handoff: status === 'handoff' };
+    const runtime = new ConversationRuntime(
+      { sendMessage: async () => { requests += 1; return {
+        response_text: status === 'handoff' ? 'Операторға тапсырамын.' : 'Сау болыңыз.',
+        conversation_status: status, trace, state: { response_language: 'kk' },
+      }; } },
+      { speak: async () => { throw new Error('Speech device unavailable'); }, stop() {} },
+    );
+    runtime.attachVoiceInput({ startListening() { starts += 1; }, stopListening() {} });
+    await runtime.startConversation();
+    const sessionId = runtime.getSnapshot().sessionId;
+    await runtime.handleTranscript({ text: 'Terminal request' });
+    assert.equal(runtime.getSnapshot().runtimeStatus, status);
+    assert.equal(runtime.getSnapshot().conversationStatus, status);
+    assert.equal(runtime.getSnapshot().error, null);
+    assert.equal(runtime.getSnapshot().latestTrace, trace);
+    assert.equal(runtime.getSnapshot().messages.length, 2);
+    assert.equal(runtime.getSnapshot().sessionId, sessionId);
+    await runtime.handleTranscript({ text: 'Late final' });
+    await runtime.sendText('Late text');
+    await runtime.setVoiceInputEnabled(false);
+    await runtime.setVoiceInputEnabled(true);
+    await runtime.startConversation();
+    await runtime.endConversation();
+    assert.equal(runtime.getSnapshot().runtimeStatus, status);
+    assert.equal(requests, 1);
+    assert.equal(starts, 1);
+    runtime.dispose();
+  });
+}
+
 test('text-only toggle stops capture, rejects late voice finals, and keeps the session', async () => {
   const requests = [];
   let starts = 0;

@@ -31,6 +31,19 @@ test('confidence and latency are formatting only', () => {
   assert.equal(formatLatency(-1), null);
 });
 
+test('boolean clarification and handoff from the real API retain visible details', () => {
+  const clarification = createTraceViewModel(snapshot({
+    latestTrace: { clarification: true, scenario_mode: 'insurance_manager' },
+    lastResponse: { response_text: 'Новый полис или проблема с существующим?' },
+  }));
+  assert.equal(clarification.clarification, 'Новый полис или проблема с существующим?');
+  assert.equal(clarification.scenarioMode, 'insurance_manager');
+  const terminal = createTraceViewModel(snapshot({
+    conversationStatus: 'handoff', latestTrace: { handoff: true, reason: 'Operator requested' },
+  }));
+  assert.equal(terminal.handoff.reason, 'Operator requested');
+});
+
 test('multi-intent and state order follow the agent; backend latency wins', () => {
   const view = createTraceViewModel(snapshot({
     conversationStatus: 'awaiting_confirmation',
