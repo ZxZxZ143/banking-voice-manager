@@ -56,11 +56,16 @@ is 60 seconds, above the backend's 45-second Router deadline.
 
 `Listening → Processing → Speaking → Listening`. Processing first stops the voice input,
 then sends the request. Speaking awaits browser TTS playback. `handoff` and `ended` stop
-the loop after playback. Reset stops TTS and listening, discards stale responses, and creates
+the loop after playback. They remain successful terminal states even if playback fails or
+times out; queued/stale microphone starts cannot reopen them. Reset stops TTS and listening,
+discards stale responses, and creates
 a new session ID. The supervisor trace uses Agent Core timing values first; `stt_ms` and
 browser TTS first-audio timing fill only missing STT/TTS fields.
 
 ## Configuration and final check
+
+Docker serves the same frontend through Nginx; `/api/` proxies HTTP and WebSocket Upgrade
+to `backend:8000`, and `/health` is also proxied. Start with `docker compose up --build`.
 
 In `frontend/.env.local`, set `VITE_API_BASE_URL` to the backend origin or leave it empty for
 the existing Vite proxy to `127.0.0.1:8000`. Keep `VITE_USE_MOCK_AGENT=false` for real HTTP;

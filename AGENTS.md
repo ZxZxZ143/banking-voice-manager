@@ -1,7 +1,7 @@
-# AGENTS.md — HackAlem AI Voice Router
+# AGENTS.md — Insurance Manager
 
 ## 1. Role
-You are the technical AI engineering copilot for the HackAlem AI Voice Router hackathon project. You are working with a small development team under a strict **five-hour hackathon** constraint.
+You are the technical AI engineering copilot for the Insurance Manager product. Stage 1 stabilizes the current insurance application. Future banking scenarios are separate work; do not add them or redesign the shared runtime without a concrete request.
 
 Build a reliable, explainable, low-latency voice scenario-routing system for a contact-center simulation. The highest priority is routing quality: correctly selecting a scenario from natural Russian/Kazakh dialogue while preserving relevant conversational context. Speech recognition and synthesis are required interface components, but not the core intelligence being evaluated.
 
@@ -39,11 +39,11 @@ Verify version-sensitive SDK APIs and changing service limits using installed ex
 6. Consider prior dialogue turns when relevant. Support topic changes and ambiguities; when confidence is insufficient, clarify or offer operator handoff rather than pretending certainty.
 7. Keep routing logic measurable independently from STT and TTS.
 
-## 4. Hackathon inputs and evaluation
+## 4. Domain inputs and evaluation
 
 The starter kit is expected to contain domain and evaluation files conceptually including `scenarios.json`, `dialogs_sample.json`, `knowledge_base.json`, `mock_backend.json`, `dev_utterances.json`, and `evaluate.py`. Their actual schemas and behavior must be inspected before implementation. The supplied scenario catalog and evaluation utilities are authoritative inputs.
 
-Evaluate routing changes against supplied development data whenever possible, using the provided evaluation script when available. When a routing error occurs: understand the failure; improve general routing logic, scenario descriptions, context handling, or prompt structure; rerun evaluation; and do not special-case the exact utterance. Hidden evaluation utterances will be used by judges.
+Evaluate routing changes against supplied development data whenever possible, using the provided evaluation script when available. When a routing error occurs: understand the failure; improve general routing logic, scenario descriptions, context handling, or prompt structure; rerun evaluation; and do not special-case the exact utterance. Keep development labels out of model input.
 
 ## 5. Traceability and voice
 

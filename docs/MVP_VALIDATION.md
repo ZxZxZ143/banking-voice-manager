@@ -1,5 +1,8 @@
 # Integrated MVP validation
 
+Historical report. Current product startup, results and limitations are documented in
+[STAGE1_VALIDATION.md](STAGE1_VALIDATION.md) and the root README.
+
 2026-09-23. Local synthetic Saqta Insurance demo, not a production insurance service.
 
 ## Included work

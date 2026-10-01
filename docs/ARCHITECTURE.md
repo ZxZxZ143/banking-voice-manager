@@ -1,4 +1,12 @@
-# Voice Router architecture
+# Insurance Manager architecture
+
+Stage 1 adds deterministic quotes and assisted catalog workflows in
+`response/insurance.py`, scenario-local slot snapshots and `scenario_mode=insurance_manager`.
+Operator handoff and goodbye are successful terminal states; browser playback failure cannot
+overwrite them. Invalid model output becomes a safe clarification turn (then bounded handoff),
+while provider outages remain explicit API failures. Docker runs backend and frontend with
+HTTP/WebSocket proxying on loopback ports 8000/5173. See the current root README and
+`STAGE1_VALIDATION.md` for tested commands/results; historical plans are not current scope.
 
 This repository provides voice/text routing with in-memory conversations for the Saqta Insurance contact-center simulation; business writes remain disabled. The business source is the canonical `data/starter_kit/` directory: 40 scenarios, 3 system intents, 43 slots, 31 action definitions, 10 sample dialogs, and 104 development utterances. All supplied business records are synthetic; relative business dates must use the dataset snapshot, **2026-10-01**.
 
@@ -38,7 +46,7 @@ All backend paths below are relative to `backend/app/`.
 | Scenario requirements | `scenarios/catalog.py`, `scenarios/engine.py` | Catalog lookup and generic read-only identification/missing-slot inspection. `ScenarioEngine.execute()` raises `NotImplementedError`; workflows and confirmation execution remain unimplemented. |
 | Business tools | `tools/` | Registry remains non-executing; irreversible registration/execution blocked. Separate read_only.py helpers perform bounded demo client, owned policy/claim and exact knowledge lookups without writes. |
 | Knowledge/backend access | `data/models.py`, `data/loaders.py`, `data/repositories.py` | Typed wrappers, uniqueness and cross-file reference checks; read-only deep-copy repositories. Knowledge lookup uses exact dotted keys, not semantic search. No prices, statuses, or mutations are invented. |
-| Response generation | `response/routing.py`, `response/generator.py` | Deterministic RU/KK slot/system replies and grounded read-only SC17/25/31/33/34 slice; no second LLM. Known source facts have exact translations; unknown facts are not invented or echoed in English. Full business workflows remain incomplete. |
+| Response generation | `response/routing.py`, `response/insurance.py` | Deterministic RU/KK replies, read-only lookups, source-based quotes, required-slot collection and assisted application handoff. No second LLM, insurer writes or fabricated delivery/payment. |
 | Speech output | `frontend/src/services/tts/` | Browser speechSynthesis playback, first-audio timing and completion before listening resumes. Separate backend OpenAI TTS adapter is unused in this MVP. |
 | Supervisor traces | `tracing/` | Typed application trace, bounded collector and current-turn trace returned by `/api/message`; no supervisor feed/public trace endpoint yet. |
 | Evaluation | `evaluation/` | Offline data check and live-run CLI; predictions, official evaluator report and safe decision/timing/failure capture. Configurable concurrency/pacing and explicit continue-on-error mode. See ROUTER_EVALUATION.md. |
@@ -52,7 +60,7 @@ Speech adapters require explicit model settings (and a voice for TTS) when const
 | Endpoint | Input | Current result |
 |---|---|---|
 | `GET /health` | None | HTTP 200 after successful startup; actual loaded counts and `mode: "foundation"`. This does not probe OpenAI readiness. |
-| `POST /api/message` | JSON `{ "session_id": "abc123", "text": "<nonblank text>" }`; ID 1–128, text 1–10,000 characters | Returns session_id, response_text, routing, state, trace, conversation_status. 422 invalid input, 503 unconfigured/busy, 502 provider/output error, 504 timeout, 409 terminal session. Failed turns do not advance state. |
+| `POST /api/message` | JSON `{ "session_id": "abc123", "text": "<nonblank text>" }`; ID 1–128, text 1–10,000 characters | Returns session_id, response_text, routing, state, trace, conversation_status. 422 invalid input, 503 unconfigured/busy, 502 provider error (invalid output clarifies), 504 timeout, 409 terminal session. Provider failures do not advance state; invalid output records a clarification turn. |
 | `GET /dev` | None; requires ENABLE_DEV_STAND=true | Local manual debug page; disabled by default (404), not a second production UI. |
 | `POST /api/v1/turns/text` | JSON `{ "session_id": "<UUID>", "text": "<nonblank text>" }`; text up to 10,000 characters | Valid requests return HTTP 501 with `error.code: "not_implemented"`; no routing, state mutation, or action. Invalid requests return FastAPI validation errors (422). |
 | `WS /api/v1/voice` | WebSocket connection | PCM16 at 24 kHz streaming to OpenAI with Silero endpointing, partial/final transcripts and timings. The frontend runtime sends only final transcripts to /api/message. See `VOICE_STREAMING_CONTRACT.md`. |

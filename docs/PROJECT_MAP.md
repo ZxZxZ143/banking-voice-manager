@@ -2,7 +2,7 @@
 
 ## Purpose and requirements
 
-HackAlem Voice Router for fictional Saqta Insurance. Prioritize LLM-based scenario
+Insurance Manager for fictional Saqta Insurance. Prioritize LLM-based scenario
 selection in Russian, Kazakh and mixed-language dialogue, context, ambiguity, topic
 changes, clarification and handoff. Final MVP requires voice; text remains available.
 No encoder intent classifier or hardcoded evaluation utterances.
@@ -13,7 +13,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 - **Implemented:** `POST /api/message`, one structured SDK routing call per turn,
   strict ID/slot validation, RU/KK/mixed routing contract, single/multi-intent prompt,
   continuation/topic switching, bounded in-memory sessions/traces, confidence policy,
-  clarification questions/options, basic grounded read-only replies, evaluation CLI and a
+  targeted clarification, source-based quotes, assisted catalog workflows, evaluation CLI and a
   separate opt-in `/dev` manual stand. The integrated production frontend adds same-session
   runtime, microphone/file streaming STT, browser TTS and supervisor traces.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
@@ -21,10 +21,12 @@ Business specification: `data/starter_kit/README.ru.md`.
   integration. Live 104-case before/after measurements are recorded in `ROUTER_EVALUATION.md`;
   offline fixture checks are not model-accuracy measurements.
 - **Still incomplete:** business writes/confirmation, actual identity verification, full
-  business answers, real operator transfer and public supervisor feed.
+  insurer write integrations, real contact-center transfer and public supervisor feed.
   Legacy `/api/v1/turns/text` remains 501 and is not used. Live routing/STT use the local key;
   TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
-- **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
+- **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
+  loopback ports 8000/5173, runtime-only secrets and health checks.
+- **Not introduced:** database, Supabase, vector store, RAG, queues or extra agents.
 
 ## Navigation
 
@@ -42,7 +44,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/scenarios/` | Catalog, policy and non-executing requirements inspection |
 | `backend/app/tools/` | Action registry plus narrow read-only client/policy/claim/knowledge helpers |
 | `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
-| `backend/app/response/` | Slot/system replies and SC17/25/31/33/34 grounded read-only slice |
+| `backend/app/response/` | Slot/system replies, grounded quotes/lookups and assisted insurance workflows |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
@@ -63,6 +65,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `scripts/` | Live API/runtime smoke checks and saved evaluation comparison |
 | `docs/INTEGRATION.md` | Short frontend/Voice Input/Agent Core handoff contract and checks |
 | `docs/VOICE_STREAMING_CONTRACT.md` | PCM protocol, dependencies, endpointing and voice checks |
+| `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf` | Health-checked local application stack and HTTP/WS proxy |
+| `docs/STAGE1_VALIDATION.md` | Current Stage 1 evidence, eval comparison and remaining limits |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
@@ -81,7 +85,8 @@ The browser fetches real health through Vite. The frontend runtime creates one s
 accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
 `POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
 the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
-`onend`; `onstart` gives first-audio latency. A no-audio adapter remains for tests.
+`onend`; `onstart` gives first-audio latency. A bounded playback watchdog rejects stalled
+speech. Successful handoff/ended states survive TTS failure. A no-audio adapter remains for tests.
 Voice controller start/stop calls are serialized so a delayed start is stopped on reset/end.
 VoiceControls opens one WebSocket per utterance using that same session ID; partials stay
 in the voice UI. Real HTTP mode is the default; no key enters the frontend.
@@ -105,9 +110,11 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - `POST /api/message`: `{session_id, text}`; nonblank string ID up to 128 characters,
   text up to 10,000 characters, whitespace trimmed. Reuse the ID for later turns.
   Returns `{session_id, response_text, routing, state, trace, conversation_status}`.
-  Invalid input 422; missing key/model 503; provider/structured-output failure 502;
+  Invalid input 422; missing key/model 503; provider failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
-  Failed routing does not commit history/state/trace. Responses do not claim actions ran.
+  Provider failures do not commit history/state/trace. Invalid structured model decisions
+  become SYS_UNCLEAR with no business actions and an allowlisted routing_error in trace;
+  repeated failures follow the existing handoff policy.
 - `GET /dev`: standalone debug form, enabled only with `ENABLE_DEV_STAND=true` (otherwise
   404). Reuses editable session ID, shows reply/status/routing/state/trace and browser/backend
   latency. Text rendered safely; no key in browser. New session does not erase older sessions.
@@ -127,7 +134,8 @@ Application traces expose concise reasons and measured latency, never hidden cha
   storage language defaults; source enum spellings normalize before strict validation.
 - `dialog/models.py`: DialogueState includes session/language/response_language/client,
   active scenario, stack, pending scenarios, slots, confirmation flag, turn number,
-  unclear and consecutive-low-confidence counts, clarification_options, conversation_status and bounded history.
+  unclear and consecutive-low-confidence counts, clarification_options, conversation_status,
+  scenario_mode and scenario_slots snapshots, plus bounded history.
   Statuses: active, awaiting_user, awaiting_confirmation, handoff, ended; confirmation is
   reserved, not emitted until a real preview/confirmation workflow exists.
 - `tracing/models.py`: transcript, scenarios, alternatives, concise reason, slots, actions,
@@ -141,11 +149,12 @@ Application traces expose concise reasons and measured latency, never hidden cha
   selections become active/pending, while original evidence remains in routing/history.
   Urgent requests precede normal requests; continuation preserves pending items and slots.
   Clarification/out-of-scope preserve active work; goodbye ends the session. Policy does not
-  perform operator transfer, and the response explicitly says transfer is unavailable.
+  perform an external operator transfer. SC37 returns a friendly localized message and
+  successful handoff; the automatic loop stops while history/trace stay visible.
 - A completed read-only answer clears only that scenario: next co-request, then suspended
   stack (LIFO), then older pending work. No remaining work yields `active`, not `ended`.
   Identity correction replaces the old counterpart; a changed established identity drops
-  stale policy/claim numbers unless supplied anew. Owned-record filtering is demo lookup,
+  stale policy/claim numbers and scenario slot snapshots unless supplied anew. Owned-record filtering is demo lookup,
   not authentication. Unsupported business actions stay unavailable and never report success.
 - Engine inspection and awaiting_confirmation do not authorize execution. Irreversible
   action registration/execution is blocked. No supervisor endpoint/authorization exists yet.
@@ -185,8 +194,9 @@ Concurrency and call-start pacing are configurable; use serial paced runs for co
 Allowlisted validation_reason distinguishes output contract failures without saving raw
 rejected values. Live manual slot misses/unstable output rejection remain documented in the
 evaluation report; a high scenario score is not evidence of complete business behavior.
-Latest integrated 104-case run (gpt-4.1-mini, current utterance last, serial paced): primary
-91.35%, full 90.38%, multi-intent recall 92.31%; zero provider failures and one invalid output.
+Stage 1 104-case run (gpt-4.1-mini, temperature 0, concurrency 2, one-second pacing):
+primary 96.15%, full 95.19%, multi-intent recall 80.77%; zero provider failures and two
+invalid outputs counted wrong. Current comparison and five misses are in STAGE1_VALIDATION.md.
 Earlier before/after regressions and complete subgroup/error analysis are retained in
 `docs/ROUTER_EVALUATION.md`; no perfect-routing claim is made. Deterministic reply rendering
 uses grounded RU/KK translations. Current monolingual request language overrides stale reply
@@ -198,7 +208,7 @@ This affects replies only, not scenario selection or the recorded Router languag
 ## Configuration and commands
 
 Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, ROUTER_TIMEOUT_SECONDS (45),
-ROUTER_MAX_OUTPUT_TOKENS (2500), BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
+ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
 Root .env.example contains no credentials; .env is ignored.
