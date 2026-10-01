@@ -10,6 +10,12 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 2:** authoritative internal ScenarioRegistry with only `insurance_manager`;
+  pack-owned prompt/catalog/knowledge/actions/policy/replies, global versus local contexts,
+  isolated latest InsuranceResult, activation/suspension/resume/completion, unchanged public
+  state and six response fields. Existing Stage 1 regressions are retained; evidence and
+  evaluation variability are recorded in `STAGE2_VALIDATION.md`.
+
 - **Implemented:** `POST /api/message`, one structured SDK routing call per turn,
   strict ID/slot validation, RU/KK/mixed routing contract, single/multi-intent prompt,
   continuation/topic switching, bounded in-memory sessions/traces, confidence policy,
@@ -39,12 +45,12 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
 | `backend/app/triage/` | Text preparation; future language/normalization |
-| `backend/app/agent/` | One-call SDK Router, safe errors, prompts and output validation |
-| `backend/app/dialog/` | DialogueState (DialogState alias), message orchestration, locked LRU store |
-| `backend/app/scenarios/` | Catalog, policy and non-executing requirements inspection |
-| `backend/app/tools/` | Action registry plus narrow read-only client/policy/claim/knowledge helpers |
-| `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
-| `backend/app/response/` | Slot/system replies, grounded quotes/lookups and assisted insurance workflows |
+| `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
+| `backend/app/packs/contracts.py`, `registry.py`, `lifecycle.py` | Pack contract, manifest/modes, registry, isolated contexts and lifecycle |
+| `backend/app/packs/insurance_manager/` | Production pack, InsuranceResult, local state, insurance processor and public wire projection |
+| `backend/app/packs/insurance_manager/agent/` | Unchanged one-call SDK Router, prompt and structured insurance output |
+| `backend/app/packs/insurance_manager/data/`, `scenarios/`, `tools/`, `response/` | Canonical-data adapters, catalog/policy, disabled writes, read-only helpers and insurance replies |
+| `backend/app/agent/`, `dialog/`, `data/`, `scenarios/`, `tools/`, `response/` | Compatibility exports/adapters for existing consumers; insurance implementation moved into the pack |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
@@ -67,12 +73,21 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `docs/VOICE_STREAMING_CONTRACT.md` | PCM protocol, dependencies, endpointing and voice checks |
 | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf` | Health-checked local application stack and HTTP/WS proxy |
 | `docs/STAGE1_VALIDATION.md` | Current Stage 1 evidence, eval comparison and remaining limits |
+| `docs/STAGE2_VALIDATION.md` | Stage 2 migration, context isolation, measured compatibility and regression results |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
 ## Actual and planned flow
 
-Startup loads seven JSON files once, checks shapes/references and constructs local services.
+Startup constructs Insurance Manager from the seven canonical JSON files and registers it
+as the only production pack. The composition root injects only router transport settings
+and insurance policy thresholds; no environment values enter manifests or traces.
+The shared store holds `ConversationContext(global_context, active_scenario_pack,
+scenario_contexts)`. A pack gets only its own copied state and a global snapshot; no other
+pack slots, history, result, prompt, knowledge or tools are merged. The flat `DialogState`
+is a compatibility projection, not the persisted source of truth. Pack lifecycle is separate
+from the existing insurance SCxx pending/stack lifecycle.
+Registry activation defaults to Insurance Manager without another routing call.
 Implemented text API: request validation → per-session lock → prior-state snapshot → one
 Router Agent structured call → validation/policy → context transition → deterministic
 read-only lookup/slot/system reply → state + trace → wait for next turn. No second LLM,
@@ -115,6 +130,8 @@ Application traces expose concise reasons and measured latency, never hidden cha
   Provider failures do not commit history/state/trace. Invalid structured model decisions
   become SYS_UNCLEAR with no business actions and an allowlisted routing_error in trace;
   repeated failures follow the existing handoff policy.
+  Optional `scenario_mode=insurance_manager` selects the same default; unknown packs return
+  422 with `unknown_scenario_pack` without an LLM call. Trace adds pack/mode/lifecycle fields.
 - `GET /dev`: standalone debug form, enabled only with `ENABLE_DEV_STAND=true` (otherwise
   404). Reuses editable session ID, shows reply/status/routing/state/trace and browser/backend
   latency. Text rendered safely; no key in browser. New session does not erase older sessions.

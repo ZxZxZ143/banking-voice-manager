@@ -3,6 +3,15 @@
 The frontend already owns the session ID, conversation loop, text fallback, browser TTS,
 and trace display. The integrated MVP connects these two boundaries in real HTTP mode.
 
+Stage 2 keeps these boundaries intact. `/api/message` defaults through the internal registry
+to the only production pack, `insurance_manager`; frontend and voice send the existing
+`{session_id, text}` payload. Optional `scenario_mode` is supported but unnecessary.
+The response retains its six top-level fields and flat insurance state, including
+`response_language`. Trace adds `scenario_pack_id`, `interaction_mode=consultative` and
+`context_lifecycle`; legacy traces still render. No pack logic enters STT, TTS or runtime.
+Internally, `conversation/service.py` owns session orchestration and
+`packs/insurance_manager/` owns business routing/state/replies. See `ARCHITECTURE.md`.
+
 ## Voice Input → ConversationRuntime
 
 `ConversationPanel` now attaches `VoiceControls` through `voiceRuntimeBridge.ts` before Start.

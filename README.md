@@ -2,7 +2,14 @@
 
 Conversational insurance assistant for Russian, Kazakh and mixed speech. The application combines one OpenAI Agents SDK Router, deterministic insurance replies, a shared conversation runtime, streaming transcription, browser speech synthesis and a supervisor trace.
 
-Business information comes from the supplied **fictional Saqta Insurance** snapshot dated **2026-10-01**. Prices, customers, policies and payments are demonstration data. Future banking scenario packs are outside Stage 1.
+Business information comes from the supplied **fictional Saqta Insurance** snapshot dated **2026-10-01**. Prices, customers, policies and payments are demonstration data. `insurance_manager` is the only production Scenario Pack. Other banking packs remain unimplemented.
+
+Stage 2 separates the shared session core from Insurance Manager. An internal `ScenarioRegistry`
+resolves the default pack without another LLM call. Each pack owns its prompt, knowledge,
+tools, policies, context schema and result schema. Global context contains only session,
+turn, language, channel and conversation status; insurance slots, history and deferred flows
+live in its isolated context. Activation, suspension, resume and completion are supported
+internally. See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
@@ -69,6 +76,12 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 
 `POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }`. Reuse the ID across turns. It returns `response_text`, `routing`, `state`, `trace` and `conversation_status`. One request is one user turn and one routing call. Terminal sessions reject further turns with 409; reset creates a new session. Invalid input is 422, missing model/key 503, provider outage 502 and timeout 504.
 
+Optional `scenario_mode="insurance_manager"` selects the same default pack. Unregistered
+packs return 422 before any model call. The six existing top-level response fields and flat
+insurance `state` remain unchanged. Trace adds `scenario_pack_id`, `interaction_mode` and
+`context_lifecycle`; the supervisor panel displays them. `InsuranceResult` is stored inside
+the pack's session entry, rather than adding required fields to the frontend contract.
+
 Voice WebSocket: `ws://127.0.0.1:5173/api/v1/voice`. Start with a UUID `session_id`, 24 kHz mono PCM16, then send binary frames. Only `utterance.final` reaches Agent Core; partial text remains in voice diagnostics. See [the streaming protocol](docs/VOICE_STREAMING_CONTRACT.md).
 
 The runtime stops capture before routing/TTS. Normal playback resumes listening; `handoff` and `ended` keep it stopped. Reset invalidates stale callbacks. Browser TTS waits for playback completion and bounds stalled playback. Installed Russian/Kazakh voices determine audible language quality; the browser default is used when a matching voice is absent.
@@ -114,7 +127,9 @@ npm run build
 node --experimental-transform-types --test tests/*.test.mjs
 ```
 
-Current evidence and limitations are in [Stage 1 validation](docs/STAGE1_VALIDATION.md). Offline fixtures establish contract/state behavior, not model accuracy.
+Current evidence and limitations are in [Stage 2 validation](docs/STAGE2_VALIDATION.md),
+with the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).
+Offline fixtures establish contract/state behavior, not model accuracy.
 
 ## Demo flows
 

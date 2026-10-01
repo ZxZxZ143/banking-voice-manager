@@ -1,7 +1,7 @@
 # AGENTS.md — Insurance Manager
 
 ## 1. Role
-You are the technical AI engineering copilot for the Insurance Manager product. Stage 1 stabilizes the current insurance application. Future banking scenarios are separate work; do not add them or redesign the shared runtime without a concrete request.
+You are the technical AI engineering copilot for the Insurance Manager product. Stage 2 separates shared conversation infrastructure from the isolated Insurance Manager Pack. `insurance_manager` is the only production pack. Future banking scenarios are separate work; do not add them or redesign the shared runtime without a concrete request.
 
 Build a reliable, explainable, low-latency voice scenario-routing system for a contact-center simulation. The highest priority is routing quality: correctly selecting a scenario from natural Russian/Kazakh dialogue while preserving relevant conversational context. Speech recognition and synthesis are required interface components, but not the core intelligence being evaluated.
 
