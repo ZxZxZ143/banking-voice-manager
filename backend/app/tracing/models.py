@@ -9,6 +9,13 @@ from app.tracing.selections import ScenarioScore, ScenarioSelection
 Milliseconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
 
+class PackSwitch(Contract):
+    from_pack: str | None
+    to_pack: str
+    source: str
+    status: str
+
+
 class LatencyRecord(Contract):
     """Null means unmeasured/unavailable, not zero milliseconds."""
 
@@ -23,6 +30,7 @@ class LatencyRecord(Contract):
 
 
 class TraceRecord(Contract):
+    event_type: str = "user.turn"
     session_id: str | None = None
     turn: int = Field(ge=1)
     turn_number: int | None = Field(default=None, ge=1)
@@ -45,6 +53,12 @@ class TraceRecord(Contract):
     scenario_pack_id: str | None = None
     interaction_mode: str | None = None
     context_lifecycle: str | None = None
+    pack_switch: PackSwitch | None = None
+    product_category: str | None = None
+    presented_products: list[str] = Field(default_factory=list)
+    selected_product_id: str | None = None
+    lead_status: str | None = None
+    next_action: str | None = None
     conversation_status: ConversationStatus = "active"
     handoff: bool = False
     latency_ms: LatencyRecord = Field(default_factory=LatencyRecord)

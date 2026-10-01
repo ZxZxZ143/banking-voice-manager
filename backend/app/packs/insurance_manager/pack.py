@@ -29,6 +29,8 @@ INSURANCE_MANIFEST = ScenarioManifest(
     interaction_mode=InteractionMode.CONSULTATIVE,
     supported_languages=("ru", "kk", "mixed"),
     output_schema="InsuranceResult",
+    public_description="Insurance policies, quotes, coverage, claims, policy documents, "
+    "insurance payments and insurance service support. Excludes bank deposits/cards.",
 )
 
 
@@ -111,6 +113,7 @@ class InsuranceManagerPack:
             public_state=state,
             trace=trace,
             result=result,
+            out_of_domain=any(s.scenario_id == "SYS_OUT_OF_SCOPE" for s in decision.scenarios),
         )
 
 

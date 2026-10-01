@@ -9,6 +9,7 @@ services:
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 8000
       STARTER_KIT_PATH: /app/data/starter_kit
+      PRODUCT_CATALOG_PATH: /app/data/product_promoter/catalog.json
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:

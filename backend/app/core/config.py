@@ -28,3 +28,4 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     enable_dev_stand: bool = False
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"
+    product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"

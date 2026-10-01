@@ -1,0 +1,69 @@
+{
+  "brand": "Merei Demo Bank",
+  "synthetic": true,
+  "products": [
+    {
+      "id": "DEP-FLEX", "category": "deposit", "name_ru": "Гибкий", "name_kk": "Икемді",
+      "currencies": ["KZT"], "nominal_rate_percent": 10, "effective_rate_percent": 10.47,
+      "minimum_amount": 10000, "term_months": [6, 12], "replenishment": true,
+      "partial_withdrawal": true, "capitalization": "monthly", "digital": true,
+      "early_termination_ru": "Начисленный доход сохраняется; остаток возвращается в течение 1 рабочего дня.",
+      "early_termination_kk": "Есептелген кіріс сақталады; қалдық 1 жұмыс күні ішінде қайтарылады.",
+      "opening_channel": "demo_app",
+      "restrictions_ru": "После снятия нужен остаток не менее 10000 KZT. Ставка относится только к этому синтетическому продукту.",
+      "restrictions_kk": "Ақша алғаннан кейін кемінде 10000 KZT қалуы керек. Мөлшерлеме тек осы жасанды өнімге қатысты.",
+      "reference_date": "2026-10-01"
+    },
+    {
+      "id": "DEP-SAVE", "category": "deposit", "name_ru": "Накопительный", "name_kk": "Жинақ",
+      "currencies": ["KZT"], "nominal_rate_percent": 14, "effective_rate_percent": 14.93,
+      "minimum_amount": 100000, "term_months": [12], "replenishment": true,
+      "partial_withdrawal": false, "capitalization": "monthly", "digital": true,
+      "early_termination_ru": "Доход пересчитывается по 0.1% годовых; возврат через 30 календарных дней после заявки.",
+      "early_termination_kk": "Кіріс жылына 0.1% бойынша қайта есептеледі; өтініштен кейін 30 күнтізбелік күнде қайтарылады.",
+      "opening_channel": "demo_app",
+      "restrictions_ru": "Частичное снятие недоступно. Это учебный продукт, реальное открытие не выполняется.",
+      "restrictions_kk": "Ішінара алу жоқ. Бұл оқу өнімі, нақты ашу орындалмайды.",
+      "reference_date": "2026-10-01"
+    },
+    {
+      "id": "DEP-USD", "category": "deposit", "name_ru": "Валютный", "name_kk": "Валюталық",
+      "currencies": ["USD"], "nominal_rate_percent": 1, "effective_rate_percent": 1,
+      "minimum_amount": 100, "term_months": [12], "replenishment": false,
+      "partial_withdrawal": false, "capitalization": "none", "digital": false,
+      "early_termination_ru": "Доход не выплачивается; сумма возвращается через 7 календарных дней.",
+      "early_termination_kk": "Кіріс төленбейді; сома 7 күнтізбелік күннен кейін қайтарылады.",
+      "opening_channel": "demo_branch",
+      "restrictions_ru": "Курсовой риск сохраняется. Конвертация и её комиссии в демо не предусмотрены.",
+      "restrictions_kk": "Валюта бағамының тәуекелі сақталады. Демода айырбастау және оның комиссиялары қарастырылмаған.",
+      "reference_date": "2026-10-01"
+    },
+    {
+      "id": "CARD-DAILY", "category": "card", "name_ru": "Повседневная", "name_kk": "Күнделікті",
+      "currencies": ["KZT"], "monthly_fee_kzt": 0, "cashback_percent": 1,
+      "cashback_limit_kzt": 3000, "atm_free_limit_kzt": 100000, "atm_above_limit_percent": 1,
+      "digital": true, "opening_channel": "demo_app",
+      "restrictions_ru": "Cashback только за покупки; переводы и снятие исключены. Условия других банкоматов не заданы.",
+      "restrictions_kk": "Cashback тек сатып алуға; аудару мен қолма-қол алу кірмейді. Басқа банкомат шарттары берілмеген.",
+      "reference_date": "2026-10-01"
+    },
+    {
+      "id": "CARD-REWARD", "category": "card", "name_ru": "Бонусная", "name_kk": "Бонустық",
+      "currencies": ["KZT"], "monthly_fee_kzt": 700, "cashback_percent": 3,
+      "cashback_limit_kzt": 10000, "atm_free_limit_kzt": 100000, "atm_above_limit_percent": 1,
+      "digital": true, "opening_channel": "demo_app",
+      "restrictions_ru": "Cashback только за покупки; переводы и снятие исключены. Плата 700 KZT без условий отмены. Другие банкоматы не описаны.",
+      "restrictions_kk": "Cashback тек сатып алуға; аудару мен қолма-қол алу кірмейді. 700 KZT ақысы алынбайтын жағдай жоқ. Басқа банкоматтар сипатталмаған.",
+      "reference_date": "2026-10-01"
+    },
+    {
+      "id": "CARD-CASH", "category": "card", "name_ru": "Наличные", "name_kk": "Қолма-қол",
+      "currencies": ["KZT", "USD"], "monthly_fee_kzt": 500, "cashback_percent": 0,
+      "cashback_limit_kzt": 0, "atm_free_limit_kzt": 500000, "atm_above_limit_percent": 1,
+      "digital": false, "opening_channel": "demo_branch",
+      "restrictions_ru": "Бесплатный лимит относится к снятию KZT в демо-банкоматах. Комиссии снятия USD и конвертации не заданы.",
+      "restrictions_kk": "Тегін лимит демо-банкоматта KZT алуға қатысты. USD алу және айырбастау комиссиялары берілмеген.",
+      "reference_date": "2026-10-01"
+    }
+  ]
+}

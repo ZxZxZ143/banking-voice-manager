@@ -24,6 +24,7 @@ class ScenarioManifest(Contract):
     interaction_mode: InteractionMode
     supported_languages: tuple[Language, ...]
     output_schema: str = Field(min_length=1, max_length=100)
+    public_description: str = Field(default="", max_length=1000)
 
 
 class GlobalConversationContext(Contract):
@@ -49,6 +50,8 @@ class PackTurn:
     public_state: Contract
     trace: TraceRecord
     result: ScenarioResult
+    complete_pack: bool = False
+    out_of_domain: bool = False
 
 
 class ScenarioPack(Protocol):
@@ -88,3 +91,15 @@ class ConversationContext(Contract):
     global_context: GlobalConversationContext
     active_scenario_pack: str | None = None
     scenario_contexts: dict[str, ScenarioContextEntry] = Field(default_factory=dict)
+    pending_switch: "PendingPackSwitch | None" = None
+
+
+class PendingPackSwitch(Contract):
+    from_pack: str
+    to_pack: str
+    request_text: str = Field(max_length=10000)
+    response_language: Literal["ru", "kk"]
+    previous_status: ConversationStatus = "active"
+
+
+ConversationContext.model_rebuild()

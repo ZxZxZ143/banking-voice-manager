@@ -4,6 +4,7 @@ from datetime import date
 
 from pydantic import Field
 
+from app.conversation.terminal import terminal_reply
 from app.core.contracts import Contract
 from app.packs.insurance_manager.agent.schemas import RouterDecision
 from app.packs.insurance_manager.data.models import SlotDataset
@@ -152,12 +153,7 @@ class RoutingReplyGenerator:
     ) -> RoutingReplyResult:
         language = state.response_language
         if state.conversation_status == "handoff":
-            return RoutingReplyResult(
-                text={
-                    "ru": "Конечно, передаю диалог оператору.",
-                    "kk": "Әрине, диалогты операторға тапсырамын.",
-                }[language]
-            )
+            return RoutingReplyResult(text=terminal_reply("handoff", language))
         selected = policy.scenario_ids[0]
         if selected == "SYS_UNCLEAR":
             # The source template requires option_a/option_b, which may be absent.

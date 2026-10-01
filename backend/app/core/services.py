@@ -10,7 +10,11 @@ from app.dialog.store import InMemoryDialogStore
 from app.packs.insurance_manager.agent.router import Router
 from app.packs.insurance_manager.pack import INSURANCE_MANIFEST, build_insurance_pack
 from app.packs.insurance_manager.scenarios.decision_policy import PolicySettings
+from app.packs.product_promoter.agent import ProductAgent
+from app.packs.product_promoter.catalog import load_catalog
+from app.packs.product_promoter.pack import ProductPromoterPack
 from app.packs.registry import ScenarioRegistry
+from app.packs.selector import ScenarioSelector
 from app.tracing.collector import TraceCollector
 from app.triage.service import TriageService
 
@@ -76,15 +80,16 @@ class Services:
 
 
 def build_services(settings: Settings, *, router_override: Router | None = None) -> Services:
+    transport = RouterSettings(
+        settings.openai_api_key,
+        settings.openai_router_model,
+        settings.router_temperature,
+        settings.router_max_output_tokens,
+        settings.router_timeout_seconds,
+    )
     pack = build_insurance_pack(
         settings.starter_kit_path,
-        router_settings=RouterSettings(
-            settings.openai_api_key,
-            settings.openai_router_model,
-            settings.router_temperature,
-            settings.router_max_output_tokens,
-            settings.router_timeout_seconds,
-        ),
+        router_settings=transport,
         policy_settings=PolicySettings(
             accept_threshold=settings.router_accept_threshold,
             low_threshold=settings.router_low_threshold,
@@ -95,6 +100,8 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
     )
     registry = ScenarioRegistry(default_pack_id=pack.manifest.id)
     registry.register(pack)
+    products = load_catalog(settings.product_catalog_path)
+    registry.register(ProductPromoterPack(products, ProductAgent(transport, products)))
     dialogs = InMemoryDialogStore()
     traces = TraceCollector()
     messages = MessageService(
@@ -105,4 +112,6 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         pack.processor.replies,
         registry=registry,
     )
+    if settings.openai_api_key and settings.openai_router_model:
+        messages.selector = ScenarioSelector(transport)
     return Services(registry, dialogs, traces, messages, TriageService())

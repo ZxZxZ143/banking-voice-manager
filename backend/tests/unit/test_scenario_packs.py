@@ -1,4 +1,4 @@
-"""Architecture checks use a private fixture pack, never a second production pack."""
+"""Architecture checks also use a private fixture to test the generic boundary."""
 
 import ast
 import asyncio
@@ -97,7 +97,10 @@ def services(router=None):
 
 def test_production_registry_manifest_and_owned_capabilities():
     built = services()
-    assert [pack.manifest.id for pack in built.registry.list()] == ["insurance_manager"]
+    assert [pack.manifest.id for pack in built.registry.list()] == [
+        "insurance_manager",
+        "product_promoter",
+    ]
     pack = built.registry.get()
     assert built.registry.exists("insurance_manager")
     assert pack.manifest == INSURANCE_MANIFEST

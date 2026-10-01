@@ -16,10 +16,12 @@ class ScenarioLifecycle:
                 entry.lifecycle = "suspended"
             conversation.active_scenario_pack = None
 
-    def activate(self, conversation: ConversationContext, pack_id: str) -> ScenarioContextEntry:
+    def activate(
+        self, conversation: ConversationContext, pack_id: str, *, preserve_completed: bool = False
+    ) -> ScenarioContextEntry:
         pack = self.registry.get(pack_id)  # Reject unknown IDs before changing any context.
         entry = conversation.scenario_contexts.get(pack_id)
-        if entry is None or entry.lifecycle == "completed":
+        if entry is None or (entry.lifecycle == "completed" and not preserve_completed):
             entry = ScenarioContextEntry(state=pack.new_context(), lifecycle="active")
         if type(entry.state) is not pack.state_schema:
             raise ValueError("Scenario context does not match the registered pack schema")

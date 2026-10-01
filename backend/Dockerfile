@@ -8,6 +8,7 @@ COPY backend/app /app/backend/app
 RUN pip install --no-deps --no-build-isolation ./backend \
     && useradd --create-home appuser
 COPY data/starter_kit /app/data/starter_kit
+COPY data/product_promoter /app/data/product_promoter
 USER appuser
 EXPOSE 8000
 CMD ["python", "-m", "app.main"]
