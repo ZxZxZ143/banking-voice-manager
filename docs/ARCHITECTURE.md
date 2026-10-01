@@ -1,157 +1,154 @@
-# Scenario Pack architecture — Stage 2
+# Scenario Pack architecture — Stage 3
 
-`insurance_manager` is the only production Scenario Pack. Stage 2 separates reusable
-conversation infrastructure from the existing insurance application. It adds no second
-LLM, production business scenario, database, queue, RAG or dynamic plugin loading.
+The two production packs are `insurance_manager` (consultative) and
+`product_promoter` (proactive). Shared sessions, HTTP, voice, traces and lifecycle remain
+independent of their business logic. No database, queue, RAG or dynamic plugin loading
+is introduced.
 
 ```text
 Browser text / final STT → POST /api/message
-    → Shared Core: session lock, snapshot, registry resolution, pack activation
-    → InsuranceManagerPack: one Router → insurance policy/state → grounded replies
-    → Shared Core: global status, isolated context/result, state+trace commit
-    → existing browser runtime → TTS → listening / handoff / ended
+    → Shared Core: lock, snapshot, registry, activate/resume
+    → selected pack: one structured Agent call → deterministic policy/reply
+    → only when out-of-domain: public-manifest selector → customer confirmation
+    → Shared Core: typed local context/result + global status + trace commit
+    → browser TTS → listening / handoff / ended
+
+Product selected at Start → POST /api/conversation/start
+    → same Shared Core → Product opener (zero model calls, no customer transcript)
+    → branded assistant greeting → TTS → listening
 ```
 
-## Shared Core
+## Shared Core and context firewall
 
-`conversation/service.py` owns per-session orchestration, registry/lifecycle resolution,
-terminal-session rejection, snapshot boundaries and successful state/trace commit.
-`conversation/store.py` retains the original bounded locked LRU algorithm: 100 sessions,
-in-flight sessions pinned against eviction, deep copies on reads and writes. Provider or
-pack failure commits no history, switch, context or trace. Trace collection remains bounded
-to 100 sessions × 100 turns. State is single-process, in-memory and lost on restart.
+`conversation/service.py` owns registry resolution, per-session locking, snapshots,
+activation, pending-switch confirmation, terminal rejection and atomic commit. The bounded
+locked LRU store retains 100 sessions; in-flight entries are pinned, reads/writes use deep
+copies. Traces are bounded to 100 sessions × 100 turns. State is single-process, in-memory
+and lost on backend restart. Failures commit no context, switch or trace.
 
-`GlobalConversationContext` contains only session ID, global turn number, language,
-channel and conversation status. The existing HTTP transport defaults channel to `text`,
-including requests carrying a final transcript; no voice-layer pack selection is required.
-There are no global insurance identifiers, slots, history or business results.
+`GlobalConversationContext` contains only session ID, global turn, language, channel and
+conversation status. `ConversationContext` additionally holds the active pack, isolated
+`scenario_contexts[pack_id]` and optional pending switch. Pending metadata contains the
+original request, source/target IDs, reply language and prior status, never private business
+state. It is not passed to either pack or to the selector.
 
-`ConversationContext` contains this global context, `active_scenario_pack`, and isolated
-`scenario_contexts[pack_id]` entries. Each entry owns a typed local state, lifecycle and
-latest structured result. It is not returned as a cross-pack frontend payload.
+Each pack receives only its typed local state and a copied global context. Its latest
+typed result stays in its own entry. Shared code validates context/result types before
+commit; it never merges slots, history, knowledge, prompts or tools. These are boundaries
+between trusted developer-controlled Python components, not an OS sandbox for plugins.
 
-## ScenarioPack and manifest
+## Contract, registry and lifecycle
 
-`packs/contracts.py` defines the trusted in-process ScenarioPack protocol: manifest,
-prompt, knowledge, tools, policies, state schema, output schema, completion rules,
-new-context factory and `handle_turn`. A turn receives only the selected local context
-and a copied global context. It returns local state, application result, reply and trace;
-it receives no store, registry, other contexts or full application Settings.
+`packs/contracts.py` defines the manifest, prompt, knowledge, tools, policies, state/output
+schemas, completion rules, new-context factory and `handle_turn`. Product also implements
+an optional `open_turn`. Manifests contain public routing descriptions and no configuration
+secrets. `core/services.py` explicitly constructs and registers exactly the two packs.
 
-The immutable Python manifest is intentionally simple:
+`packs/registry.py` performs dictionary lookup, never semantic routing or dynamic import.
+Unknown IDs return 422 before any model call. New sessions default to Insurance; omitted
+mode on later requests continues the active pack. Explicit mode switches immediately.
 
-```text
-id: insurance_manager
-name: Insurance Manager
-interaction_mode: consultative
-supported_languages: ru, kk, mixed
-output_schema: InsuranceResult
-```
+`packs/lifecycle.py` initializes, suspends, resumes and completes entries. Production
+switching preserves completed leads and refusals; it does not start selling again after a
+refusal. Explicit new deposit/card interest can start a fresh Product consultation.
+Insurance SCxx stack/pending lifecycle remains entirely within Insurance Manager.
+Handoff/goodbye complete the pack and close the global session. Product interest/refusal
+completes the lead while leaving the global conversation active.
 
-`InteractionMode` defines `reactive`, `consultative` and `proactive` metadata. No proactive
-execution or additional production pack is implemented. `core/services.py` is the explicit
-composition root: it constructs Insurance Manager and registers it. Only router transport
-receives the key/model/temperature/token/timeout settings; manifests contain no secrets.
+## Natural switching
 
-## ScenarioRegistry and lifecycle
+Only a pack's `out_of_domain` result invokes `packs/selector.py`. Normal in-domain turns
+call one pack Agent; opening and rejecting a pending switch call no model. Selector input
+has exactly current text, current pack ID, public descriptions of registered packs and
+global language. No private contexts, results, identity, history or expected labels enter it.
 
-`packs/registry.py` implements register/get/exists/list and resolves the configured default.
-Duplicate registration and unknown IDs fail clearly. An HTTP pack ID is a dictionary lookup,
-never a module path or code import. Registry resolution performs no semantic routing and
-adds no LLM call.
+An allowlisted different target with confidence ≥0.75 produces a confirmation, preserving
+the original pack's private state. Yes dispatches the original question to the target;
+the trace retains the actual confirmation transcript. No preserves the old state. A new
+non-confirmation request cancels the proposal and goes through the current pack. Unsupported
+loans, fraud, technical support and unrelated requests do not force a pack switch.
+Invalid selector output safely leaves the pack active. Provider/timeout failures roll back
+the whole turn. The conditional selector shares a 55-second overall deadline below the
+frontend's 60-second timeout.
 
-`packs/lifecycle.py` supports new activation, suspension on switching, resumption of an
-existing local context, and completion. Lifecycle values are inactive/active/suspended/
-resumed/completed. Completed contexts activate as fresh local state; suspended contexts
-resume with their own state. Unknown or mismatched contexts are rejected before switching.
-Production requests select only Insurance Manager. A second lightweight pack exists only
-as a private test fixture to verify this foundation, not in startup registration.
+## Insurance Manager
 
-Pack completion is distinct from completion of an insurance SCxx flow. A completed quote
-or information reply can resume pending insurance work and leaves the pack active. Handoff
-or goodbye sets the global terminal status and completes the pack context. Existing SCxx
-stack, pending requests and per-flow slot snapshots are preserved inside Insurance Manager.
+Implementation lives in `packs/insurance_manager/`; former `agent/`, `dialog/`, `data/`,
+`scenarios/`, `tools/` and `response/` paths remain compatibility exports. Canonical source
+`data/starter_kit/` remains unchanged: 40 insurance flows, three system intents, 43 slots,
+31 actions and 104 development examples. No duplicate dataset or expected labels enter
+the Router. The Stage 1 prompt, strict SDK schema and fresh input serialization remain
+unchanged.
 
-## Insurance Manager Pack
+Insurance owns routing, confidence/priority policy, slot/ID validation, local 20-turn history,
+client lookup ID, per-flow snapshots, pending/stack, clarification counters and RU/KK replies.
+`InsuranceResult` records the actual outcome and collected data before slots clear. Read-only
+synthetic lookups and grounded quotes work; actual insurer writes remain disabled.
 
-All implementation paths below are relative to `backend/app/packs/insurance_manager/`.
+## Product Promoter
 
-| Module | Owned behavior |
-|---|---|
-| `pack.py` | Manifest, pack construction/capabilities, typed InsuranceResult, turn boundary |
-| `state.py`, `history.py` | InsuranceScenarioContext, bounded local history and flat legacy projection |
-| `processor.py` | Existing reply-language guard, invalid-output clarification, insurance transitions and completion |
-| `agent/` | Insurance prompt, SDK transport schema, Router, source slot/ID validation |
-| `data/` | Canonical JSON adapters, cross-file validation and read-only repositories |
-| `scenarios/` | Catalog, priority/confidence policy and non-executing requirements inspection |
-| `tools/` | Action definitions, disabled irreversible writes, bounded owned-record/knowledge lookups |
-| `response/` | RU/KK system/slot replies, grounded insurance quotes/lookups and assisted workflows |
-| `wire.py` | Existing typed HTTP response schema |
+`packs/product_promoter/agent.py` interprets intent, language and explicit preferences in one
+structured SDK call. It does not write dialogue or invent conditions. The independent
+`data/product_promoter/catalog.json` contains six synthetic Merei Demo Bank products:
+three deposits and three debit/payment cards, reference date 2026-10-01.
 
-The canonical source remains `data/starter_kit/`, dated 2026-10-01: 40 insurance flows,
-three system intents, 43 slots, 31 actions and 104 development examples. No JSON dataset
-copy was created. Business records are synthetic. Dataset labels never enter Router input.
+`models.py` defines strict catalog, decision, preferences, local context and `SalesLeadResult`
+schemas. No identity, income, wealth, insurance or vulnerability fields exist. Context owns
+category, explicit preferences, shown/compared/selected products, objections, interest,
+next action and last discovery question. ISO currencies remain normalized machine values.
 
-The Router remains one Agents SDK Agent/Runner call with no SDK tools/handoffs,
-max_turns=1, no automatic retry, 45-second deadline, disabled SDK tracing and provider
-storage. It owns language/decomposition, SCxx selections, confidence, alternatives,
-slot extraction and continuation. Insurance policy/state/replies stay deterministic.
-The Stage 1 prompt, strict SDK output schema and fresh input serialization are unchanged.
+`catalog.py` deterministically filters/ranks by currency, amount, term, liquidity,
+replenishment, fees, cashback, withdrawals and digital availability. Amount without explicit
+currency leads to a currency question. A comparison retains alternatives with different
+restrictions. No universally best product or guaranteed return is promised.
 
-InsuranceScenarioContext owns response language, client lookup ID, active SCxx flow,
-slots, flow snapshots, pending/stack, clarification counters/options, confirmation flag and
-20-turn local history. `InsuranceResult` records actual selected/completed flow, status,
-collected data before completion clears slots, referenced actions/sources, completed and
-handoff flags. It describes the real application outcome, never successful insurer writes.
-The latest result remains inside the selected pack entry.
+`pack.py` asks one useful question, presents actual candidates, handles objections without
+changing rates, respects refusal and records only explicit application interest. Opening
+names Merei Demo Bank before asking about the customer's goal. `presentation.py` produces
+conversational, catalog-based summaries with human currency names, decimal commas, percentages
+and amounts such as «50 тысяч тенге». Complete conditions are returned separately in
+`product_conditions` for the UI disclosure; the frontend calculates no banking terms.
 
-## Context firewall
+`SalesLeadResult` includes outcome, category, selected ID, explicit preferences, presented/
+compared products, objections, interest and next action. Link/callback/application requests
+are recorded only; no product opens, link sends or callback schedules.
 
-Shared code never merges pack-local slots, histories, results, prompts, knowledge or tools.
-The selected pack receives exactly its registered context type; context/result types are
-checked before commit. A switch suspends the old entry and initializes or resumes the
-selected entry without copying business data. Global snapshot mutations cannot alter
-stored session identity/status. Insurance's identity sharing between its own SCxx flows
-remains an explicit insurance policy and does not cross the pack boundary.
+## SDK transport and errors
 
-Tests exercise two private contexts, switch/resume, selective Router input, structured
-result isolation, snapshot mutation and failed-switch rollback. These are application
-boundaries between trusted Python components, not an OS sandbox for untrusted plugins.
-Only developer-controlled packs can be registered.
+Insurance retains its existing bounded transport. Product and selector use
+`packs/structured_agent.py`: no SDK tools/handoffs, max_turns=1, SDK/client retry=0,
+45-second per-call timeout, disabled SDK tracing and provider storage. Only narrow routing
+settings reach the transport. No environment values enter prompts, manifests or traces.
 
-## Compatibility and transport
+HTTP errors remain 422 input, 503 configuration/capacity, 502 provider, 504 timeout and
+409 terminal session. Invalid structured decisions lead to bounded clarification/handoff,
+never an invalid business action. Shared terminal replies preserve exactly
+**«Конечно, передаю диалог оператору.»** and localized goodbye.
 
-`POST /api/message` still accepts `{session_id, text}`. Optional
-`scenario_mode="insurance_manager"` resolves the same pack; unknown IDs return 422
-`unknown_scenario_pack` before a Router call. Responses retain the six top-level fields:
-session_id, response_text, routing, state, trace, conversation_status. `wire.py` preserves
-the concrete insurance response types in OpenAPI. Global and local state are projected to
-the previous flat DialogState for API/Router compatibility, without persisting a second copy.
+## HTTP, frontend and voice
 
-`agent/`, `dialog/`, `data/`, `scenarios/`, `tools/` and `response/` at the old app paths
-are compatibility exports/adapters. Existing tests and callers remain valid; insurance
-implementation lives inside its pack. The old Router import remains a module alias so
-existing SDK transport injection points continue to work.
+`POST /api/message` accepts `{session_id, text, scenario_mode?}`. Responses retain six fields:
+session_id, response_text, routing, state, trace, conversation_status. OpenAPI declares
+Insurance, Product and minimal platform-confirmation variants. Insurance keeps its flat
+legacy state; Product exposes only its own state/result and shown catalog records.
 
-Trace adds scenario_pack_id, interaction_mode and context_lifecycle. The shared core
-sets authoritative session/turn/status fields. Insurance trace still exposes short reasons,
-selected flows, alternatives, source/action names and timings; it exposes no prompts,
-secret config or hidden chain-of-thought. The supervisor UI reads both new and old traces.
+`POST /api/conversation/start` accepts `{session_id, scenario_mode}` and opens Product via
+the same locked core. Packs without an opener return 422. It creates an assistant event
+`scenario.opened`, with no fabricated customer text and no Router latency.
 
-HTTP error contracts remain 422 input, 503 configuration/capacity, 502 provider, 504 timeout
-and 409 terminal session. Invalid structured routing remains safe SYS_UNCLEAR clarification,
-then bounded handoff; it never executes an invalid business action. Explicit operator reply
-remains exactly **«Конечно, передаю диалог оператору.»**; Kazakh replies and goodbye remain.
+The runtime keeps one UUID/history across switching. Product selected before Start opens
+automatically; selecting Product during listening also opens/resumes it immediately.
+Insurance selection applies to the next customer request. The authoritative active pack
+comes from the backend trace. Selection is locked during processing/playback. Reset creates
+a new UUID. A Product lead panel and supplied trace metadata render defensively.
 
-Streaming voice and ConversationRuntime are unchanged: PCM16/24 kHz → local Silero/OpenAI
-STT → final-only same-session request → pack reply → browser TTS. Normal playback resumes
-listening; handoff/ended keep it stopped. Docker retains two health-checked services and
-loopback ports, with Nginx HTTP/WebSocket proxy and runtime-only `.env`.
+Voice remains pack-agnostic: PCM16/24 kHz → local Silero/OpenAI STT → final-only HTTP turn
+→ pack reply → browser TTS. Capture stops during processing/playback and resumes after
+normal speech. Handoff/ended keep it stopped, including playback failure. Opening plays
+before microphone capture starts. Partials never enter conversation history.
 
-## Actual boundaries
-
-No actual insurer writes, policy issuance, SMS/email delivery, operator queue, authentication
-or persistence is implemented. Synthetic identifier lookup is not authentication. The local
-stand must remain private. Browser speech depends on installed voices; physical microphone
-capture and Kazakh audio quality require manual verification. See `STAGE2_VALIDATION.md`
-for measured regression results and model-output variability.
+Docker retains two health-checked services and loopback ports 8000/5173, Nginx HTTP/WS
+proxy, non-root backend and runtime-only `.env`. Both catalog paths are explicit in Compose.
+No authentication, persistence or contact-center connection is implemented. Installed
+voices and real microphone quality require manual verification. Measured results and
+remaining model-output variability are in `STAGE3_VALIDATION.md`.

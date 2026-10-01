@@ -3,14 +3,26 @@
 The frontend already owns the session ID, conversation loop, text fallback, browser TTS,
 and trace display. The integrated MVP connects these two boundaries in real HTTP mode.
 
-Stage 2 keeps these boundaries intact. `/api/message` defaults through the internal registry
-to the only production pack, `insurance_manager`; frontend and voice send the existing
-`{session_id, text}` payload. Optional `scenario_mode` is supported but unnecessary.
-The response retains its six top-level fields and flat insurance state, including
-`response_language`. Trace adds `scenario_pack_id`, `interaction_mode=consultative` and
-`context_lifecycle`; legacy traces still render. No pack logic enters STT, TTS or runtime.
-Internally, `conversation/service.py` owns session orchestration and
-`packs/insurance_manager/` owns business routing/state/replies. See `ARCHITECTURE.md`.
+Stage 3 keeps voice pack-agnostic and adds two registered packs: `insurance_manager`
+and `product_promoter`. Omitted `scenario_mode` defaults to Insurance for a new session;
+later turns continue the active pack. Explicit mode switches in the shared locked core.
+The six response fields remain; `state`/`routing` are typed per pack, or a minimal platform
+confirmation. Insurance retains its flat state and `response_language`. Product exposes
+`sales_lead`, shown `products` and complete `product_conditions`. The frontend must not
+derive or rewrite business conditions.
+
+The selector shows requested versus active mode, locks during processing/speech, keeps
+history/UUID and follows authoritative `trace.scenario_pack_id`. Product selected before
+Start calls `POST /api/conversation/start` with session_id/scenario_mode; selecting Product
+while listening does the same immediately. Its branded assistant opener plays before
+listening, without inserting an empty customer message. Insurance selection applies to the
+next normal message. Optional `AgentClient.startScenario` keeps fixture clients compatible.
+
+An out-of-domain turn can return `awaiting_confirmation`; the next yes/no goes through
+the ordinary message path. No switches preserve the current private context. Yes processes
+the original question in the target. UI/STT/TTS never select a pack semantically.
+Trace adds `pack_switch`, product category, shown/selected products, lead status and next
+action; absent legacy fields still render. See `ARCHITECTURE.md` for isolation and rollback.
 
 ## Voice Input → ConversationRuntime
 
@@ -59,7 +71,7 @@ Valid statuses: `active`, `awaiting_user`, `awaiting_confirmation`, `handoff`, `
 `routing`, `state`, `trace`, and extra fields are optional; the UI handles partial data.
 Agent Core owns all routing and business decisions. The backend serves this endpoint;
 HTTP mode shows real failures rather than switching to mock replies. The frontend timeout
-is 60 seconds, above the backend's 45-second Router deadline.
+is 60 seconds, above the 45-second per-call and 55-second conditional-selection deadlines.
 
 ## Lifecycle and timing
 
@@ -80,7 +92,7 @@ In `frontend/.env.local`, set `VITE_API_BASE_URL` to the backend origin or leave
 the existing Vite proxy to `127.0.0.1:8000`. Keep `VITE_USE_MOCK_AGENT=false` for real HTTP;
 set it to `true` only for labeled fixtures in Vite development. Run from `frontend`:
 `npm run dev`, `npm run build`, `npm run test:runtime`, `npm run test:tts`,
-`npm run test:trace`, `npm run test:integration`, and `npm run test:voice-bridge`.
+`npm run test:trace`, `npm run test:integration`, `npm run test:voice-bridge`, and `npm run test:packs`.
 
 For the full stand keep `VITE_USE_MOCK_AGENT=false`. Backend needs `OPENAI_API_KEY` and
 `OPENAI_ROUTER_MODEL`; install the voice extra and see `VOICE_STREAMING_CONTRACT.md` for startup.
@@ -90,3 +102,12 @@ check that each final transcript creates one message, TTS completes before mic r
 and the session ID stays fixed. Reset during capture and verify old callbacks are ignored.
 Verify `/api/message`, terminal states, errors and trace timings in HTTP mode. Handoff
 stops capture but truthfully reports no actual operator connection in this local demo.
+
+## Product opening and currency speech
+
+Select Product Promoter, press Start, and first hear the assistant identify Merei Demo Bank.
+The conversation has an assistant-only opening event. Supply «50 тысяч тенге» or «100 долларов»;
+normalized preferences use KZT/USD while replies/TTS use human names. Complete numeric
+conditions stay in the backend-provided disclosure. A refusal stops the sales pitch;
+recorded application interest does not open a real product. Switch to Insurance and back:
+one UUID/history remains, but each pack sees only its own preferences/slots/result.

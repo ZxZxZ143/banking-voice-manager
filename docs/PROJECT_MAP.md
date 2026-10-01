@@ -2,7 +2,7 @@
 
 ## Purpose and requirements
 
-Insurance Manager for fictional Saqta Insurance. Prioritize LLM-based scenario
+Banking Voice Platform: Insurance Manager for fictional Saqta Insurance and proactive Product Promoter for synthetic Merei Demo Bank deposits/cards. Prioritize LLM-based scenario
 selection in Russian, Kazakh and mixed-language dialogue, context, ambiguity, topic
 changes, clarification and handoff. Final MVP requires voice; text remains available.
 No encoder intent classifier or hardcoded evaluation utterances.
@@ -10,13 +10,13 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
-- **Stage 2:** authoritative internal ScenarioRegistry with only `insurance_manager`;
-  pack-owned prompt/catalog/knowledge/actions/policy/replies, global versus local contexts,
-  isolated latest InsuranceResult, activation/suspension/resume/completion, unchanged public
-  state and six response fields. Existing Stage 1 regressions are retained; evidence and
-  evaluation variability are recorded in `STAGE2_VALIDATION.md`.
+- **Stage 3:** two production packs, conditional public-manifest selector with confirmation,
+  isolated suspend/resume and rollback, six synthetic banking products, grounded discovery,
+  comparisons, objections, refusal and SalesLeadResult. Product starts the conversation with
+  a branded greeting and uses human currency speech. UI selection, lead/conditions and switch
+  traces share the existing runtime/session. Evidence is in `STAGE3_VALIDATION.md`.
 
-- **Implemented:** `POST /api/message`, one structured SDK routing call per turn,
+- **Implemented:** `POST /api/message`, one selected-pack SDK call per normal turn,
   strict ID/slot validation, RU/KK/mixed routing contract, single/multi-intent prompt,
   continuation/topic switching, bounded in-memory sessions/traces, confidence policy,
   targeted clarification, source-based quotes, assisted catalog workflows, evaluation CLI and a
@@ -32,7 +32,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
 - **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
   loopback ports 8000/5173, runtime-only secrets and health checks.
-- **Not introduced:** database, Supabase, vector store, RAG, queues or extra agents.
+- **Not introduced:** database, Supabase, vector store, RAG, queues or unrelated production packs.
 
 ## Navigation
 
@@ -47,6 +47,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
 | `backend/app/packs/contracts.py`, `registry.py`, `lifecycle.py` | Pack contract, manifest/modes, registry, isolated contexts and lifecycle |
+| `backend/app/packs/product_promoter/` | Product decision/state/result, deterministic catalog matching and human speech |
+| `backend/app/packs/selector.py`, `structured_agent.py` | Conditional public-manifest selection and bounded SDK transport |
 | `backend/app/packs/insurance_manager/` | Production pack, InsuranceResult, local state, insurance processor and public wire projection |
 | `backend/app/packs/insurance_manager/agent/` | Unchanged one-call SDK Router, prompt and structured insurance output |
 | `backend/app/packs/insurance_manager/data/`, `scenarios/`, `tools/`, `response/` | Canonical-data adapters, catalog/policy, disabled writes, read-only helpers and insurance replies |
@@ -63,6 +65,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
+| `data/product_promoter/` | Six synthetic products and separate 40-case live evaluation |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
@@ -73,32 +76,28 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `docs/VOICE_STREAMING_CONTRACT.md` | PCM protocol, dependencies, endpointing and voice checks |
 | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf` | Health-checked local application stack and HTTP/WS proxy |
 | `docs/STAGE1_VALIDATION.md` | Current Stage 1 evidence, eval comparison and remaining limits |
+| `docs/STAGE3_VALIDATION.md` | Stage 3 product, switching, speech, live eval, Docker and security evidence |
 | `docs/STAGE2_VALIDATION.md` | Stage 2 migration, context isolation, measured compatibility and regression results |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
 ## Actual and planned flow
 
-Startup constructs Insurance Manager from the seven canonical JSON files and registers it
-as the only production pack. The composition root injects only router transport settings
-and insurance policy thresholds; no environment values enter manifests or traces.
-The shared store holds `ConversationContext(global_context, active_scenario_pack,
-scenario_contexts)`. A pack gets only its own copied state and a global snapshot; no other
-pack slots, history, result, prompt, knowledge or tools are merged. The flat `DialogState`
-is a compatibility projection, not the persisted source of truth. Pack lifecycle is separate
-from the existing insurance SCxx pending/stack lifecycle.
-Registry activation defaults to Insurance Manager without another routing call.
-Implemented text API: request validation → per-session lock → prior-state snapshot → one
-Router Agent structured call → validation/policy → context transition → deterministic
-read-only lookup/slot/system reply → state + trace → wait for next turn. No second LLM,
-LLM tools, RAG, agent handoffs or provider-side conversation storage.
-The SDK uses `max_turns=1`, no SDK/client retries, 45-second timeout and disabled SDK tracing.
-The current utterance is serialized after background state/history to reduce stale-context
-selection; no expected labels or evaluation IDs enter the routing input.
+Startup constructs both production packs from separate canonical catalogs. The shared
+store contains global metadata, active pack, isolated typed entries and minimal pending-switch
+metadata. A pack receives only its own state and a copied global context. Latest InsuranceResult
+and SalesLeadResult remain in their respective entries. Explicit selection is registry lookup;
+natural selection runs only after an out-of-domain result and requires customer confirmation.
+
+A normal request locks/snapshots the session, activates/resumes the selected pack, calls its
+structured Agent once, runs deterministic policy and commits state/result/trace together.
+Failures roll back. Product opening uses `/api/conversation/start` with zero model calls.
+All SDK transport is bounded: no tools/handoffs, max_turns=1, retry=0, disabled tracing/storage.
+The unchanged Insurance prompt/schema/input have a separate 104-case live regression run.
 
 The browser fetches real health through Vite. The frontend runtime creates one session ID,
 accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
-`POST /api/message`, displays the reply, awaits TTS playback, then resumes listening unless
+`POST /api/message` (or the assistant-only Product start request), displays the reply, awaits TTS playback, then resumes listening unless
 the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
 `onend`; `onstart` gives first-audio latency. A bounded playback watchdog rejects stalled
 speech. Successful handoff/ended states survive TTS failure. A no-audio adapter remains for tests.
@@ -258,7 +257,7 @@ Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run d
 Keep `VITE_USE_MOCK_AGENT=false` for the full live stand; true is for isolated dev fixtures only.
 Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
 `npm run test:tts`, `npm run test:trace`, `npm run test:integration`,
-`npm run test:voice-bridge`. Browser speech needs a supported browser and an installed voice;
+`npm run test:voice-bridge`, `npm run test:packs`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
 The evaluator needs real predictions from Router v1. Defaults: backend 127.0.0.1:8000,
 frontend localhost:5173. Update Vite proxy if changing backend port.
@@ -278,4 +277,4 @@ and STT timing stay on the runtime side; only session_id/text cross the Core API
 
 Next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.
-No DB or extra agent was added; irreversible execution remains blocked.
+No DB was added; actual insurer/bank writes remain disabled. Product and public-manifest selection use their own bounded agents.

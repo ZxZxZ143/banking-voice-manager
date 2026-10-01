@@ -1,18 +1,27 @@
-# Insurance Manager
+# Banking Voice Platform
 
-Conversational insurance assistant for Russian, Kazakh and mixed speech. The application combines one OpenAI Agents SDK Router, deterministic insurance replies, a shared conversation runtime, streaming transcription, browser speech synthesis and a supervisor trace.
+Modular conversational platform for Russian, Kazakh and mixed speech. Two production Scenario Packs share sessions, streaming transcription, browser speech synthesis and supervisor traces: **Insurance Manager** and the proactive **Product Promoter**. Each pack uses its own bounded OpenAI Agents SDK agent and isolated business context.
 
-Business information comes from the supplied **fictional Saqta Insurance** snapshot dated **2026-10-01**. Prices, customers, policies and payments are demonstration data. `insurance_manager` is the only production Scenario Pack. Other banking packs remain unimplemented.
+Insurance uses the supplied **fictional Saqta Insurance** snapshot. Product Promoter uses six synthetic products from **Merei Demo Bank**: three deposits and three debit/payment cards. Both catalogs have reference date **2026-10-01**. These are demonstration conditions and records, not real-bank offers. Fraud & Security and Loan Consultant are unimplemented.
 
-Stage 2 separates the shared session core from Insurance Manager. An internal `ScenarioRegistry`
-resolves the default pack without another LLM call. Each pack owns its prompt, knowledge,
-tools, policies, context schema and result schema. Global context contains only session,
-turn, language, channel and conversation status; insurance slots, history and deferred flows
-live in its isolated context. Activation, suspension, resume and completion are supported
-internally. See [the architecture](docs/ARCHITECTURE.md).
+`ScenarioRegistry` selects the default Insurance Manager for a new session; later turns
+continue the active pack. The UI selector opens Product immediately during listening and applies Insurance on the next request, preserving
+history and session ID. Natural out-of-domain requests use a conditional platform selector
+with public manifests only; the customer confirms before switching. A suspended pack resumes
+its own context and result. The conversation container holds global session metadata and a minimal pending
+switch request; business data never crosses packs. See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
+- Product starts with a branded Merei Demo Bank greeting before listening. Currency and
+  amounts are understood and spoken naturally: «50 тысяч тенге», «100 долларов США».
+  Full conditions remain available in a separate disclosure.
+- Product consultation: one useful discovery question, explicit multi-field preferences,
+  deterministic candidate matching, catalog conditions, conditional comparison, objections,
+  respectful refusal and a typed `SalesLeadResult`. Interest, requested link and callback are
+  recorded as demo next actions; no product opens, link sends or callback schedules.
+- Pack selector, visible active pack, switch notice, SalesLeadResult view and product/switch
+  supervisor fields. Completing or declining a lead leaves the global conversation active.
 - The existing catalog: 40 insurance scenarios and three system intents. Natural wording, independent multi-intent requests, clarification, topic switching and same-session continuation.
 - Source-based quotes for ОГПО, standard КАСКО, travel, property and accident insurance; DMS package information, clinics, documents, payment methods and owned policy/claim/payment lookups.
 - Application and servicing flows collect the catalog's required information and transfer the prepared conversation to an operator when an insurer operation is needed.
@@ -66,6 +75,7 @@ Stopping/recreating the backend clears its in-memory conversations and traces. `
 | `BACKEND_HOST` / `BACKEND_PORT` | Native defaults `127.0.0.1:8000`; Docker overrides host to `0.0.0.0` |
 | `FRONTEND_ORIGIN` | `http://localhost:5173`; voice also accepts the loopback frontend origin |
 | `STARTER_KIT_PATH` | Native `data/starter_kit`; Docker `/app/data/starter_kit` |
+| `PRODUCT_CATALOG_PATH` | Native `data/product_promoter/catalog.json`; Docker `/app/data/product_promoter/catalog.json` |
 | `ENABLE_DEV_STAND` | Optional `/dev` text debugger, off by default |
 
 Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `frontend/.env.example` uses `VITE_API_BASE_URL` and `VITE_USE_MOCK_AGENT`. Mock replies are explicitly labelled and available only in Vite development mode; production Docker uses the real backend.
@@ -74,13 +84,23 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 
 `GET /health` confirms startup and loaded dataset counts; it does not test OpenAI availability.
 
-`POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }`. Reuse the ID across turns. It returns `response_text`, `routing`, `state`, `trace` and `conversation_status`. One request is one user turn and one routing call. Terminal sessions reject further turns with 409; reset creates a new session. Invalid input is 422, missing model/key 503, provider outage 502 and timeout 504.
+`POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
+`scenario_mode=insurance_manager|product_promoter`. Reuse the ID across turns. One normal
+turn calls the active pack's agent once; an out-of-domain turn may additionally call the
+platform selector. Confirming a proposed switch processes the original request in the target
+pack; rejecting it preserves the current business context without another model call.
+Terminal sessions reject further turns with 409; reset creates a new session. Invalid input
+is 422, missing model/key 503, provider outage 502 and timeout 504.
 
-Optional `scenario_mode="insurance_manager"` selects the same default pack. Unregistered
-packs return 422 before any model call. The six existing top-level response fields and flat
-insurance `state` remain unchanged. Trace adds `scenario_pack_id`, `interaction_mode` and
-`context_lifecycle`; the supervisor panel displays them. `InsuranceResult` is stored inside
-the pack's session entry, rather than adding required fields to the frontend contract.
+`POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Product
+with zero model calls and no fabricated customer turn. Packs without an opener return 422.
+
+Unregistered packs return 422 before any model call. All responses retain six top-level fields:
+`session_id`, `response_text`, `routing`, `state`, `trace`, `conversation_status`. Insurance
+keeps its existing flat state and Router schema. Product state exposes `sales_lead` and the
+actually displayed catalog records; switch confirmations expose minimal platform state.
+OpenAPI declares these three typed variants. The latest InsuranceResult and SalesLeadResult
+remain in their own internal entries. Trace includes pack, mode, lifecycle and safe switch/product metadata.
 
 Voice WebSocket: `ws://127.0.0.1:5173/api/v1/voice`. Start with a UUID `session_id`, 24 kHz mono PCM16, then send binary frames. Only `utterance.final` reaches Agent Core; partial text remains in voice diagnostics. See [the streaming protocol](docs/VOICE_STREAMING_CONTRACT.md).
 
@@ -117,6 +137,8 @@ Stop the native services before starting Docker on the same ports.
 ./.venv/Scripts/python.exe -X utf8 -m app.evaluation --check-data
 ./.venv/Scripts/python.exe -X utf8 -m app.evaluation --run --output work/evals/new-run.json --concurrency 2 --min-interval-seconds 1 --continue-on-error
 ./.venv/Scripts/python.exe -X utf8 scripts/stage1_smoke.py
+./.venv/Scripts/python.exe -X utf8 scripts/stage3_smoke.py --output work/new-stage3-e2e.json
+./.venv/Scripts/python.exe -X utf8 scripts/evaluate_product_promoter.py --output work/evals/new-product-run.json
 ```
 
 Live evaluation and API smoke call OpenAI. Evaluation output must be a new path; all failed calls count as wrong. In `frontend`:
@@ -127,13 +149,21 @@ npm run build
 node --experimental-transform-types --test tests/*.test.mjs
 ```
 
-Current evidence and limitations are in [Stage 2 validation](docs/STAGE2_VALIDATION.md),
-with the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).
+Current evidence and limitations are in [Stage 3 validation](docs/STAGE3_VALIDATION.md),
+with the architecture baseline in [Stage 2 validation](docs/STAGE2_VALIDATION.md)
+and the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).
 Offline fixtures establish contract/state behavior, not model accuracy.
 
 ## Demo flows
 
 Start a conversation. Uncheck «Голосовой ввод» for text-only testing with the same runtime and browser TTS.
+
+Select Product Promoter → «Хочу открыть депозит.» → answer the liquidity question with an
+explicit amount/currency/term → inspect conditions and SalesLeadResult → select Insurance
+Manager and ask a travel-insurance question → switch back and inspect resumed preferences.
+Express application interest, then ask an operator: **«Конечно, передаю диалог оператору.»**
+Reset for goodbye or a new consultation. Product opens on Start or selection during listening;
+Insurance selection applies to the next customer message.
 
 1. RU: «Я оплатил страховку, но полис не появился.» — collects payment details.
 2. KK: «Маған саяхат сақтандыруы керек.» then «Екі аптаға.» — same travel scenario and session.
