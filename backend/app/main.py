@@ -9,21 +9,33 @@ from app.api.routes.dev import router as dev_router
 from app.api.routes.health import router as health_router
 from app.api.routes.message import router as message_router
 from app.api.routes.turns import router as turns_router
+from app.api.routes.twilio import router as twilio_router
 from app.api.websocket.voice import router as voice_router
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.services import build_services
+from app.telephony.twilio_gateway import TwilioGateway, build_twilio_gateway
 
 
 def create_app(
-    settings: Settings | None = None, *, router_override: Router | None = None
+    settings: Settings | None = None,
+    *,
+    router_override: Router | None = None,
+    twilio_override: TwilioGateway | None = None,
 ) -> FastAPI:
     config = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.services = build_services(config, router_override=router_override)
-        yield
+        application.state.twilio_gateway = twilio_override or build_twilio_gateway(
+            config, application.state.services.messages
+        )
+        try:
+            yield
+        finally:
+            if application.state.twilio_gateway:
+                await application.state.twilio_gateway.shutdown()
 
     application = FastAPI(title="Voice Router", version="0.1.0", lifespan=lifespan)
     application.state.settings = config
@@ -40,6 +52,7 @@ def create_app(
     application.include_router(message_router)
     application.include_router(turns_router)
     application.include_router(voice_router)
+    application.include_router(twilio_router)
     return application
 
 

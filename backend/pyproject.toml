@@ -15,6 +15,8 @@ dependencies = [
     "openai>=3.19,<4",
     "uvicorn>=0.35,<1",
     "websockets>=15,<17",
+    "twilio>=9.11.2,<10",
+    "av>=15,<17",
 ]
 
 [project.optional-dependencies]

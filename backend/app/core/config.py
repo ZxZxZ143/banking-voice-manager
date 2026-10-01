@@ -26,4 +26,11 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8000, ge=1, le=65535)
     frontend_origin: str = "http://localhost:5173"
     enable_dev_stand: bool = False
+    twilio_enabled: bool = False
+    twilio_account_sid: str | None = Field(default=None, pattern=r"^AC[0-9a-fA-F]{32}$")
+    twilio_auth_token: SecretStr | None = None
+    twilio_phone_number: str | None = None
+    public_base_url: str | None = None
+    backend_tts_model: str | None = None
+    backend_tts_voice: str | None = None
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"

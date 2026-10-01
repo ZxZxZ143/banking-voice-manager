@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any
 
 from app.events.models import ConversationEvent, EventType
@@ -75,7 +76,11 @@ class PhoneRuntime:
 
     def _record(self, call: _Call, event_type: EventType, **fields: Any) -> None:
         try:
-            fields["metadata"] = {**(fields.get("metadata") or {}), "call_id": call.session.call_id}
+            fields["metadata"] = {
+                **call.session.provider_metadata,
+                **(fields.get("metadata") or {}),
+                "call_id": call.session.call_id,
+            }
             self.event_store.append(
                 ConversationEvent(
                     session_id=call.session.session_id,
@@ -234,28 +239,61 @@ class PhoneRuntime:
         return session.language if session.language in ("ru", "kk", "mixed") else "ru"
 
     async def _turn(self, call: _Call, text: str) -> None:
+        started = perf_counter()
+        logger.info(
+            "phone stt_final call_id=%s session_id=%s",
+            call.session.call_id,
+            call.session.session_id,
+        )
         try:
             async with asyncio.timeout(self.turn_timeout_seconds):
                 response = await self.agent.respond(call.session.session_id, text)
                 if not self._current(call):
                     return
+                logger.info(
+                    "phone agent_response call_id=%s session_id=%s status=%s agent_ms=%.1f",
+                    call.session.call_id,
+                    call.session.session_id,
+                    response.conversation_status,
+                    (perf_counter() - started) * 1000,
+                )
                 call.session.conversation_status = response.conversation_status
                 try:
                     for event in response_events(
                         call.session.session_id, "phone", response.model_dump(mode="json")
                     ):
                         self.event_store.append(
-                            event.model_copy(update={"metadata": {"call_id": call.session.call_id}})
+                            event.model_copy(
+                                update={
+                                    "metadata": {
+                                        **call.session.provider_metadata,
+                                        "call_id": call.session.call_id,
+                                    }
+                                }
+                            )
                         )
                 except Exception:
                     logger.warning("Phone response event recording failed")
                 call.session.status = "speaking"
+                tts_started = perf_counter()
                 speech = await self.tts.synthesize(
                     response.response_text, self._reply_language(response, call.session)
                 )
                 if not self._current(call):
                     return
+                logger.info(
+                    "phone tts_ready call_id=%s session_id=%s tts_ms=%.1f",
+                    call.session.call_id,
+                    call.session.session_id,
+                    (perf_counter() - tts_started) * 1000,
+                )
                 await self.provider.send_audio(call.session.call_id, speech)
+                logger.info(
+                    "phone turn_complete call_id=%s session_id=%s total_ms=%.1f",
+                    call.session.call_id,
+                    call.session.session_id,
+                    (perf_counter() - started) * 1000,
+                )
                 if not self._current(call):
                     return
                 if response.conversation_status in ("handoff", "ended"):
