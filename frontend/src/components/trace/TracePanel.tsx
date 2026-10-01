@@ -33,6 +33,12 @@ export function TracePanel({ view }: { view: TraceViewModel }) {
             {view.scenarioMode && <p><span className="field-label">Режим</span><strong>{view.scenarioMode}</strong></p>}
             {view.interactionMode && <p><span className="field-label">Взаимодействие</span><strong>{view.interactionMode}</strong></p>}
             {view.contextLifecycle && <p><span className="field-label">Контекст пакета</span><strong>{view.contextLifecycle}</strong></p>}
+            {view.packSwitch && <p><span className="field-label">Переключение</span><strong>{view.packSwitch}</strong></p>}
+            {view.productCategory && <p><span className="field-label">Категория</span><strong>{view.productCategory}</strong></p>}
+            {view.presentedProducts.length > 0 && <p><span className="field-label">Показаны продукты</span><strong>{view.presentedProducts.join(', ')}</strong></p>}
+            {view.selectedProduct && <p><span className="field-label">Выбран продукт</span><strong>{view.selectedProduct}</strong></p>}
+            {view.leadStatus && <p><span className="field-label">Результат</span><strong>{view.leadStatus}</strong></p>}
+            {view.nextAction && <p><span className="field-label">Следующий шаг</span><strong>{view.nextAction}</strong></p>}
             {view.conversationStatus && <p><span className="field-label">Диалог</span><strong>{view.conversationStatus}</strong></p>}
           </div>
           {view.transcript && <section className="trace-section"><h3>Транскрипт</h3><p>{view.transcript}</p></section>}

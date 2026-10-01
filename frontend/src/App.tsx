@@ -23,8 +23,8 @@ export default function App() {
   return (
     <main>
       <header>
-        <h1>Insurance Manager</h1>
-        <p>Страховой помощник · данные демонстрационной Saqta Insurance</p>
+        <h1>Banking Voice Platform</h1>
+        <p>Insurance Manager · Product Promoter · синтетические данные Saqta Insurance и Merei Demo Bank</p>
         <p className="muted">Agent: {mockMode ? 'MOCK (без маршрутизации)' : 'HTTP /api/message'} · TTS: голос браузера</p>
       </header>
       <section className="health" aria-label="Состояние backend">

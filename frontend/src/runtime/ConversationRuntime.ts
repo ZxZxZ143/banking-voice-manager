@@ -1,5 +1,5 @@
 import type {
-  AgentMessageResponse, ConversationMessage, ConversationStatus, RuntimeStatus, VoiceTranscript,
+  AgentMessageResponse, ConversationMessage, ConversationStatus, RuntimeStatus, VoiceTranscript, ScenarioPackId,
 } from '../types/agent';
 import type { AgentClient } from '../services/agentClient';
 import type { TtsService } from '../services/tts';
@@ -10,6 +10,9 @@ export interface VoiceInputController {
 }
 
 export interface ConversationSnapshot {
+  activePack: ScenarioPackId;
+  requestedPack: ScenarioPackId | null;
+  packNotice: string | null;
   sessionId: string | null;
   runtimeStatus: RuntimeStatus;
   voiceInputEnabled: boolean;
@@ -24,6 +27,9 @@ export interface ConversationSnapshot {
 }
 
 const initialSnapshot = (): ConversationSnapshot => ({
+  activePack: 'insurance_manager',
+  requestedPack: null,
+  packNotice: null,
   sessionId: null,
   runtimeStatus: 'idle',
   voiceInputEnabled: true,
@@ -72,6 +78,17 @@ export class ConversationRuntime {
 
   attachVoiceInput(controller: VoiceInputController | null): void {
     this.voiceInput = controller;
+  }
+
+  selectScenarioPack(pack: ScenarioPackId): void {
+    if (this.disposed || !['idle', 'listening', 'error'].includes(this.snapshot.runtimeStatus)
+      || this.snapshot.conversationStatus === 'handoff' || this.snapshot.conversationStatus === 'ended') return;
+    if (pack !== 'insurance_manager' && pack !== 'product_promoter') return;
+    this.update({ requestedPack: pack === this.snapshot.activePack ? null : pack });
+    if (pack === 'product_promoter' && pack !== this.snapshot.activePack
+      && this.snapshot.runtimeStatus === 'listening' && this.agentClient.startScenario) {
+      void this.processTranscript({ text: '' }, true);
+    }
   }
 
   async setVoiceInputEnabled(enabled: boolean): Promise<void> {
@@ -133,7 +150,9 @@ export class ConversationRuntime {
       error: null,
     });
     try {
-      await this.runVoiceOperation('startListening');
+      if ((this.snapshot.requestedPack ?? this.snapshot.activePack) === 'product_promoter'
+        && this.agentClient.startScenario) await this.processTranscript({ text: '' }, true);
+      else await this.runVoiceOperation('startListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -158,7 +177,10 @@ export class ConversationRuntime {
     if (this.disposed) return;
     this.generation += 1;
     const generation = this.generation;
-    this.update({ ...initialSnapshot(), voiceInputEnabled: this.snapshot.voiceInputEnabled, sessionId: crypto.randomUUID() });
+    const selectedPack = this.snapshot.requestedPack ?? this.snapshot.activePack;
+    this.update({ ...initialSnapshot(), voiceInputEnabled: this.snapshot.voiceInputEnabled,
+      requestedPack: selectedPack === 'insurance_manager' ? null : selectedPack,
+      sessionId: crypto.randomUUID() });
     try {
       this.tts.stop();
       await this.runVoiceOperation('stopListening');
@@ -177,23 +199,37 @@ export class ConversationRuntime {
     await this.processTranscript(transcript);
   }
 
-  private async processTranscript(transcript: VoiceTranscript): Promise<void> {
+  private async processTranscript(transcript: VoiceTranscript, opening = false): Promise<void> {
     const text = transcript.text.trim();
-    if (!text || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
+    if ((!text && !opening) || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
 
     const generation = this.generation;
     this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null });
     try {
       await this.runVoiceOperation('stopListening');
       if (!this.isCurrent(generation)) return;
-      this.update({
+      if (!opening) this.update({
         messages: [...this.snapshot.messages, {
           id: crypto.randomUUID(), role: 'user', text, timestamp: Date.now(),
         }],
       });
-      const response = await this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text });
+      const requestedPack = this.snapshot.requestedPack;
+      const response = opening && this.agentClient.startScenario
+        ? await this.agentClient.startScenario({session_id: this.snapshot.sessionId,
+          scenario_mode: requestedPack ?? this.snapshot.activePack})
+        : await this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text,
+        ...(requestedPack ? { scenario_mode: requestedPack } : {}),
+      });
       if (!this.isCurrent(generation)) return;
+      const trace = response.trace as Record<string, unknown> | undefined;
+      const returnedPack = trace?.scenario_pack_id;
+      const activePack = returnedPack === 'insurance_manager' || returnedPack === 'product_promoter'
+        ? returnedPack : this.snapshot.activePack;
       this.update({
+        activePack, requestedPack: null,
+        packNotice: activePack !== this.snapshot.activePack
+          ? `Переключено: ${activePack === 'product_promoter' ? 'Product Promoter' : 'Insurance Manager'}`
+          : this.snapshot.packNotice,
         messages: [...this.snapshot.messages, {
           id: crypto.randomUUID(), role: 'assistant', text: response.response_text, timestamp: Date.now(),
         }],

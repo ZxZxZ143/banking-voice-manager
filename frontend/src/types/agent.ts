@@ -17,7 +17,10 @@ export type RuntimeStatus =
 export interface AgentMessageRequest {
   session_id: string;
   text: string;
+  scenario_mode?: ScenarioPackId;
 }
+
+export type ScenarioPackId = 'insurance_manager' | 'product_promoter';
 
 export interface AgentMessageResponse {
   response_text: string;

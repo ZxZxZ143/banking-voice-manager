@@ -4,6 +4,8 @@ import type { ConversationStatus, RuntimeStatus } from '../../types/agent';
 import type { TraceViewModel } from '../trace/traceViewModel';
 import { VoiceControls } from '../voice/VoiceControls';
 import { createVoiceInputController, type VoiceControlsHandle } from '../voice/voiceRuntimeBridge';
+import { SalesLeadPanel } from './SalesLeadPanel';
+import type { ScenarioPackId } from '../../types/agent';
 
 interface Props {
   runtime: ConversationRuntime;
@@ -44,6 +46,16 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
     <section className="panel conversation-panel" aria-labelledby="conversation-title">
       <p className="eyebrow">Для клиента</p>
       <h2 id="conversation-title">Разговор</h2>
+      <label htmlFor="scenario-pack">Сценарий консультации</label>
+      <select id="scenario-pack" value={snapshot.requestedPack ?? snapshot.activePack}
+        disabled={['processing', 'speaking', 'handoff', 'ended'].includes(snapshot.runtimeStatus)}
+        onChange={(event) => runtime.selectScenarioPack(event.target.value as ScenarioPackId)}>
+        <option value="insurance_manager">Insurance Manager</option>
+        <option value="product_promoter">Product Promoter</option>
+      </select>
+      <p><strong>Активный пакет: {snapshot.activePack === 'product_promoter' ? 'Product Promoter' : 'Insurance Manager'}</strong></p>
+      {snapshot.requestedPack && <p className="muted">Следующий запрос переключит сценарий на {snapshot.requestedPack}.</p>}
+      {snapshot.packNotice && <p role="status">{snapshot.packNotice}</p>}
       <div className="controls">
         <button type="button" onClick={() => { void runtime.startConversation(); }}
           disabled={!['idle', 'error'].includes(snapshot.runtimeStatus)
@@ -94,6 +106,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
         <div className="conversation-notice"><strong>Разговор завершён</strong></div>
       )}
       {snapshot.error && <p className="error" role="alert">{snapshot.error}</p>}
+      {snapshot.activePack === 'product_promoter' && <SalesLeadPanel state={snapshot.latestState} />}
       <div className="history" aria-label="История разговора" aria-live="polite">
         {snapshot.messages.length === 0 ? <p className="empty-state">История пуста.</p> : (
           <ol className="message-list">{snapshot.messages.map((message) => (

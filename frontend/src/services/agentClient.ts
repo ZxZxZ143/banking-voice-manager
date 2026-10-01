@@ -1,7 +1,8 @@
-import type { AgentMessageRequest, AgentMessageResponse, ConversationStatus } from '../types/agent';
+import type { AgentMessageRequest, AgentMessageResponse, ConversationStatus, ScenarioPackId } from '../types/agent';
 
 export interface AgentClient {
   sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse>;
+  startScenario?(request: {session_id: string; scenario_mode: ScenarioPackId}): Promise<AgentMessageResponse>;
 }
 
 const statuses: ConversationStatus[] = [
@@ -32,10 +33,18 @@ export class HttpAgentClient implements AgentClient {
   ) {}
 
   async sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse> {
+    return this.post('/api/message', request);
+  }
+
+  async startScenario(request: {session_id: string; scenario_mode: ScenarioPackId}): Promise<AgentMessageResponse> {
+    return this.post('/api/conversation/start', request);
+  }
+
+  private async post(path: string, request: unknown): Promise<AgentMessageResponse> {
     let response: Response;
     const signal = AbortSignal.timeout(this.timeoutMs);
     try {
-      response = await fetch(`${this.baseUrl.replace(/\/$/, '')}/api/message`, {
+      response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(request),

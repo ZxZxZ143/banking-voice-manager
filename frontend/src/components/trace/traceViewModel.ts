@@ -30,6 +30,12 @@ export interface TraceViewModel {
   scenarioMode: string | null;
   interactionMode: string | null;
   contextLifecycle: string | null;
+  packSwitch: string | null;
+  productCategory: string | null;
+  presentedProducts: string[];
+  selectedProduct: string | null;
+  leadStatus: string | null;
+  nextAction: string | null;
 }
 
 function record(value: unknown): Data | null {
@@ -131,6 +137,7 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
   const handoffInfo = trace?.handoff === true
     ? { queue: null, summary: null, reason: string(trace.reason) }
     : handoff(trace?.handoff ?? state?.handoff);
+  const packSwitch = record(trace?.pack_switch);
 
   return {
     hasData: trace !== null || routing !== null || state !== null || latency.length > 0,
@@ -155,5 +162,13 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     scenarioMode: string(trace?.scenario_pack_id) ?? string(trace?.scenario_mode) ?? string(state?.scenario_mode),
     interactionMode: string(trace?.interaction_mode),
     contextLifecycle: string(trace?.context_lifecycle),
+    packSwitch: packSwitch && string(packSwitch.to_pack)
+      ? `${string(packSwitch.from_pack) ?? 'start'} → ${string(packSwitch.to_pack)} · ${string(packSwitch.status) ?? ''}` : null,
+    productCategory: string(trace?.product_category),
+    presentedProducts: Array.isArray(trace?.presented_products)
+      ? trace.presented_products.flatMap(v => string(v) ? [v as string] : []) : [],
+    selectedProduct: string(trace?.selected_product_id),
+    leadStatus: string(trace?.lead_status),
+    nextAction: string(trace?.next_action),
   };
 }
