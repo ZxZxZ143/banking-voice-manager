@@ -27,6 +27,11 @@ Business specification: `data/starter_kit/README.ru.md`.
   clear, lifecycle cleanup, real shared STT / MessageService / backend OpenAI TTS composition.
   Opt-in via TWILIO_ENABLED; absent settings fail visibly without mock fallback.
   Persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
+- **Implemented Vonage outbound trial adapter (live unverified):** explicit one-call CLI
+  with application JWT, trial FROM 123456789 and configured verified signup TO; signed answer /
+  event callbacks and WS, L16 16k ↔ PCM24k/real TTS conversion, native notify/clear playback,
+  shared PhoneRuntime/STT/MessageService/events. No rented number required. Twilio retained;
+  gateways independently opt in through VONAGE_ENABLED / TWILIO_ENABLED. No public dial API.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
   transport with fixtures (one request even on provider failure), and official evaluator
   integration. Live 104-case before/after measurements are recorded in `ROUTER_EVALUATION.md`;
@@ -55,7 +60,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
 | `backend/app/response/` | Slot/system replies and SC17/25/31/33/34 grounded read-only slice |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
-| `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime, signed Twilio gateway/audio adapter and explicit mock provider |
+| `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime, separate signed Twilio/Vonage gateways and explicit mock provider |
 | `backend/app/events/` | Canonical server event envelope and bounded in-memory EventStore; no analytics API |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
@@ -186,8 +191,8 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
 
 - `telephony/base.py`: typed start/audio/end/provider-error events; TelephonyProvider requires
   playback-completing send_audio, hangup and idempotent resource close. Input normalization
-  accepts PCM16LE mono/24kHz frames ≤4,800 bytes after Twilio mu-law conversion.
-- `telephony/runtime.py`: dependency injection; opt-in application-owned Twilio composition.
+  accepts PCM16LE mono/24kHz frames ≤4,800 bytes after provider conversion.
+- `telephony/runtime.py`: dependency injection; opt-in application-owned Twilio/Vonage composition.
   Same MessageService.process/session ID per call; partials never route. Backend TTS uses
   existing SpeechResult and the 4,000-character SpeechRequest limit. Defaults: 180s turn timeout,
   1s cleanup waits, 16-frame queues. Registry: 100 active/1,000 total IDs; refuses new calls at
@@ -200,6 +205,15 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
   PyAV real G.711 decode/resample, MP3/WAV decode → raw mu-law encode, scoped playback marks,
   clear invalidation, bounded messages/audio/timeouts and idempotent cleanup. Handoff plays
   final reply then hangs up; actual operator transfer and barge-in remain deferred.
+- `api/routes/vonage.py`, `telephony/vonage_gateway.py`: signed POST answer/events and WS
+  /api/v1/telephony/vonage/{answer,events,media}; trial FROM/TO validation, short-lived UUID
+  admission, native signed webhook JWT on WS, session/call isolation and terminal cleanup.
+- `telephony/vonage_calls.py`, `scripts/start_vonage_call.py`: one CLI call to configured
+  verified signup destination via official Voice-only SDK/application ID + RSA key JWT;
+  no API secret required for dialing, 10s timeout and one SDK attempt, no public dialer.
+- `telephony/providers/vonage*.py`, `speech/conversion.py`: actual L16 little-endian mono16k
+  input resampling to24k, shared MP3/WAV decoding for both providers, Vonage 20ms binary output
+  and native notify/clear. 16k chosen from NCCO reference; live24k support not assumed.
 - `events/models.py`, `events/store.py`: same seven event types as frontend, opaque optional
   JSON Agent values, append/session/filter reads and defensive copies; last 5,000 events.
 
@@ -256,7 +270,12 @@ ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER 
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
 Phone names: TWILIO_ENABLED (false), TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (SecretStr),
 TWILIO_PHONE_NUMBER, PUBLIC_BASE_URL (HTTPS origin), BACKEND_TTS_MODEL, BACKEND_TTS_VOICE.
-Twilio SDK/PyAV are direct dependencies; live STT still needs the voice extra.
+Vonage names: VONAGE_ENABLED (false), VONAGE_APPLICATION_ID, VONAGE_PRIVATE_KEY_PATH,
+VONAGE_API_KEY, VONAGE_API_SECRET (optional/unused for this Voice flow),
+VONAGE_SIGNATURE_SECRET (Dashboard webhook signature secret), VONAGE_TEST_FROM_NUMBER
+(123456789), VONAGE_TEST_TO_NUMBER (verified signup destination, digits only).
+Twilio, Voice-only Vonage SDK, PyJWT and PyAV are direct dependencies; live STT needs voice extra.
+Root private.key/*.pem are ignored; use a key outside Git.
 Root .env.example contains no credentials; .env is ignored.
 Health, UI and offline tests need no credentials. Live routing/evaluation needs an explicit
 Responses/structured-output-compatible model and key. Local .env has a verified key and
@@ -275,6 +294,9 @@ python -m venv .venv
 ./.venv/Scripts/python.exe -m app.main
 ./.venv/Scripts/python.exe scripts/smoke_phone_runtime.py
 ./.venv/Scripts/python.exe scripts/smoke_twilio_runtime.py
+./.venv/Scripts/python.exe scripts/smoke_vonage_runtime.py
+# Explicit live outbound trial call (after setup):
+./.venv/Scripts/python.exe scripts/start_vonage_call.py
 ./.venv/Scripts/python.exe -m pytest backend/tests -q
 ./.venv/Scripts/ruff.exe check backend/app backend/tests
 ./.venv/Scripts/ruff.exe format --check backend/app backend/tests
@@ -307,10 +329,13 @@ which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
 and STT timing stay on the runtime side; only session_id/text cross the Core API boundary.
 `/dev` remains an optional separate text debugger, not the full voice stand.
 
-Phone next: configure Twilio number/token, HTTPS/WSS tunnel and explicit phone TTS settings;
-run the live-call checklist in `docs/PHONE_RUNTIME.md`. No real Twilio call was tested locally
-because these settings were unavailable to the backend (developer reported number/tunnel ready). Offline: `python scripts/smoke_twilio_runtime.py` and
-`python scripts/smoke_phone_runtime.py`. Real transfer/shared event API remain deferred.
+Phone next: configure Vonage application/key, signed callback secret, verified signup TO,
+trial FROM123456789, HTTPS/WSS tunnel and existing OpenAI/TTS settings; follow outbound
+trial checklist in `docs/PHONE_RUNTIME.md` and run `python scripts/start_vonage_call.py`.
+No real Vonage call has been tested; root .env was absent in this workspace. No number
+purchase is required. Twilio remains available. Verified: 457 backend/37 frontend tests,
+all three phone smokes, typecheck/build/lint/format.
+Offline: generic, Twilio and Vonage smoke scripts. Actual transfer/shared event API deferred.
 
 Agent workstream next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.

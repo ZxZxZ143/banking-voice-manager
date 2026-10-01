@@ -24,7 +24,7 @@ call, risk/fraud, anomaly, journey and analytics views. This task adds no UI or 
 
 `backend/app/telephony/runtime.py` provides a dependency-injected `PhoneRuntime`. It is not
 a second Agent API, Router or intelligence layer. FastAPI now composes the Twilio gateway
-when `TWILIO_ENABLED=true` and all required settings are present. Unconfigured/disabled
+when `TWILIO_ENABLED=true` or `VONAGE_ENABLED=true` and their required settings are present. Unconfigured/disabled
 phone endpoints return 503 / reject WS admission while web remains available. Composition:
 
 ```python
@@ -40,7 +40,8 @@ await runtime.handle_event(CallStarted(provider_call_id, synthetic_metadata))
 ```
 
 The local bench is explicit mock mode, never a fallback after an HTTP/provider failure.
-The Twilio SDK generates TwiML and validates signatures; PyAV provides actual codec/rate
+The Twilio SDK generates TwiML and validates signatures; the Voice-only Vonage SDK creates
+one outbound trial call with application JWT auth. PyAV provides actual codec/rate
 conversion. The existing server TTS protocol and OpenAI TTS adapter are reused. All fixture
 identifiers/audio are synthetic; no credentials or real customers are committed.
 
@@ -107,7 +108,8 @@ Canonical audio is defined in `backend/app/speech/audio.py`:
 
 `ProviderAudio → AudioNormalizer.normalize() → canonical PCM → shared STT` is the explicit
 input boundary. `PcmPassThroughNormalizer` validates canonical PCM. The Twilio adapter
-performs real mu-law decoding and 8kHz → 24kHz resampling before this boundary. A-law and
+performs real mu-law decoding and 8kHz → 24kHz resampling before this boundary. Vonage
+accepts raw L16 little-endian mono 16kHz and resamples it to the same 24kHz boundary. A-law and
 compressed caller input are unsupported; outbound MP3/WAV decoding is implemented.
 
 ## Agent and backend TTS boundaries
@@ -138,7 +140,7 @@ required id/session_id/timestamp/event_type/channel, the same seven event types,
 language/text/scenario/action/confidence/status/clarification/handoff/risk/routing/state/trace/
 latency/metadata. Risk and other Agent payloads remain JSON values, not a duplicated finance
 schema. All phone events carry channel=phone, metadata.call_id and copied provider metadata.
-Twilio supplies only provider, call_sid and stream_sid. Supplied scenarios are recorded
+Twilio supplies provider, call_sid and stream_sid; Vonage supplies provider and call_uuid. Supplied scenarios are recorded
 in original order from trace.scenarios,
 then routing.scenarios or routing.selections. This does not imply policy acceptance/execution.
 Clarification/handoff semantics match the frontend; awaiting_user alone implies neither.
@@ -220,8 +222,8 @@ unchanged; shadcn/ui remains the required design system.
 resampler state is reset before listening resumes, avoiding echo retained across replies.
 The existing Silero endpoint detector controls utterance finalization. Partials never route.
 
-Real `OpenAITTSProvider` returns MP3 from explicitly configured model/voice. PyAV demuxes
-MP3 (also WAV for offline fixtures), decodes, downmixes/resamples to mono 8kHz, and encodes
+Real `OpenAITTSProvider` returns MP3 from explicitly configured model/voice. The shared
+`speech/conversion.py` PyAV helper demuxes MP3 (also WAV for offline fixtures), decodes, downmixes/resamples to mono 8kHz, and encodes
 raw mu-law. Output is bounded to 25MB input / 120s duration, split into ≤800-byte base64
 `media` messages with the bound StreamSid. It contains no WAV/container header. Codec work
 for outgoing speech runs off the event loop. PyAV wheels bundle FFmpeg libraries; no system
@@ -323,3 +325,191 @@ Verification on macOS / Python 3.12 / Node 24: **406 backend tests (60 new Twili
 both offline smoke scripts and git diff --check passed. No live network API was used by tests.
 Security review covered signature pinning, account/call/stream isolation, admission/replay,
 size/time limits, cancellation/clear semantics and credential/raw-content logging.
+
+## Vonage outbound trial provider (current demo path; live call unverified)
+
+Twilio remains implemented and tested. Vonage adds a separate opt-in gateway/provider;
+PhoneRuntime, shared STT/Silero, MessageService, Agent business logic, TTS and events stay
+provider-neutral. There is no second Agent or STT engine, public dialer endpoint, frontend
+change or new product channel. Exactly web/phone remain; new frontend UI must use shadcn/ui.
+
+Production path: `one explicit CLI call → Vonage application JWT Voice API → developer's
+verified signup phone answers → signed answer POST → connect NCCO → signed WSS → binary
+L16 16k → real PCM16LE 24k resampling → shared STT final → MessageService → OpenAI TTS MP3 →
+real decode/downmix/resample → raw L16 16k binary → Vonage → caller`.
+
+### Trial call trigger and NCCO
+
+`scripts/start_vonage_call.py` calls `telephony/vonage_calls.py` once. It accepts no destination
+argument and only dials `VONAGE_TEST_TO_NUMBER`, which must be the developer's verified signup
+number. Digits-only international numbers are validated (8–15 digits, no `+`). FROM defaults
+to documented trial caller ID `123456789`; `VONAGE_TEST_FROM_NUMBER` may configure it. No
+rented virtual number, purchase, account upgrade, payment card or inbound number is needed.
+Trial eligibility/reachability must still be confirmed by a genuine call; successful Dashboard
+test calling alone does not validate our WebSocket/AI path.
+
+The official lightweight `vonage-voice`/`vonage-http-client` SDK uses application ID and local
+RSA private key to sign the outbound request JWT. It never needs/passes API secret to Voice
+auth. Timeout is 10s; both HTTP retry configuration and the SDK's separate connection retry
+loop are limited to one attempt. An ambiguous failure says to inspect Dashboard before
+retrying. One invocation has one phone destination, 45s ringing and a 600s call length cap.
+Output contains only acceptance and call UUID. The script does not print private key, token,
+API secret or destination. Key files are ignored (`private.key`, `*.pem`); prefer keeping the
+actual key outside the checkout. Other `*.key` names are ignored too. Relative key paths resolve against repository root.
+
+The outbound request sets explicit POST answer/event URLs, avoiding dependence on a rented
+number. The application's Voice capability and signed webhooks must be enabled. The signed
+answer verifies configured FROM/TO and admits Call UUID for 120s before returning:
+
+```json
+[
+  {
+    "action": "connect",
+    "endpoint": [
+      {
+        "type": "websocket",
+        "uri": "wss://YOUR_PUBLIC_HOST/api/v1/telephony/vonage/media",
+        "content-type": "audio/l16;rate=16000",
+        "headers": {"call_uuid": "CALL_UUID_FROM_SIGNED_ANSWER"},
+        "authorization": {"type": "vonage"}
+      }
+    ]
+  }
+]
+```
+
+`headers.call_uuid` is application metadata echoed in the initial `websocket:connected`
+JSON, not an undocumented native field. One admitted UUID binds one socket and Agent UUID;
+repeated turns reuse it. Active duplicates, closed-call replay and unadmitted connections
+are rejected. Admission/closed-ID limits are 100 pending / 1,000 known calls; one worker only.
+
+### Formats and playback
+
+The NCCO reference explicitly lists L16 8/16k; the broader WebSocket guide also lists 24k.
+We chose **16kHz**, supported by both, rather than assuming 24k support. No live 24k trial
+was performed. Voice WebSocket L16 is **signed little-endian PCM**, mono; despite the MIME
+name it is not treated as network-order big-endian PCM.
+
+`providers/vonage_audio.py` uses a per-listening-interval PyAV AudioResampler, 16k → canonical
+24k PCM16LE. Input must be nonempty/even and ≤3,200 bytes (100ms); outputs split at the
+existing 4,800-byte limit. Input during processing/TTS/playback is dropped, and resampler
+state is reset before listening resumes. Existing Silero endpointing and final-only turn
+admission remain unchanged.
+
+Shared `speech/conversion.py` decodes actual MP3/WAV containers, downmixes/resamples to mono
+s16; Vonage output is 16k raw PCM with **no MP3/WAV headers**. Twilio uses the same bounded
+decoder before its unchanged G.711 output encoding. Vonage sends binary 640-byte/20ms
+packets, pads only the final packet with silence, and caps replies at 60s to fit the documented
+3072-packet buffer. Output conversion runs off the event loop.
+
+After each reply the adapter sends native `{"action":"notify","payload":{"reply_id":"UNIQUE_ID"}}`.
+Only the matching `websocket:notify` on that socket completes playback; timeout is 90s.
+It does not resume listening on socket-send completion or guessed sleep duration. Native
+`clear` cancels pending notifications before transmission. `websocket:cleared` is observed,
+not treated as reply completion or allowed to cancel a later reply. DTMF is accepted/ignored.
+Ended/handoff replies drain once, then the socket closes; the sole connect NCCO finishes and
+normal NCCO execution ends the call. Handoff is not a real operator transfer. Barge-in,
+streaming TTS and acoustic echo cancellation remain deferred.
+
+### Public routes and authenticity
+
+- POST `/api/v1/telephony/vonage/answer`: JSON signed callback → validated trial call NCCO.
+- POST `/api/v1/telephony/vonage/events`: signed lifecycle events, safe UUID/status logging;
+  completed/cancelled/etc close only their call; failures record a provider error. Rejections
+  before call creation can omit UUID. Native error events are accepted without raw error logs.
+- WS `/api/v1/telephony/vonage/media`: validates Vonage's Authorization Bearer JWT **before**
+  accept; then connected/control JSON and binary frames. Disconnect/error/terminal cleanup
+  is idempotent. No-event deadline 300s; connection/start deadline 10s; JSON limit 8KB.
+
+Signed callbacks use the account's **Dashboard signature secret**, distinct from API secret.
+PyJWT verifies HS256 only, issuer Vonage, API key and optional application ID, iat/jti and
+bounded token age (5min / 30s skew); optional exp is verified. If Vonage includes payload_hash,
+the documented SHA-256 body hash is checked. Hash presence is optional under HTTPS as in the
+official guide. HTTP bodies are capped at 16KB. No signature bypass/dev exception is exposed.
+Public URL is a configured HTTPS origin, no path/query/credentials; WSS derives from it.
+Host/X-Forwarded headers cannot select destinations. Queries are rejected.
+
+Events reuse channel=phone and metadata.provider=vonage / call_uuid. Agent risk/routing/
+state/trace remain optional opaque values. Logs omit raw audio/transcripts, bearer tokens and
+keys. There is no new analytics schema, persistent storage or supervisor endpoint.
+
+### Exact live demo procedure (no purchase)
+
+**No real Vonage call was placed or claimed in this task.** Offline mocks prove mechanics,
+not trial permission, PSTN routing, network/audio quality or live model output.
+
+1. Copy root `.env.example` to ignored `.env` if it does not already exist; preserve existing
+   keys when updating it. Set `VONAGE_ENABLED=true` and normally `TWILIO_ENABLED=false` for
+   this demo (both providers can coexist).
+2. Set `VONAGE_APPLICATION_ID`, `VONAGE_PRIVATE_KEY_PATH` to the downloaded key,
+   `VONAGE_TEST_TO_NUMBER` to the verified signup destination (digits only), and
+   `VONAGE_TEST_FROM_NUMBER=123456789`. Do not buy/link a virtual number.
+3. Set `VONAGE_API_KEY` and `VONAGE_SIGNATURE_SECRET` from the matching Dashboard account.
+   `VONAGE_API_SECRET` is supported as an optional setting but unused by this Voice flow.
+   In Application → Voice → advanced features, enable **Use signed webhooks** if not enabled.
+4. Reuse `OPENAI_API_KEY`, `OPENAI_ROUTER_MODEL`, `BACKEND_TTS_MODEL`, `BACKEND_TTS_VOICE`.
+   Choose account-supported model/voice; live STT needs the existing voice extra.
+5. Expose backend port 8000 using an HTTPS/WSS tunnel (e.g. `ngrok http 8000` if installed).
+   Set `PUBLIC_BASE_URL` to its HTTPS origin, then start/restart the backend. Tunnel vendor
+   is not part of application code. Changing origin requires backend restart before dialing.
+6. PowerShell, from repository root:
+
+   ```powershell
+   python -m venv .venv
+   ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
+   ./.venv/Scripts/python.exe -m app.main
+   ```
+
+   A second terminal initiates exactly one configured trial call:
+
+   ```powershell
+   ./.venv/Scripts/python.exe scripts/start_vonage_call.py
+   ```
+
+   macOS in the environment verified in this task:
+
+   ```bash
+   cd /Users/sofiyaserbina/PycharmProjects/banking_voice_manager
+   /private/tmp/veyra-foundation-venv/bin/python -m app.main
+   # Second terminal, same directory:
+   /private/tmp/veyra-foundation-venv/bin/python scripts/start_vonage_call.py
+   ```
+
+7. Before dialing, check `/health` and confirm no `vonage unavailable` startup warning.
+   The script supplies answer/event URLs; Application Dashboard URLs can also use the same
+   POST paths. There is no inbound number webhook requirement.
+8. Answer on the verified phone. Confirm call UUID → `vonage started` session UUID. There is
+   no opening greeting: speak first, pause about 2.5s, then wait through Agent/TTS latency.
+9. Expect `phone stt_final` → `phone agent_response` → `phone tts_ready` → `vonage audio_sent`
+   → `vonage playback_complete` → `phone turn_complete`; hear the generated existing Agent reply.
+10. Speak a second turn after playback. Confirm same session UUID. Hang up and confirm
+    `vonage closed` / completed webhook and no remaining bot playback.
+
+| Failure | Check |
+| --- | --- |
+| CLI credentials/key error | Root .env visibility, enabled flag, application UUID, readable matching RSA key, verified digit-only destination; never paste key contents. |
+| Call rejected / outcome unknown | Trial verified signup number, FROM 123456789, application Voice capability, Dashboard call result and credit; inspect before retrying. |
+| HTTP 403 / WS denied | Correct account API key/signature secret, signed webhooks enabled, fresh JWT/clock, authorization type vonage; no disable-validation workaround. |
+| No WS / 503 answer | Public HTTPS/WSS tunnel and POST paths, backend configuration warning, proxy upgrade, 120s admission; no forwarded-host workaround. |
+| No STT final | Binary L16 little-endian/16k, voice extra installed, OpenAI access, genuine speech followed by pause; busy input/partials are deliberately ignored. |
+| Agent but no audio | TTS model/voice access, valid MP3/WAV, conversion warning, raw 16k PCM packets; watch playback notify timeout. |
+| Distorted sound / long reply | Rate/mono/endian match and no container headers, phone line quality, 60s reply / 4,000-character limits. |
+| Unexpected call close | Terminal Agent status, signed failure callback, malformed controls/frames, 180s turn / 90s playback / 300s no-event / 600s call cap. |
+
+Offline check: `python scripts/smoke_vonage_runtime.py` simulates one accepted call → answer
+NCCO → binary L16 → scripted STT → fixture Agent → silent WAV TTS → L16 → native notify →
+second turn with same session → disconnect/cleanup. It makes no phone/network calls.
+The generic and Twilio smoke benches remain working.
+
+Sources: [trial caller identity](https://developer.vonage.com/en/voice/voice-api/getting-started),
+[NCCO format/authorization](https://developer.vonage.com/en/voice/voice-api/ncco-reference),
+[WebSocket audio/notify](https://developer.vonage.com/en/voice/voice-api/concepts/websockets),
+[signed callbacks](https://developer.vonage.com/en/getting-started/concepts/webhooks),
+[Voice SDK](https://github.com/Vonage/vonage-python-sdk).
+
+Verified on macOS/Python 3.12/Node 24: **457 backend tests** (51 new Vonage / 60 Twilio),
+**37 frontend tests**, TypeScript noEmit, Vite build, Ruff lint/format (114 files), all three
+phone smoke scripts, pip check and git diff --check passed. The root .env was absent; no
+local Vonage/OpenAI/tunnel configuration or live call was available. Security review covered
+JWT claims/body hashes, key handling, bounded audio/notifications, call isolation/replay,
+secret-free logs, trial destination restriction and SDK duplicate-request prevention.
