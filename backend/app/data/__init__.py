@@ -1,5 +1,5 @@
-"""Validated starter-kit data and read-only repository boundaries."""
+"""Compatibility exports; implementation belongs to Insurance Manager Pack."""
 
-from app.data.loaders import DataLoadError, StarterKit, load_starter_kit
-
-__all__ = ["DataLoadError", "StarterKit", "load_starter_kit"]
+from app.packs.insurance_manager.data.__init__ import DataLoadError as DataLoadError
+from app.packs.insurance_manager.data.__init__ import StarterKit as StarterKit
+from app.packs.insurance_manager.data.__init__ import load_starter_kit as load_starter_kit

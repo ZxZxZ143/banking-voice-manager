@@ -1,29 +1,8 @@
-from typing import Protocol
+"""Compatibility exports; implementation belongs to Insurance Manager Pack."""
 
-from pydantic import Field, JsonValue
-
-from app.core.contracts import Contract, Language, Slots
-from app.dialog.models import DialogState
-
-
-class ResponseInput(Contract):
-    language: Language
-    scenario_id: str
-    dialog_state: DialogState
-    slots: Slots
-    tool_results: list[dict[str, JsonValue]]
-    knowledge: dict[str, JsonValue]
-
-
-class GeneratedResponse(Contract):
-    text: str = Field(min_length=1)
-    language: Language
-
-
-class ResponseGenerator(Protocol):
-    async def generate(self, context: ResponseInput) -> GeneratedResponse: ...
-
-
-class UnconfiguredResponseGenerator:
-    async def generate(self, context: ResponseInput) -> GeneratedResponse:
-        raise NotImplementedError("Grounded response generation is not implemented")
+from app.packs.insurance_manager.response.generator import GeneratedResponse as GeneratedResponse
+from app.packs.insurance_manager.response.generator import ResponseGenerator as ResponseGenerator
+from app.packs.insurance_manager.response.generator import ResponseInput as ResponseInput
+from app.packs.insurance_manager.response.generator import (
+    UnconfiguredResponseGenerator as UnconfiguredResponseGenerator,
+)

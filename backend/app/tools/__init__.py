@@ -1,7 +1,5 @@
-"""Starter-kit action definitions and extension points for future handlers."""
+"""Compatibility exports; implementation belongs to Insurance Manager Pack."""
 
-from app.tools.actions import ToolResult
-from app.tools.errors import ToolError
-from app.tools.registry import ActionRegistry
-
-__all__ = ["ActionRegistry", "ToolError", "ToolResult"]
+from app.packs.insurance_manager.tools.__init__ import ActionRegistry as ActionRegistry
+from app.packs.insurance_manager.tools.__init__ import ToolError as ToolError
+from app.packs.insurance_manager.tools.__init__ import ToolResult as ToolResult

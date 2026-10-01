@@ -2,9 +2,9 @@ from typing import Annotated
 
 from pydantic import Field
 
-from app.agent.schemas import ScenarioScore, ScenarioSelection
+from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
-from app.dialog.models import ConversationStatus
+from app.tracing.selections import ScenarioScore, ScenarioSelection
 
 Milliseconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 
@@ -41,7 +41,10 @@ class TraceRecord(Contract):
     active_scenario: str | None = None
     pending_scenarios: list[str] = Field(default_factory=list)
     scenario_stack: list[str] = Field(default_factory=list)
-    scenario_mode: str = "insurance_manager"
+    scenario_mode: str | None = None
+    scenario_pack_id: str | None = None
+    interaction_mode: str | None = None
+    context_lifecycle: str | None = None
     conversation_status: ConversationStatus = "active"
     handoff: bool = False
     latency_ms: LatencyRecord = Field(default_factory=LatencyRecord)

@@ -1,1 +1,1 @@
-"""Response generation stays separate from routing."""
+"""Compatibility exports; implementation belongs to Insurance Manager Pack."""

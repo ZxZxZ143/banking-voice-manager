@@ -1,1 +1,1 @@
-"""Catalog, policy and deterministic execution boundaries."""
+"""Compatibility exports; implementation belongs to Insurance Manager Pack."""

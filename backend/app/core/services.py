@@ -1,77 +1,108 @@
+"""Composition root: explicitly register the only production pack and shared services."""
+
 from dataclasses import dataclass
 
-from app.agent.router import Router, RouterAgent
+from pydantic import SecretStr
+
 from app.core.config import Settings
-from app.data.loaders import StarterKit, load_starter_kit
-from app.data.repositories import KnowledgeRepository, MockBackendRepository
 from app.dialog.message import MessageService
 from app.dialog.store import InMemoryDialogStore
-from app.response.generator import UnconfiguredResponseGenerator
-from app.response.routing import RoutingReplyGenerator
-from app.scenarios.catalog import ScenarioCatalog
-from app.scenarios.decision_policy import DecisionPolicy, PolicySettings
-from app.scenarios.engine import ScenarioEngine
-from app.tools.registry import ActionRegistry
+from app.packs.insurance_manager.agent.router import Router
+from app.packs.insurance_manager.pack import INSURANCE_MANIFEST, build_insurance_pack
+from app.packs.insurance_manager.scenarios.decision_policy import PolicySettings
+from app.packs.registry import ScenarioRegistry
 from app.tracing.collector import TraceCollector
 from app.triage.service import TriageService
 
 
+@dataclass(frozen=True)
+class RouterSettings:
+    """Only router transport receives these values; no general Settings/env access."""
+
+    openai_api_key: SecretStr | None
+    openai_router_model: str | None
+    router_temperature: float | None
+    router_max_output_tokens: int
+    router_timeout_seconds: float
+
+
 @dataclass
 class Services:
-    kit: StarterKit
-    catalog: ScenarioCatalog
-    knowledge: KnowledgeRepository
-    mock_backend: MockBackendRepository
+    registry: ScenarioRegistry
     dialogs: InMemoryDialogStore
     traces: TraceCollector
-    triage: TriageService
-    router: Router
-    policy: DecisionPolicy
-    engine: ScenarioEngine
-    actions: ActionRegistry
-    responses: UnconfiguredResponseGenerator
     messages: MessageService
+    triage: TriageService
+
+    @property
+    def insurance(self):
+        return self.registry.get(INSURANCE_MANIFEST.id)
+
+    @property
+    def kit(self):
+        return self.insurance.kit
+
+    @property
+    def catalog(self):
+        return self.insurance.processor.replies.catalog
+
+    @property
+    def knowledge(self):
+        return self.insurance.knowledge
+
+    @property
+    def mock_backend(self):
+        return self.insurance.processor.replies.backend
+
+    @property
+    def router(self):
+        return self.insurance.processor.router
+
+    @property
+    def policy(self):
+        return self.insurance.policies
+
+    @property
+    def engine(self):
+        return self.insurance.engine
+
+    @property
+    def actions(self):
+        return self.insurance.actions
+
+    @property
+    def responses(self):
+        return self.insurance.responses
 
 
 def build_services(settings: Settings, *, router_override: Router | None = None) -> Services:
-    kit = load_starter_kit(settings.starter_kit_path)
-    catalog = ScenarioCatalog(kit.scenarios)
-    router = (
-        router_override
-        if router_override is not None
-        else RouterAgent(catalog, settings=settings, slots=kit.slots)
-    )
-    dialogs = InMemoryDialogStore()
-    traces = TraceCollector()
-    knowledge = KnowledgeRepository(kit.knowledge)
-    mock_backend = MockBackendRepository(kit.mock_backend)
-    policy = DecisionPolicy(
-        catalog,
-        PolicySettings(
+    pack = build_insurance_pack(
+        settings.starter_kit_path,
+        router_settings=RouterSettings(
+            settings.openai_api_key,
+            settings.openai_router_model,
+            settings.router_temperature,
+            settings.router_max_output_tokens,
+            settings.router_timeout_seconds,
+        ),
+        policy_settings=PolicySettings(
             accept_threshold=settings.router_accept_threshold,
             low_threshold=settings.router_low_threshold,
             handoff_after=settings.router_handoff_after,
             max_unclear_turns=settings.router_max_unclear_turns,
         ),
+        router_override=router_override,
     )
-    return Services(
-        kit=kit,
-        catalog=catalog,
-        knowledge=knowledge,
-        mock_backend=mock_backend,
-        dialogs=dialogs,
-        traces=traces,
-        triage=TriageService(),
-        router=router,
-        policy=policy,
-        engine=ScenarioEngine(catalog),
-        actions=ActionRegistry(kit.actions),
-        responses=UnconfiguredResponseGenerator(),
-        messages=MessageService(
-            router,
-            dialogs,
-            traces,
-            policy,
-            RoutingReplyGenerator(catalog, kit.slots, knowledge, mock_backend),
-        ),
+    registry = ScenarioRegistry(default_pack_id=pack.manifest.id)
+    registry.register(pack)
+    dialogs = InMemoryDialogStore()
+    traces = TraceCollector()
+    messages = MessageService(
+        pack.processor.router,
+        dialogs,
+        traces,
+        pack.policies,
+        pack.processor.replies,
+        registry=registry,
     )
+    return Services(registry, dialogs, traces, messages, TriageService())

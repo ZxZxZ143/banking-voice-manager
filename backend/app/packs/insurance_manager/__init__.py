@@ -1,0 +1,1 @@
+"""Insurance Manager implementation."""

@@ -3,9 +3,11 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 
 from app.agent.errors import RouterConfigurationError, RouterError
+from app.conversation.service import SessionClosedError
+from app.conversation.store import SessionCapacityError
 from app.core.contracts import Contract
-from app.dialog.message import MessageResult, SessionClosedError
-from app.dialog.store import SessionCapacityError
+from app.packs.insurance_manager.wire import InsuranceMessageResponse
+from app.packs.registry import UnknownScenarioPackError
 
 router = APIRouter(prefix="/api", tags=["message"])
 
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/api", tags=["message"])
 class MessageRequest(Contract):
     session_id: str = Field(min_length=1, max_length=128)
     text: str = Field(min_length=1, max_length=10000)
+    scenario_mode: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("session_id", "text")
     @classmethod
@@ -23,10 +26,17 @@ class MessageRequest(Contract):
         return value
 
 
-@router.post("/message", response_model=MessageResult)
+@router.post("/message", response_model=InsuranceMessageResponse)
 async def message(payload: MessageRequest, request: Request):
     try:
-        return await request.app.state.services.messages.process(payload.session_id, payload.text)
+        return await request.app.state.services.messages.process(
+            payload.session_id, payload.text, payload.scenario_mode
+        )
+    except UnknownScenarioPackError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"error": {"code": "unknown_scenario_pack", "message": str(exc)}},
+        )
     except RouterError as exc:
         status = 503 if isinstance(exc, RouterConfigurationError) else 502
         if exc.code == "router_timeout":
