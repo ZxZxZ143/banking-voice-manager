@@ -22,8 +22,11 @@ Business specification: `data/starter_kit/README.ru.md`.
 - **Implemented backend phone foundation:** active-call registry (one call/one Agent UUID),
   half-duplex PhoneRuntime using the same MessageService, shared streaming STT/endpointing,
   PCM normalization seam, existing backend TTS protocol, server events/store and offline bench.
-  No provider or phone endpoint is activated at startup. Real telephony, codec conversion,
-  persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
+- **Implemented Twilio adapter (live call unverified):** signed Voice webhook / media WS,
+  SDK Connect/Stream TwiML, actual PyAV mu-law 8k ↔ PCM/MP3 conversion, stream-scoped marks /
+  clear, lifecycle cleanup, real shared STT / MessageService / backend OpenAI TTS composition.
+  Opt-in via TWILIO_ENABLED; absent settings fail visibly without mock fallback.
+  Persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
 - **Verified offline:** API conversations and concurrency, actual installed SDK HTTP
   transport with fixtures (one request even on provider failure), and official evaluator
   integration. Live 104-case before/after measurements are recorded in `ROUTER_EVALUATION.md`;
@@ -31,7 +34,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 - **Still incomplete:** business writes/confirmation, actual identity verification, full
   business answers, real operator transfer and public supervisor feed.
   Legacy `/api/v1/turns/text` remains 501 and is not used. Live routing/STT use the local key;
-  TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
+  Web TTS uses installed browser voices; phone TTS uses configured OpenAI model/voice. Missing dependencies fail visibly, without mock fallback.
 - **Not introduced:** database, Supabase, vector store, RAG, queues, containers or extra agents.
 
 ## Navigation
@@ -52,7 +55,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/data/` | Supplied JSON models, loaders and read-only repositories |
 | `backend/app/response/` | Slot/system replies and SC17/25/31/33/34 grounded read-only slice |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
-| `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime and explicit mock provider |
+| `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime, signed Twilio gateway/audio adapter and explicit mock provider |
 | `backend/app/events/` | Canonical server event envelope and bounded in-memory EventStore; no analytics API |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
@@ -183,12 +186,20 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
 
 - `telephony/base.py`: typed start/audio/end/provider-error events; TelephonyProvider requires
   playback-completing send_audio, hangup and idempotent resource close. Input normalization
-  supports only PCM16LE mono/24kHz frames ≤4,800 bytes; other codecs/rates require a real adapter.
-- `telephony/runtime.py`: dependency injection only, no new HTTP API or startup activation.
+  accepts PCM16LE mono/24kHz frames ≤4,800 bytes after Twilio mu-law conversion.
+- `telephony/runtime.py`: dependency injection; opt-in application-owned Twilio composition.
   Same MessageService.process/session ID per call; partials never route. Backend TTS uses
   existing SpeechResult and the 4,000-character SpeechRequest limit. Defaults: 180s turn timeout,
   1s cleanup waits, 16-frame queues. Registry: 100 active/1,000 total IDs; refuses new calls at
   the total budget rather than allowing closed-call replay. Use a single runtime/process.
+- `api/routes/twilio.py`, `telephony/twilio_gateway.py`: POST /api/v1/telephony/twilio/voice
+  (signed form → Connect/Stream + Hangup TwiML), WS /api/v1/telephony/twilio/media (signed
+  handshake → validated connected/start/media/mark/stop/ignored DTMF). Pinned HTTPS origin,
+  no forwarded-header trust, short-lived CallSid admission, one process, no signature bypass.
+- `telephony/providers/twilio.py`, `twilio_audio.py`, `twilio_messages.py`: stream identities,
+  PyAV real G.711 decode/resample, MP3/WAV decode → raw mu-law encode, scoped playback marks,
+  clear invalidation, bounded messages/audio/timeouts and idempotent cleanup. Handoff plays
+  final reply then hangs up; actual operator transfer and barge-in remain deferred.
 - `events/models.py`, `events/store.py`: same seven event types as frontend, opaque optional
   JSON Agent values, append/session/filter reads and defensive copies; last 5,000 events.
 
@@ -243,6 +254,9 @@ Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, ROUTER_TIMEOUT_SECONDS (45),
 ROUTER_MAX_OUTPUT_TOKENS (2500), BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
+Phone names: TWILIO_ENABLED (false), TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (SecretStr),
+TWILIO_PHONE_NUMBER, PUBLIC_BASE_URL (HTTPS origin), BACKEND_TTS_MODEL, BACKEND_TTS_VOICE.
+Twilio SDK/PyAV are direct dependencies; live STT still needs the voice extra.
 Root .env.example contains no credentials; .env is ignored.
 Health, UI and offline tests need no credentials. Live routing/evaluation needs an explicit
 Responses/structured-output-compatible model and key. Local .env has a verified key and
@@ -260,6 +274,7 @@ python -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
 ./.venv/Scripts/python.exe scripts/smoke_phone_runtime.py
+./.venv/Scripts/python.exe scripts/smoke_twilio_runtime.py
 ./.venv/Scripts/python.exe -m pytest backend/tests -q
 ./.venv/Scripts/ruff.exe check backend/app backend/tests
 ./.venv/Scripts/ruff.exe format --check backend/app backend/tests
@@ -292,9 +307,10 @@ which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
 and STT timing stay on the runtime side; only session_id/text cross the Core API boundary.
 `/dev` remains an optional separate text debugger, not the full voice stand.
 
-Channels/data next: implement one authenticated real-provider adapter against `docs/PHONE_RUNTIME.md`,
-including actual codec conversion and playback acknowledgement. No provider SDK, shared event API
-or real transfer exists yet. Offline mock flow: `python scripts/smoke_phone_runtime.py`.
+Phone next: configure Twilio number/token, HTTPS/WSS tunnel and explicit phone TTS settings;
+run the live-call checklist in `docs/PHONE_RUNTIME.md`. No real Twilio call was tested locally
+because these settings were unavailable to the backend (developer reported number/tunnel ready). Offline: `python scripts/smoke_twilio_runtime.py` and
+`python scripts/smoke_phone_runtime.py`. Real transfer/shared event API remain deferred.
 
 Agent workstream next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.

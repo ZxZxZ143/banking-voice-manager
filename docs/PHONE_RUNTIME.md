@@ -23,8 +23,9 @@ call, risk/fraud, anomaly, journey and analytics views. This task adds no UI or 
 ## Implementation and composition
 
 `backend/app/telephony/runtime.py` provides a dependency-injected `PhoneRuntime`. It is not
-a second Agent API, Router or intelligence layer. A real provider is not configured on app
-startup, and no phone/debug HTTP endpoint is exposed. To compose the future gateway:
+a second Agent API, Router or intelligence layer. FastAPI now composes the Twilio gateway
+when `TWILIO_ENABLED=true` and all required settings are present. Unconfigured/disabled
+phone endpoints return 503 / reject WS admission while web remains available. Composition:
 
 ```python
 runtime = PhoneRuntime(
@@ -39,8 +40,9 @@ await runtime.handle_event(CallStarted(provider_call_id, synthetic_metadata))
 ```
 
 The local bench is explicit mock mode, never a fallback after an HTTP/provider failure.
-No new dependencies, secrets, environment variables, real customers or provider SDKs were
-added. The existing server TTS protocol and OpenAI TTS adapter are reused, not replaced.
+The Twilio SDK generates TwiML and validates signatures; PyAV provides actual codec/rate
+conversion. The existing server TTS protocol and OpenAI TTS adapter are reused. All fixture
+identifiers/audio are synthetic; no credentials or real customers are committed.
 
 ## Call identity and lifecycle
 
@@ -66,7 +68,7 @@ cancellation or barge-in implementation in this feature.
 
 End/cancel/error first removes the active call, then cancels its STT and turn tasks, hangs up
 when locally initiated, and closes provider resources. `CallEnded` releases resources without
-sending another hangup. Handoff/ended Agent replies are played once, then the mock-era phone
+sending another hangup. Handoff/ended Agent replies are played once, then the phone
 call is hung up and cleaned up. **No real operator transfer is implemented or claimed.**
 A provider-specific transfer workflow will need a separate transport implementation later.
 Late Agent/TTS results cannot reinsert the call or send new audio. Dependencies must cooperate
@@ -104,9 +106,9 @@ Canonical audio is defined in `backend/app/speech/audio.py`:
 - 48,000 bytes per second.
 
 `ProviderAudio → AudioNormalizer.normalize() → canonical PCM → shared STT` is the explicit
-input boundary. `PcmPassThroughNormalizer` only validates/passes canonical PCM. No mu-law,
-A-law, MP3 input decoding, provider packet splitting or 8kHz resampling is claimed.
-The next adapter must implement and test any required conversion before feeding frames.
+input boundary. `PcmPassThroughNormalizer` validates canonical PCM. The Twilio adapter
+performs real mu-law decoding and 8kHz → 24kHz resampling before this boundary. A-law and
+compressed caller input are unsupported; outbound MP3/WAV decoding is implemented.
 
 ## Agent and backend TTS boundaries
 
@@ -135,8 +137,9 @@ playback and live Kazakh voice quality remain unverified/deferred.
 required id/session_id/timestamp/event_type/channel, the same seven event types, and optional
 language/text/scenario/action/confidence/status/clarification/handoff/risk/routing/state/trace/
 latency/metadata. Risk and other Agent payloads remain JSON values, not a duplicated finance
-schema. All phone events carry channel=phone and metadata.call_id; the start event includes
-provider metadata. Supplied scenarios are recorded in original order from trace.scenarios,
+schema. All phone events carry channel=phone, metadata.call_id and copied provider metadata.
+Twilio supplies only provider, call_sid and stream_sid. Supplied scenarios are recorded
+in original order from trace.scenarios,
 then routing.scenarios or routing.selections. This does not imply policy acceptance/execution.
 Clarification/handoff semantics match the frontend; awaiting_user alone implies neither.
 Closure includes transport status/reason and preserves any supplied Agent status.
@@ -176,20 +179,147 @@ existing locked dependencies: **346 backend tests** (307 existing + 39 new), **3
 tests** (36 existing + 1 new), TypeScript, production Vite build, Ruff check/format, offline
 phone smoke bench and `git diff --check` passed. Tests use no live network integrations.
 
-## Next real-provider feature
+## Twilio inbound provider (implemented, live call unverified)
 
-Implement one adapter under `backend/app/telephony/providers/`:
+Production path:
 
-1. Authenticate/validate incoming provider callbacks or streams; never expose the bench.
-2. Translate start/audio/end/error into the typed TelephonyEvents with stable unique call IDs.
-3. Normalize the provider codec/sample rate/framing into canonical PCM with bounded buffering.
-4. Bind one application-owned PhoneRuntime using real MessageService and explicit server STT/TTS.
-5. Convert SpeechResult audio to the provider format and await actual playback completion;
-   mute/discard playback echo, and cancel queued output on hangup/close.
-6. Implement idempotent hangup/close, provider disconnect/error handling, and gateway shutdown.
-7. Verify live RU/KZ output, timeouts and codec quality; coordinate a genuine operator-transfer
-   seam before claiming handoff works.
+`Phone → Twilio → Connect/Stream → signed WSS → Twilio adapter → mu-law 8kHz decode /
+resample → PCM16LE 24kHz → shared STT → existing MessageService → backend OpenAI TTS MP3 →
+MP3 decode / mono 8kHz resample / raw mu-law encode → Twilio → caller`.
 
-Provider selection/SDK, live calls, codec conversion, real transfer, persistence, analytics,
-journey/anomaly detection, dashboard, streaming TTS and public deployment remain deferred.
-No next feature branch is created by this task.
+Core telephony remains provider-neutral. Only web/phone channels exist. Browser TTS stays
+web-only; phone audio never uses React or browser speech APIs. Frontend presentation is
+unchanged; shadcn/ui remains the required design system.
+
+### Routes and identities
+
+- `POST /api/v1/telephony/twilio/voice`: official SDK signature validation over the configured
+  external HTTPS URL and every form field; returns SDK-generated
+  `<Response><Connect><Stream url="wss://.../api/v1/telephony/twilio/media"/></Connect><Hangup/></Response>`.
+- `WS /api/v1/telephony/twilio/media`: validates `X-Twilio-Signature` before accept, using
+  the configured external HTTPS upgrade / WSS URL and documented trailing-slash variants.
+  Host and forwarded headers cannot choose signature URLs. Queries are rejected; signatures
+  cannot be disabled. TLS is terminated by the production proxy/tunnel.
+- A signed webhook admits one CallSid for 120s. A validated start consumes that admission,
+  verifies AccountSid, assigns CallSid as physical call ID and StreamSid as socket identity,
+  then creates one UUID Agent session. Active duplicate calls, stream swaps and closed-call
+  reopen attempts fail safely. Single process only: admission and runtime state are local.
+- `connected`, `start`, `media`, `mark`, `stop`, `dtmf` have bounded, typed validation.
+  Connected precedes start; subsequent sequence numbers must be contiguous. Stream/account/
+  call identity and increasing media chunk/timestamps are checked. DTMF is accepted and
+  ignored; keypad scenarios are deferred. Unknown/malformed events close only that socket.
+- Stop ends the call; disconnect cancels; protocol/conversion failures record a safe error.
+  Runtime shutdown cancels active calls. After the media socket closes, TwiML proceeds to
+  Hangup. No REST operator transfer or outbound-call API was added.
+
+### Audio and playback
+
+`providers/twilio_audio.py` uses PyAV's real `pcm_mulaw` decoder and one stateful mono s16
+24kHz AudioResampler per listening interval. Validated base64 mu-law packets (≤800 bytes,
+100ms) become even PCM frames ≤4,800 bytes for existing STT. Busy input is discarded;
+resampler state is reset before listening resumes, avoiding echo retained across replies.
+The existing Silero endpoint detector controls utterance finalization. Partials never route.
+
+Real `OpenAITTSProvider` returns MP3 from explicitly configured model/voice. PyAV demuxes
+MP3 (also WAV for offline fixtures), decodes, downmixes/resamples to mono 8kHz, and encodes
+raw mu-law. Output is bounded to 25MB input / 120s duration, split into ≤800-byte base64
+`media` messages with the bound StreamSid. It contains no WAV/container header. Codec work
+for outgoing speech runs off the event loop. PyAV wheels bundle FFmpeg libraries; no system
+ffmpeg executable is required for the verified macOS wheel.
+
+A unique `reply-<UUID>` mark follows each reply. `send_audio` waits for the matching incoming
+mark, not for socket send completion. Wrong, stale or cross-stream marks cannot complete
+playback. Clear invalidates pending marks **before** sending the clear event: Twilio's
+cleared-mark echoes cannot masquerade as successful playback. Timeout (120s), stop,
+disconnect, cancellation and terminal states invalidate work and release stream resources.
+Ended/handoff replies play once before terminal cleanup. Handoff is a bot state followed by
+hangup, not a live operator transfer. Input during Agent/TTS/playback is dropped: barge-in
+is deferred. The server synthesizes a whole reply before playback; streaming TTS is deferred.
+
+Events use the existing seven-type schema/store with safe provider/call_sid/stream_sid
+metadata. INFO logs contain SIDs, session UUID, lifecycle, Agent/TTS/turn timings, conversion
+failures, marks and clears. They omit raw audio, credentials and transcript/reply text.
+The in-memory EventStore does hold transcripts/Agent evidence; it has no public analytics
+endpoint and is not persistent. Limits: webhook 16KB/100 fields, WS 8KB, pre-start timeout
+10s, no-event timeout 300s, existing 16-frame STT queue, 100 active / 1,000 unique calls.
+At the unique-call budget restart the process only after active calls end.
+
+### Live call checklist
+
+**No real Twilio call was tested in this task.** The developer reported a ready number/tunnel and saved settings, but the expected root
+`.env` did not exist in the workspace at the readiness check. App startup succeeds with
+phone disabled; live verification needs the configuration file visible to this backend.
+Offline fixtures validate conversion/protocol mechanics, not live recognition, RU/KK voice
+quality, network connectivity or PSTN playback.
+
+1. Install from repository root (PowerShell):
+
+   ```powershell
+   python -m venv .venv
+   ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
+   ```
+
+2. Set these names in ignored root `.env` (never frontend Vite settings):
+   `TWILIO_ENABLED=true`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+   `TWILIO_PHONE_NUMBER` (your inbound number; Console metadata, no outbound dialing),
+   `OPENAI_API_KEY`, `OPENAI_ROUTER_MODEL`, `BACKEND_TTS_MODEL`, `BACKEND_TTS_VOICE`.
+   Choose model/voice supported by your account. No implicit phone TTS default.
+3. Expose backend port 8000 with an HTTPS/WSS-capable tunnel or trusted TLS reverse proxy.
+   For example `ngrok http 8000` if installed. Set `PUBLIC_BASE_URL` to its exact HTTPS
+   origin, with no path/query/credentials. Do not commit the generated URL. Changing the
+   tunnel URL requires updating `.env`, restarting the backend and updating Console.
+4. Start **one worker**: `./.venv/Scripts/python.exe -m app.main`. The voice extra is required
+   for existing Silero endpointing. Check `/health`; verify no `twilio unavailable` warning.
+5. Twilio Console → Phone Numbers → your voice-enabled number → Voice Configuration:
+   set **A call comes in → Webhook → POST** to
+   `https://YOUR_PUBLIC_HOST/api/v1/telephony/twilio/voice`, then save.
+   Use credentials matching the number's AccountSid (including subaccount if applicable).
+6. Call the Twilio number from an allowed/verified trial caller. Expect `twilio started`
+   with CallSid/StreamSid/session_id. There is no opening greeting: speak first, then pause
+   about 2.5 seconds to commit the utterance. Try Russian, Kazakh and mixed speech.
+7. Expect `phone stt_final` → `phone agent_response` → `phone tts_ready` →
+   `twilio audio_sent` → `twilio playback_complete` → `phone turn_complete`.
+   Caller should hear the spoken existing Agent reply. Speak a second turn after it ends;
+   confirm the same session UUID. On goodbye/handoff, final reply precedes clear/closure.
+8. Hang up; confirm `twilio closed`, no pending playback, and no further bot turns.
+   Record call result and RU/KK audio quality before claiming the live demo passed.
+
+| Symptom | Check |
+| --- | --- |
+| WS cannot connect | Public TLS/WSS reachability, proxy WS upgrade, tunnel port, route, Twilio debugger; webhook 503 means incomplete/disabled settings. |
+| Signature 403 / WS 1008 | Exact public origin, POST URL/no query, matching account auth token, unchanged form fields; never disable validation. |
+| No caller audio | Valid start audio/x-mulaw/8000/mono/inbound, base64/frame limits, Twilio media events; expected silence while bot speaks. |
+| STT but no Agent reply | Final after pause, router model/key access, `phone_turn_failed`, turn deadline; partials are intentionally ignored. |
+| Agent reply but silence | TTS model/voice access, voice extra, MP3 decode/conversion warning, media StreamSid, Twilio debugger. |
+| Distorted audio | Raw mu-law mono/8k outbound (no WAV header), input mu-law/8k, PyAV install, phone line/audio quality. |
+| Mark never returns | Correct StreamSid/name, socket reader still running, Twilio playback buffer; 120s timeout terminates safely. |
+| Unexpected closure | Protocol/order errors, account/call mismatch, STT/provider errors, 4,000-char TTS limit, 180s turn / 300s no-event timeout, registry budget, terminal Agent status. |
+
+### Offline verification
+
+```powershell
+./.venv/Scripts/python.exe -m pytest backend/tests -q
+./.venv/Scripts/python.exe scripts/smoke_twilio_runtime.py
+./.venv/Scripts/python.exe scripts/smoke_phone_runtime.py
+./.venv/Scripts/ruff.exe check backend/app backend/tests scripts/smoke_twilio_runtime.py scripts/smoke_phone_runtime.py
+./.venv/Scripts/ruff.exe format --check backend/app backend/tests scripts/smoke_twilio_runtime.py scripts/smoke_phone_runtime.py
+```
+
+Twilio tests exercise SDK signatures/TwiML/HTTP+WS admission, real known G.711/MP3/WAV
+conversion, protocol/order/replay validation, call isolation, final-only routing, two turns
+in one session, half duplex, reply marks/clear/timeouts, late Agent/TTS cancellation,
+terminal/error cleanup and secret-free logs. Both smoke benches are explicitly MOCK.
+
+Source contracts: [Twilio messages](https://www.twilio.com/docs/voice/media-streams/websocket-messages),
+[Connect/Stream](https://www.twilio.com/docs/voice/twiml/stream),
+[request validation](https://www.twilio.com/docs/usage/security),
+[PyAV audio](https://pyav.org/docs/develop/api/audio.html).
+
+Deferred: operator/PSTN transfer, outbound calls, barge-in, streaming TTS, multi-worker state,
+persistence, supervisor authorization/feed, journey/anomaly detection and dashboards.
+
+Verification on macOS / Python 3.12 / Node 24: **406 backend tests (60 new Twilio cases),
+37 frontend tests**, TypeScript noEmit, Vite production build, Ruff lint/format,
+both offline smoke scripts and git diff --check passed. No live network API was used by tests.
+Security review covered signature pinning, account/call/stream isolation, admission/replay,
+size/time limits, cancellation/clear semantics and credential/raw-content logging.
