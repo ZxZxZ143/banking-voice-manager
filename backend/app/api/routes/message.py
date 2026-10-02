@@ -6,7 +6,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 
-from app.agent.errors import RouterConfigurationError, RouterError
+from app.agent.errors import (
+    ROUTER_VALIDATION_REASONS,
+    RouterConfigurationError,
+    RouterError,
+    RouterOutputError,
+    RouterProviderError,
+)
 from app.core.contracts import Contract, Language
 from app.dialog.message import MessageResult, SessionClosedError
 from app.dialog.store import SessionCapacityError
@@ -107,6 +113,42 @@ async def message(payload: MessageRequest, request: Request):
         status = 503 if isinstance(exc, RouterConfigurationError) else 502
         if exc.code == "router_timeout":
             status = 504
+        root = exc
+        seen = {id(root)}
+        while root.__cause__ is not None and id(root.__cause__) not in seen:
+            root = root.__cause__
+            seen.add(id(root))
+        layer = "router_configuration"
+        if isinstance(exc, RouterProviderError):
+            layer = "router_timeout" if exc.code == "router_timeout" else "router_provider"
+        elif isinstance(exc, RouterOutputError):
+            layer = "router_output_validation"
+            traceback = exc.__traceback__
+            while traceback is not None and traceback.tb_next is not None:
+                traceback = traceback.tb_next
+            if traceback is not None and traceback.tb_frame.f_code.co_filename.replace(
+                "\\", "/"
+            ).endswith("/dialog/message.py"):
+                layer = "decision_policy_validation"
+        reason = getattr(exc, "validation_reason", None)
+        reason = reason if reason in ROUTER_VALIDATION_REASONS else "none"
+        # SDK/Pydantic exception strings can include prompts, slot values, headers and keys.
+        # Preserve the real cause class and safe category; never serialize the raw cause.
+        fields = {
+            "error_code": exc.code,
+            "failure_layer": layer,
+            "exception_type": type(exc).__name__,
+            "root_exception_type": type(root).__name__,
+            "safe_message": exc.message,
+            "root_message": "details withheld; see failure_layer and validation_reason",
+            "validation_reason": reason,
+            "http_status": status,
+            "elapsed_ms": round((perf_counter() - started) * 1000, 1),
+        }
+        provider_status = getattr(root, "status_code", None)
+        if isinstance(provider_status, int) and 100 <= provider_status <= 599:
+            fields["provider_status"] = provider_status
+        logger.warning("web agent_turn_failed %s", fields, extra=fields)
         return JSONResponse(
             status_code=status, content={"error": {"code": exc.code, "message": exc.message}}
         )

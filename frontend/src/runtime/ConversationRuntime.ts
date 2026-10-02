@@ -1,7 +1,7 @@
 import type {
   AgentMessageResponse, ConversationMessage, ConversationStatus, RuntimeStatus, VoiceTranscript,
 } from '../types/agent';
-import type { AgentClient } from '../services/agentClient';
+import { AgentApiError, type AgentClient } from '../services/agentClient.ts';
 import type { TtsService } from '../services/tts';
 import type { ChannelContext } from '../channels/channel';
 import { createConversationEvent } from '../events/ConversationEvent.ts';
@@ -182,9 +182,13 @@ export class ConversationRuntime {
 
   private runVoiceOperation(method: 'startListening' | 'stopListening'): Promise<void> {
     const controller = this.voiceInput;
+    const generation = this.generation;
     if (!controller) return Promise.resolve();
     const operation = this.voiceOperation.then(() => {
       if (method === 'startListening' && !this.snapshot.voiceInputEnabled) return;
+      if (method === 'startListening' && this.channel.channel === 'web'
+        && (!this.isCurrent(generation) || this.snapshot.runtimeStatus !== 'listening'
+          || ['handoff', 'ended'].includes(this.snapshot.conversationStatus ?? ''))) return;
       return controller[method]();
     });
     // A failed controller call is reported to its caller without blocking later stop/start calls.
@@ -283,7 +287,18 @@ export class ConversationRuntime {
           id: crypto.randomUUID(), role: 'user', text, timestamp: Date.now(),
         }],
       });
-      const response = await this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text });
+      let response: AgentMessageResponse;
+      try {
+        response = await this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text });
+      } catch (cause) {
+        if (!this.isCurrent(generation)) return;
+        if (this.channel.channel !== 'web' || (cause instanceof AgentApiError && !cause.recoverable)) throw cause;
+        if (!this.sessionOpen || ['handoff', 'ended'].includes(this.snapshot.conversationStatus ?? '')) return;
+        // Keep the failed turn visible; retry requires a new utterance, never an automatic resend.
+        this.update({ runtimeStatus: 'listening', error: errorMessage(cause) });
+        await this.runVoiceOperation('startListening');
+        return;
+      }
       if (!this.isCurrent(generation)) return;
       this.update({
         messages: [...this.snapshot.messages, {

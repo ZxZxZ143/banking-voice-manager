@@ -149,7 +149,7 @@ test('terminal response does not resume listening, and backend failure stays vis
   );
   await failing.startConversation();
   await failing.sendText('Вопрос');
-  assert.equal(failing.getSnapshot().runtimeStatus, 'error');
+  assert.equal(failing.getSnapshot().runtimeStatus, 'listening');
   assert.match(failing.getSnapshot().error, /503/);
   assert.equal(failing.getSnapshot().messages.length, 1);
   failing.dispose();
@@ -291,4 +291,115 @@ test('HTTP client reports a timeout while reading the response body', async () =
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('router-invalid-decision HTTP 502 resumes capture and a same-session retry waits for TTS', async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  let starts = 0;
+  let releasePlayback;
+  const runtime = new ConversationRuntime(new HttpAgentClient('http://localhost:8000'), {
+    speak: () => new Promise(resolve => { releasePlayback = resolve; }), stop() {},
+  });
+  runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+  try {
+    globalThis.fetch = async () => ++requests === 1
+      ? new Response(JSON.stringify({ error: { code: 'router_invalid_output', message: 'The routing provider returned an invalid decision; please retry or contact an operator.' } }), { status: 502 })
+      : new Response(JSON.stringify({ response_text: 'Ответ', conversation_status: 'awaiting_user' }));
+    await runtime.startConversation();
+    const session = runtime.getSnapshot().sessionId;
+    await runtime.handleTranscript({ text: 'Вопрос' });
+    assert.equal(runtime.getSnapshot().runtimeStatus, 'listening');
+    assert.match(runtime.getSnapshot().error, /502.*invalid decision/);
+    assert.equal(starts, 2);
+    assert.equal(requests, 1); // No silent Agent retry or fabricated answer/TTS.
+    assert.equal(runtime.getSnapshot().messages.length, 1);
+    const retry = runtime.handleTranscript({ text: 'Повторный вопрос' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runtime.getSnapshot().sessionId, session);
+    assert.equal(runtime.getSnapshot().runtimeStatus, 'speaking');
+    assert.equal(runtime.getSnapshot().error, null);
+    assert.equal(starts, 2);
+    releasePlayback({});
+    await retry;
+    assert.equal(runtime.getSnapshot().runtimeStatus, 'listening');
+    assert.equal(starts, 3);
+  } finally { globalThis.fetch = originalFetch; runtime.dispose(); }
+});
+
+for (const operation of ['resetConversation', 'endConversation', 'dispose']) {
+  test(`late failed Agent callback cannot resume capture after ${operation}`, async () => {
+    let rejectAgent;
+    let starts = 0;
+    const runtime = new ConversationRuntime({ sendMessage: () => new Promise((_, reject) => { rejectAgent = reject; }) }, { speak: async () => ({}), stop() {} });
+    runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+    await runtime.startConversation();
+    const turn = runtime.sendText('Вопрос');
+    await new Promise(resolve => setImmediate(resolve));
+    await runtime[operation]();
+    const before = runtime.getSnapshot();
+    rejectAgent(new Error('Agent API HTTP 502: invalid decision'));
+    await turn;
+    assert.equal(starts, 1);
+    assert.deepEqual(runtime.getSnapshot(), before);
+    runtime.dispose();
+  });
+}
+
+test('voice disabled during failed turn allows text retry without microphone restart', async () => {
+  let rejectAgent;
+  let starts = 0;
+  const runtime = new ConversationRuntime({ sendMessage: () => new Promise((_, reject) => { rejectAgent = reject; }) }, { speak: async () => ({}), stop() {} });
+  runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+  await runtime.startConversation();
+  const turn = runtime.sendText('Вопрос');
+  await new Promise(resolve => setImmediate(resolve));
+  await runtime.setVoiceInputEnabled(false);
+  rejectAgent(new Error('Agent API HTTP 502: invalid decision'));
+  await turn;
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'listening');
+  assert.equal(runtime.getSnapshot().voiceInputEnabled, false);
+  assert.equal(starts, 1);
+  runtime.dispose();
+});
+
+for (const status of ['handoff', 'ended']) {
+  test(`${status} remains terminal even if later transcripts arrive`, async () => {
+    let starts = 0;
+    let requests = 0;
+    const runtime = new ConversationRuntime({ sendMessage: async () => { requests += 1; return { response_text: 'Ответ', conversation_status: status }; } }, { speak: async () => ({}), stop() {} });
+    runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+    await runtime.startConversation();
+    await runtime.sendText('Вопрос');
+    await runtime.handleTranscript({ text: 'Поздний вопрос' });
+    assert.equal(runtime.getSnapshot().runtimeStatus, status);
+    assert.equal(starts, 1);
+    assert.equal(requests, 1);
+    runtime.dispose();
+  });
+}
+
+test('HTTP 409 closed-session error does not automatically resume microphone', async () => {
+  const originalFetch = globalThis.fetch;
+  let starts = 0;
+  const runtime = new ConversationRuntime(new HttpAgentClient('http://localhost:8000'), { speak: async () => ({}), stop() {} });
+  runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { code: 'session_closed', message: 'Session is closed; use a new session_id' } }), { status: 409 });
+    await runtime.startConversation();
+    await runtime.sendText('Вопрос');
+    assert.equal(runtime.getSnapshot().runtimeStatus, 'error');
+    assert.equal(starts, 1);
+  } finally { globalThis.fetch = originalFetch; runtime.dispose(); }
+});
+
+test('phone channel retains its existing failure policy', async () => {
+  let starts = 0;
+  const runtime = new ConversationRuntime({ sendMessage: async () => { throw new Error('provider unavailable'); } }, { speak: async () => ({}), stop() {} }, { channel: { channel: 'phone' } });
+  runtime.attachVoiceInput({ startListening: () => { starts += 1; }, stopListening() {} });
+  await runtime.startConversation();
+  await runtime.sendText('Вопрос');
+  assert.equal(runtime.getSnapshot().runtimeStatus, 'error');
+  assert.equal(starts, 1);
+  runtime.dispose();
 });

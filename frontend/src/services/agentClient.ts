@@ -19,9 +19,16 @@ function parseResponse(value: unknown): AgentMessageResponse {
     || !value.response_text.trim()
     || !statuses.includes(value.conversation_status as ConversationStatus)
   ) {
-    throw new Error('Malformed /api/message response: expected response_text and conversation_status.');
+    throw new AgentApiError('Malformed /api/message response: expected response_text and conversation_status.', false);
   }
   return value as unknown as AgentMessageResponse;
+}
+
+export class AgentApiError extends Error {
+  constructor(message: string, readonly recoverable: boolean) {
+    super(message);
+    this.name = 'AgentApiError';
+  }
 }
 
 export class HttpAgentClient implements AgentClient {
@@ -43,17 +50,17 @@ export class HttpAgentClient implements AgentClient {
       });
     } catch (cause) {
       if (signal.aborted || (cause instanceof Error && cause.name === 'TimeoutError')) {
-        throw new Error(`Agent API request timed out after ${this.timeoutMs} ms.`);
+        throw new AgentApiError(`Agent API request timed out after ${this.timeoutMs} ms.`, true);
       }
-      throw new Error('Agent API unavailable. Check VITE_API_BASE_URL and the backend connection.');
+      throw new AgentApiError('Agent API unavailable. Check VITE_API_BASE_URL and the backend connection.', true);
     }
 
     let body: unknown;
     try {
       body = await response.json();
     } catch {
-      if (signal.aborted) throw new Error(`Agent API request timed out after ${this.timeoutMs} ms.`);
-      if (response.ok) throw new Error('Malformed /api/message response: invalid JSON.');
+      if (signal.aborted) throw new AgentApiError(`Agent API request timed out after ${this.timeoutMs} ms.`, true);
+      if (response.ok) throw new AgentApiError('Malformed /api/message response: invalid JSON.', false);
       body = null;
     }
     if (!response.ok) {
@@ -62,7 +69,7 @@ export class HttpAgentClient implements AgentClient {
         : isRecord(body) && typeof body.detail === 'string'
           ? body.detail
           : response.statusText || 'Unknown backend error';
-      throw new Error(`Agent API HTTP ${response.status}: ${detail}`);
+      throw new AgentApiError(`Agent API HTTP ${response.status}: ${detail}`, [408, 429, 500, 502, 503, 504].includes(response.status));
     }
     return parseResponse(body);
   }

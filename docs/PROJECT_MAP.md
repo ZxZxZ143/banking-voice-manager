@@ -168,6 +168,10 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
   Invalid input 422; missing key/model 503; provider/structured-output failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
   Failed routing does not commit history/state/trace. Responses do not claim actions ran.
+  Safe web failure logs distinguish provider, timeout, output/policy validation and root
+  exception class; raw SDK/Pydantic diagnostics are withheld. Browser recoverable Agent
+  errors restore listening with a visible error and same-session user retry; terminal
+  status/reset/stop/dispose guards remain. Investigation: `docs/WEB_AGENT_FAILURE_RECOVERY.md`.
 - `GET /api/v1/analytics/{overview,sessions,sessions/{id},sessions/{id}/journey,anomalies,scenarios,risk}`:
   typed supervisor polling; disabled/unconfigured 503, wrong/missing Bearer token 403.
   Channel/scenario/risk/time/session filters, recent phone metadata and distinct timing samples.

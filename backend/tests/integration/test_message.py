@@ -426,3 +426,55 @@ def test_message_different_sessions_can_route_concurrently():
                 assert router.session_ids == {"parallel-a", "parallel-b"}
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "layer"),
+    [
+        (RouterOutputError("unknown_slot"), 502, "router_output_validation"),
+        (RouterProviderError(), 502, "router_provider"),
+        (RouterProviderError(timeout=True), 504, "router_timeout"),
+    ],
+)
+def test_failed_turn_logs_safe_root_cause_without_private_payload(error, status, layer, caplog):
+    root = RuntimeError("PRIVATE-provider-key PRIVATE-prompt PRIVATE-slot-value")
+    error.__cause__ = root
+    router = ScriptedRouter(error)
+    with TestClient(create_app(settings(), router_override=router)) as client:
+        with caplog.at_level("WARNING", logger="app.api.routes.message"):
+            response = client.post(
+                "/api/message",
+                json={"session_id": "private-session", "text": "PRIVATE-conversation"},
+            )
+    assert response.status_code == status
+    record = next(record for record in caplog.records if "agent_turn_failed" in record.message)
+    assert record.failure_layer == layer
+    assert record.root_exception_type == "RuntimeError"
+    assert record.error_code == error.code
+    assert record.safe_message == error.message
+    assert record.elapsed_ms >= 0
+    assert record.validation_reason == (
+        "unknown_slot" if isinstance(error, RouterOutputError) else "none"
+    )
+    assert record.exc_info is None
+    assert "PRIVATE" not in record.message
+    assert "private-session" not in record.message
+
+
+def test_policy_validation_failure_is_distinguished_without_logging_slot_values(
+    caplog, monkeypatch
+):
+    def fail_policy(*args):
+        raise ValueError("PRIVATE-slot-value")
+
+    with TestClient(
+        create_app(settings(), router_override=ScriptedRouter(decision("SC27")))
+    ) as client:
+        monkeypatch.setattr(client.app.state.services.messages.policy, "decide", fail_policy)
+        with caplog.at_level("WARNING", logger="app.api.routes.message"):
+            response = client.post("/api/message", json={"session_id": "policy", "text": "PRIVATE"})
+    assert response.status_code == 502
+    record = next(record for record in caplog.records if "agent_turn_failed" in record.message)
+    assert record.failure_layer == "decision_policy_validation"
+    assert record.root_exception_type == "ValueError"
+    assert "PRIVATE" not in record.message
