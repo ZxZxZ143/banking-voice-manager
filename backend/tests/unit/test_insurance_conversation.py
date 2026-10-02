@@ -246,6 +246,10 @@ def test_changed_identity_or_contact_value_stays_private(field):
     [
         ("phone", "87010000001", "+77010000001"),
         ("phone", "+7 (701) 000-00-01", "+77010000001"),
+        ("phone", "7010000001", "+77010000001"),
+        ("phone", "701 000 00 01", "+77010000001"),
+        ("phone", "Семь ноль один ноль ноль ноль ноль ноль ноль один", "+77010000001"),
+        ("phone", "Жеті нөл бір нөл нөл нөл нөл нөл нөл бір", "+77010000001"),
         ("phone", "Восемь семь ноль один ноль ноль ноль ноль ноль ноль один", "+77010000001"),
         ("phone", "Сегіз жеті нөл бір нөл нөл нөл нөл нөл нөл бір", "+77010000001"),
         ("iin", "850314300121", "850314300121"),
@@ -264,7 +268,9 @@ def test_numeric_and_spoken_expected_identifiers_use_source_patterns(name, text,
     )
 
 
-@pytest.mark.parametrize("text", ["123", "87010000001 и 87010000002", "один два три", "2026-10-02"])
+@pytest.mark.parametrize(
+    "text", ["123", "5551234", "87010000001 и 87010000002", "один два три", "2026-10-02"]
+)
 def test_partial_or_ambiguous_identifier_is_not_guessed(text):
     built = build_services(Settings(_env_file=None), router_override=RouterFixture())
     state = DialogState(session_id="format", conversation=ConversationState(expected_slot="phone"))

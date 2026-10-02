@@ -11,7 +11,6 @@ from app.packs.insurance_manager.data.models import Scenario
 from app.packs.insurance_manager.data.repositories import KnowledgeRepository, MockBackendRepository
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.state import DialogState
-from app.packs.insurance_manager.tools.read_only import find_client
 
 _SOURCE_TRANSLATIONS = {
     "Driving under the influence": ("вождение в состоянии опьянения", "мас күйінде жүргізу"),
@@ -102,15 +101,21 @@ def translated_listing(values, language):
 
 class InsuranceReplies:
     def __init__(
-        self, catalog, slots, knowledge: KnowledgeRepository, backend: MockBackendRepository
+        self,
+        catalog,
+        slots,
+        knowledge: KnowledgeRepository,
+        backend: MockBackendRepository,
+        capabilities=None,
     ):
         self.catalog: ScenarioCatalog = catalog
         self.slots = slots
         self.knowledge = knowledge
         self.backend = backend
+        self.capabilities = capabilities
         self.today = date.fromisoformat(catalog.get_compact_router_catalog()["reference_date"])
 
-    def reply(self, state: DialogState, scenario: Scenario) -> dict | None:
+    def reply(self, state: DialogState, scenario: Scenario, decision=None) -> dict | None:
         sid, lang, values = scenario.scenario_id, state.response_language, state.slots
         if sid in {"SC17", "SC25", "SC31", "SC33", "SC34"}:
             return None
@@ -141,8 +146,8 @@ class InsuranceReplies:
                 "expected_slot": name,
             }
 
-        def transfer(message="", sources=(), actions=()):
-            return answer(
+        def transfer(message="", sources=(), actions=(), reason="operation_requires_human"):
+            result = answer(
                 message
                 + text(
                     " Передаю диалог оператору вместе с собранными данными. "
@@ -155,6 +160,11 @@ class InsuranceReplies:
                 completed=False,
                 handoff=True,
             )
+            if self.capabilities:
+                result["manager_summary"] = self.capabilities.summary(
+                    state, scenario, actions, reason
+                )
+            return result
 
         # Give urgent guidance before collecting identifiers or other required slots.
         if sid == "SC11":
@@ -183,31 +193,49 @@ class InsuranceReplies:
                 handoff=values.get("injured") is True,
             )
         if sid == "SC15":
+            guidance = text(
+                "По условиям туристической страховки сначала свяжитесь с круглосуточной "
+                "медицинской помощью. Самостоятельно оплаченные расходы возмещаются "
+                "только по предварительному согласованию с assistance.",
+                "Саяхат сақтандыруы бойынша алдымен тәулік бойғы медициналық көмекке "
+                "хабарласыңыз. Өзіңіз төлеген шығындар assistance қызметімен алдын ала "
+                "келісілгенде ғана өтеледі.",
+            )
+            missing = next(
+                (name for name in scenario.slots.required if values.get(name) in (None, "", [])),
+                None,
+            )
+            if missing:
+                return {
+                    **ask(missing),
+                    "fact_text": guidance,
+                    "source_keys": ["knowledge_base.products.travel.notes"],
+                }
             return transfer(
-                text(
-                    "По условиям туристической страховки сначала свяжитесь с "
-                    "круглосуточной медицинской "
-                    "помощью. Самостоятельно оплаченные расходы возмещаются "
-                    "только по предварительному "
-                    "согласованию с assistance.",
-                    "Саяхат сақтандыруы бойынша алдымен тәулік бойғы медициналық "
-                    "көмекке хабарласыңыз. "
-                    "Өзіңіз төлеген шығындар assistance қызметімен алдын ала "
-                    "келісілгенде ғана өтеледі.",
-                ),
+                guidance,
                 ["knowledge_base.products.travel.notes"],
             )
         if sid == "SC38":
+            guidance = text(
+                "Никому не сообщайте СМС-коды, CVV или PIN и не переводите деньги на личную "
+                "карту. Saqta не отменяет полис за отказ сообщить код. Статус можно проверить "
+                "в приложении.",
+                "Ешкімге СМС кодын, CVV немесе PIN айтпаңыз, жеке картаға ақша аудармаңыз. "
+                "Saqta код бермегеніңіз үшін полисті жоймайды. Мәртебесін қолданбадан "
+                "тексеруге болады.",
+            )
+            missing = next(
+                (name for name in scenario.slots.required if values.get(name) in (None, "", [])),
+                None,
+            )
+            if missing:
+                return {
+                    **ask(missing),
+                    "fact_text": guidance,
+                    "source_keys": ["knowledge_base.fraud_policy"],
+                }
             return transfer(
-                text(
-                    "Никому не сообщайте СМС-коды, CVV или PIN и не переводите "
-                    "деньги на личную карту. "
-                    "Saqta не отменяет полис за отказ сообщить код. Статус можно "
-                    "проверить в приложении.",
-                    "Ешкімге СМС кодын, CVV немесе PIN айтпаңыз, жеке картаға ақша аудармаңыз. "
-                    "Saqta код бермегеніңіз үшін полисті жоймайды. Мәртебесін "
-                    "қолданбадан тексеруге болады.",
-                ),
+                guidance,
                 ["knowledge_base.fraud_policy"],
             )
         if sid == "SC09":
@@ -227,18 +255,9 @@ class InsuranceReplies:
                 ),
                 ["knowledge_base.products.dms"],
             )
-        if sid == "SC24":
-            return answer(
-                text(
-                    "Электронная карта ДМС находится в приложении в разделе «Мои полисы». "
-                    "В клинике достаточно показать её на экране. Отправку СМС выполняет оператор.",
-                    "Электрондық медициналық карта қолданбаның «Менің полистерім» бөлімінде. "
-                    "Клиникада экраннан көрсету жеткілікті. СМС жіберуді оператор орындайды.",
-                ),
-                ["knowledge_base.products.dms.e_card"],
-            )
-
         for name in scenario.slots.required:
+            if name == "phone" and values.get("iin"):
+                continue
             if values.get(name) in (None, "", []):
                 return ask(name)
 
@@ -394,20 +413,38 @@ class InsuranceReplies:
         if scenario.requires_identification or sid in {"SC30", "SC26", "SC29", "SC39"}:
             if not values.get("phone") and not values.get("iin"):
                 return ask("phone")
-            client = find_client(self.backend, phone=values.get("phone"), iin=values.get("iin"))
-            if not client.success:
-                return answer(
+            from app.packs.insurance_manager.response.lookup import lookup_client
+
+            client_id, alternative = lookup_client(
+                state, self.backend, decision.slots if decision else ()
+            )
+            if alternative:
+                return alternative
+            if not client_id:
+                return transfer(
                     text(
-                        "Клиент в демонстрационных данных не найден. Уточните телефон или ИИН.",
-                        "Демонстрациялық деректерден клиент табылмады. Телефонды "
-                        "немесе ЖСН-ді нақтылаңыз.",
+                        (
+                            "В доступной базе клиента найти не удалось. Для проверки "
+                            "конкретного полиса нужна помощь специалиста."
+                        ),
+                        "Қолжетімді қорда клиент табылмады. "
+                        "Нақты полисті тексеру үшін маман қажет.",
                     ),
-                    actions=["find_client"],
-                    completed=False,
-                    expected_slot="phone",
+                    reason="client_not_found",
                 )
-            client_id = client.data["client_id"]
             state.client_id = client_id
+
+        if sid == "SC24":
+            return transfer(
+                text(
+                    "Электронная карта ДМС находится в приложении в разделе «Мои полисы». "
+                    "В клинике достаточно показать её на экране. Отправку СМС выполняет оператор.",
+                    "Электрондық медициналық карта қолданбаның «Менің полистерім» бөлімінде. "
+                    "Клиникада экраннан көрсету жеткілікті. СМС жіберуді оператор орындайды.",
+                ),
+                ["knowledge_base.products.dms.e_card"],
+                ["find_client", "kb_lookup"],
+            )
 
         if sid == "SC30":
             records = self.backend.find(
@@ -565,16 +602,69 @@ class InsuranceReplies:
                     completed=False,
                 )
 
+        if sid == "SC12":
+            policies = [
+                record
+                for record in self.backend.get_all("policies")
+                if record.get("details", {}).get("vehicle_plate") == values["culprit_vehicle_plate"]
+            ]
+            if not policies:
+                return transfer(
+                    text(
+                        (
+                            "По указанному автомобилю полис в доступной базе не найден. "
+                            "Проверку и регистрацию случая продолжит специалист."
+                        ),
+                        (
+                            "Көрсетілген көлік полисі қорда табылмады. Тексеру мен оқиғаны "
+                            "тіркеуді маман жалғастырады."
+                        ),
+                    ),
+                    reason="record_not_found",
+                )
+            return transfer(
+                text(
+                    (
+                        "Сведения об автомобиле и происшествии собраны. Заявление должен "
+                        "зарегистрировать специалист."
+                    ),
+                    "Көлік пен оқиға туралы мәліметтер жиналды. Өтінішті маман тіркеуі керек.",
+                ),
+                ["mock_backend.policies"],
+                ["get_policy"],
+            )
+
         # All remaining catalog workflows collect their real required slots and
         # hand over to the actual authority; no ticket, booking or sent SMS is invented.
         sources = ["mock_backend.policies"] if policy else []
         actions = ["find_client", "get_policy"] if policy else ["find_client"] if client_id else []
+        if sid in {"SC19", "SC20"}:
+            actions.append("get_claim")
+            sources.append("mock_backend.claims")
+        if sid == "SC04":
+            self.backend.find("clients", iin=values["new_driver_iin"])
+            actions.append("get_bm_class")
+        unavailable = self.capabilities.next_unavailable(scenario) if self.capabilities else None
+        descriptions = {
+            "update_policy": ("изменение полиса", "полисті өзгерту"),
+            "renew_policy": ("продление полиса", "полисті ұзарту"),
+            "cancel_policy": ("расторжение полиса", "полисті тоқтату"),
+            "create_claim": ("регистрацию страхового случая", "сақтандыру оқиғасын тіркеу"),
+            "create_dispute": ("регистрацию возражения", "қарсылықты тіркеу"),
+            "book_inspection": ("запись на осмотр", "тексерілуге жазылу"),
+            "book_appointment": ("запись к врачу", "дәрігерге жазылу"),
+            "update_contact": ("изменение контактов", "байланыс мәліметтерін өзгерту"),
+            "request_document": ("подготовку документа", "құжат дайындау"),
+            "create_callback": ("организацию обратного звонка", "кері қоңырауды ұйымдастыру"),
+            "create_complaint": ("регистрацию жалобы", "шағымды тіркеу"),
+        }
+        operation = text(
+            *descriptions.get(unavailable, ("дальнейшую обработку", "әрі қарай өңдеуді"))
+        )
         return transfer(
             text(
-                "Данные запроса собраны. Оформление, изменение, отправку "
-                "документов или запись завершает специалист.",
-                "Сұрақ бойынша мәліметтер жиналды. Рәсімдеуді, өзгертуді, "
-                "құжат жіберуді немесе жазылуды маман аяқтайды.",
+                f"Данные собраны. {operation.capitalize()} выполнит специалист.",
+                f"Мәліметтер жиналды. {operation.capitalize()} маман орындайды.",
             ),
             sources,
             actions,

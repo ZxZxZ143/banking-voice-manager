@@ -20,7 +20,18 @@ Never say an operation succeeded, identity is verified, a message was sent or a 
 based only on the customer's statement. You may acknowledge that they are ASKING about an
 existing policy. Actual policies/payments/claims are established only by grounded facts.
 Before replying consider their goal, last question, expected answer, useful new information,
-and the smallest next step. Acknowledge progress naturally; vary brief acknowledgements,
+and the smallest next step. Acknowledgement is OPTIONAL and normally EMPTY.
+Do not mechanically acknowledge every turn or start consecutive replies with the same
+acknowledgement. Omit filler reactions like understood, thanks, okay, of course when they
+add no conversational value. A reaction helps only for important new information, correction,
+frustration or a real context change. Prefer going directly to the useful next question.
+Use pronouns and the last question to resolve short contextual replies before clarifying.
+If the known policy is missing, ask whether it disappeared after payment/in the app,
+without asking what object the customer means or asserting a payment was made.
+For scope_reply facts already answer small talk/identity/domain; never add another generic
+acknowledgement. Briefly resume the current insurance question, respecting next_slot if any.
+If comprehension failed, use a brief natural repair, rather than replaying a business form.
+
 do not say 'request classified', 'choose a scenario', 'clarify your request'.
 Greeting-only needs greeting and an OPEN help question, never new/existing classification.
 Interpret short/partial answers against the last question. Once new/existing was answered,
@@ -36,25 +47,41 @@ be DIFFERENT and narrower. Useful partial answers/slots are progress, not misund
 For next_slot ask only that slot, using its source description. If it was attempted but
 not usable, gently rephrase the request and explain what is missing. If a phone/IIN was
 accepted, 'Спасибо, номер получил' is enough; continue collecting what remains.
+Accept the source phone formats equally; never require a valid domestic phone to be
+repeated with a country-code prefix. When asking initially, request the complete phone
+without imposing a starting digit. After an invalid value, explain the missing part gently.
+The complete national ten-digit phone is valid without a country code; Kazakhstan's
+plus-seven prefix is supplied locally. Never demand that code after receiving a valid
+national number. If only a shorter local suffix is supplied, ask for the operator/area code.
 No invented handoff: allowed_action alone authorizes handoff/goodbye. In those cases no
-question. Grounded facts already include the summary, limitation and transfer. Otherwise
+question and empty acknowledgement. Grounded facts already include the summary, limitation
+and transfer. For answer do not add a question about the same fact just answered; only a
+brief open offer of further help if useful. Otherwise
 handoff is prohibited. For ask_slot expected_answer_type=slot; server tracks next_slot.
 For discover use problem_description, product_type or choice. A new-policy goal needs product
 type; an existing-policy goal needs problem details, not an arbitrary status lookup.
 acknowledged_information only describes conversational context; it does not establish
 business facts. Preserve understood existing/new goal across partial answers. Act must agree
 with allowed_action. Avoid filler, ask one main question, short turns suited to speech.
-OUTPUT CONTRACT: acknowledgement is only a reaction ('Спасибо', 'Понял'):
+Use at most one question mark in question; keep any alternatives inside that one question.
+OUTPUT CONTRACT: acknowledgement is normally empty; if useful, only a brief reaction:
+fact_variant normally defaults to default. If grounded_variants offers policy_end_date or
+policy_period, choose one only when the caller actually asks when coverage ends or its
+full period. A simple status check uses default. These are immutable server facts, not
+permission to invent dates. If allow_followup=false, finish the concise answer without
+a follow-up question or acknowledgement.
 Only acknowledge receipt of an identifier when received_this_turn contains an identifier.
-Do not carry an earlier flow's receipt acknowledgement into a new request. If no data was
-received this turn, acknowledge the customer's goal or question instead.
+Do not carry an earlier flow's receipt acknowledgement into a new request. If no useful new
+data or context needs
+acknowledgement, leave acknowledgement empty.
 NEVER a summary of grounded_facts. The server already speaks those facts after it. For answer,
 act=answer; never repeat a class/status/price from facts in acknowledgement. For handoff/goodbye
 use the corresponding act and null question. The SERVER tracks expected_slot from next_slot;
 do not return that field. Use expected_answer_type for conversational expectations.
 For ask_slot you may explain the
 format in words, never numeric digits. In particular ask for IIN without saying a numeric
-digit count. For discover/repair provide acknowledgement plus a narrower question, not facts.
+digit count. For discover/repair ask a narrower contextual question,
+with optional acknowledgement, never facts.
 """
 
 
@@ -72,6 +99,7 @@ class ComposedReply(Contract):
     expected_answer_type: (
         Literal["problem_description", "product_type", "choice", "slot"] | None
     ) = None
+    fact_variant: Literal["default", "policy_end_date", "policy_period"] = "default"
 
 
 def normalized_question(text: str | None) -> str:
@@ -105,6 +133,10 @@ class ConversationComposer:
 
 def validate_composition(result: ComposedReply, payload: dict) -> None:
     action = payload["allowed_action"]
+    if result.fact_variant != "default" and result.fact_variant not in payload.get(
+        "grounded_variants", {}
+    ):
+        raise ValueError("unsupported_fact_variant")
     text = result.acknowledgement + " " + (result.question or "")
     # Free wording cannot smuggle new numeric facts, internal labels, identifiers or writes.
     if re.search(
@@ -128,8 +160,11 @@ def validate_composition(result: ComposedReply, payload: dict) -> None:
         not result.question or not result.expected_answer_type
     ):
         raise ValueError("missing_next_question")
-    if result.question and normalized_question(result.question) == normalized_question(
-        payload["conversation"]["last_question"]
+    if (
+        action != "scope_reply"
+        and result.question
+        and normalized_question(result.question)
+        == normalized_question(payload["conversation"]["last_question"])
     ):
         raise ValueError("repeated_question")
 
@@ -140,6 +175,10 @@ def composer_payload(previous, state, text, decision, policy, reply, slots):
     terminal = state.conversation_status
     if terminal in {"handoff", "ended"}:
         action = "handoff" if terminal == "handoff" else "goodbye"
+    elif policy.scenario_ids == ["SYS_OUT_OF_SCOPE"]:
+        action = "scope_reply"
+    elif policy.outcome == "clarify" and next_slot:
+        action = "repair"
     elif next_slot:
         action = "ask_slot"
     elif decision.conversation_signal == "greeting":
@@ -150,9 +189,11 @@ def composer_payload(previous, state, text, decision, policy, reply, slots):
         action = "answer"
     facts = (
         redact_text(reply.text, state.slots)
-        if action in {"answer", "handoff", "goodbye"} or reply.source_keys
+        if action in {"answer", "handoff", "goodbye", "scope_reply"} or reply.source_keys
         else ""
     )
+    if reply.fact_text:
+        facts = redact_text(reply.fact_text, state.slots)
     scenario = slots.catalog.get_by_id(state.active_scenario or policy.scenario_ids[0])
     required = scenario.slots.required if scenario else []
     return {
@@ -173,6 +214,8 @@ def composer_payload(previous, state, text, decision, policy, reply, slots):
         "missing_slots": [name for name in required if state.slots.get(name) in (None, "", [])],
         "conversation": conversation.model_dump(),
         "grounded_facts": facts,
+        "grounded_variants": reply.fact_variants,
+        "allow_followup": reply.allow_followup,
         "source_keys": [redact_text(key, state.slots) for key in reply.source_keys],
         "allowed_action": action,
         "next_slot": next_slot,
@@ -186,6 +229,14 @@ def fallback_composition(payload: dict, reply) -> ComposedReply:
     action = payload["allowed_action"]
     if action in {"handoff", "goodbye", "answer"}:
         return ComposedReply(conversation_act=action, acknowledgement="")
+    if action == "scope_reply":
+        question = payload["conversation"]["last_question"]
+        return ComposedReply(
+            conversation_act="ask_followup" if question else "answer",
+            acknowledgement="",
+            question=question,
+            expected_answer_type=payload["conversation"]["expected_answer_type"],
+        )
     if action == "ask_slot":
         question = redact_text(reply.text)
         if normalized_question(question) == normalized_question(
@@ -204,9 +255,28 @@ def fallback_composition(payload: dict, reply) -> ComposedReply:
                 ) + question
         return ComposedReply(
             conversation_act="ask_slot",
-            acknowledgement="Спасибо, продолжим." if ru else "Рақмет, жалғастырайық.",
+            acknowledgement="",
             question=question,
             expected_answer_type="slot",
+        )
+    if (
+        action == "repair"
+        and payload["routing"]["conversation_signal"] == "none"
+        and not set(payload["conversation"]["acknowledged_information"])
+        & {"existing_policy", "new_policy"}
+    ):
+        return ComposedReply(
+            conversation_act="repair",
+            acknowledgement="",
+            question=(
+                "Извините, не совсем понял. Можете повторить последнюю часть?"
+                if payload["conversation"]["last_question"]
+                != "Извините, не совсем понял. Можете повторить последнюю часть?"
+                else "Не расслышал последнее уточнение. Скажите его ещё раз, пожалуйста."
+            )
+            if ru
+            else "Кешіріңіз, толық түсінбедім. Соңғы бөлігін қайталай аласыз ба?",
+            expected_answer_type="problem_description",
         )
     understood = payload["conversation"]["acknowledged_information"]
     if action != "greet" and set(understood) & {"existing_policy", "new_policy"}:
@@ -230,7 +300,7 @@ def fallback_composition(payload: dict, reply) -> ComposedReply:
             )
         return ComposedReply(
             conversation_act="ask_followup",
-            acknowledgement="Понял." if ru else "Түсіндім.",
+            acknowledgement="",
             question=question,
             acknowledged_information=["existing_policy" if existing else "new_policy"],
             expected_answer_type="problem_description" if existing else "product_type",
@@ -265,3 +335,25 @@ def fallback_composition(payload: dict, reply) -> ComposedReply:
         question=question,
         expected_answer_type="problem_description",
     )
+
+
+def optional_acknowledgement(value: str, previous: str) -> str:
+    """Remove low-value filler and consecutive reaction prefixes, not literary style."""
+    bare = normalized_question(value)
+    if bare in {
+        "понял",
+        "поняла",
+        "хорошо",
+        "спасибо",
+        "понял спасибо",
+        "спасибо продолжим",
+        "түсіндім",
+        "жақсы",
+        "рақмет",
+        "рақмет жалғастырайық",
+    }:
+        return ""
+    prefix = bare.split()[:1]
+    if prefix and prefix == normalized_question(previous).split()[:1]:
+        return ""
+    return value

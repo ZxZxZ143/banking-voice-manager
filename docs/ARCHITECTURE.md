@@ -1,4 +1,4 @@
-# Scenario Pack architecture — Stage 3.1
+# Scenario Pack architecture — Stage 3.2
 
 The two production packs are `insurance_manager` (consultative) and
 `product_promoter` (proactive). Shared sessions, HTTP, voice, traces and lifecycle remain
@@ -10,7 +10,7 @@ Browser text / final STT → POST /api/message
     → Shared Core: lock, snapshot, registry, activate/resume
     → Insurance: Router → Decision Policy → grounded business facts → LLM Composer
     → Product: structured Agent → deterministic catalog policy/reply
-    → only when out-of-domain: public-manifest selector → customer confirmation
+    → out-of-domain: current assistant scope reply, no selector/forwarding
     → Shared Core: typed local context/result + global status + trace commit
     → browser TTS → listening / handoff / ended
 
@@ -22,16 +22,14 @@ Either pack selected at Start → POST /api/conversation/start
 ## Shared Core and context firewall
 
 `conversation/service.py` owns registry resolution, per-session locking, snapshots,
-activation, pending-switch confirmation, terminal rejection and atomic commit. The bounded
+activation by explicit selection, terminal rejection and atomic commit. The bounded
 locked LRU store retains 100 sessions; in-flight entries are pinned, reads/writes use deep
 copies. Traces are bounded to 100 sessions × 100 turns. State is single-process, in-memory
 and lost on backend restart. Failures commit no context, switch or trace.
 
 `GlobalConversationContext` contains only session ID, global turn, language, channel and
 conversation status. `ConversationContext` additionally holds the active pack, isolated
-`scenario_contexts[pack_id]` and optional pending switch. Pending metadata contains the
-original request, source/target IDs, reply language and prior status, never private business
-state. It is not passed to either pack or to the selector.
+`scenario_contexts[pack_id]`. The old optional pending-switch field remains wire-compatible but production clears it and never proposes a natural switch.
 
 Each pack receives only its typed local state and a copied global context. Its latest
 typed result stays in its own entry. Shared code validates context/result types before
@@ -56,22 +54,13 @@ Insurance SCxx stack/pending lifecycle remains entirely within Insurance Manager
 Handoff/goodbye complete the pack and close the global session. Product interest/refusal
 completes the lead while leaving the global conversation active.
 
-## Natural switching
+## Explicit manual selection only
 
-Only a pack's `out_of_domain` result invokes `packs/selector.py`. Normal in-domain turns
-use the selected pack's flow (two calls for Insurance, one for Product);
-opening and rejecting a pending switch call no model. Selector input
-has exactly current text, current pack ID, public descriptions of registered packs and
-global language. No private contexts, results, identity, history or expected labels enter it.
-
-An allowlisted different target with confidence ≥0.75 produces a confirmation, preserving
-the original pack's private state. Yes dispatches the original question to the target;
-the trace retains the actual confirmation transcript. No preserves the old state. A new
-non-confirmation request cancels the proposal and goes through the current pack. Unsupported
-loans, fraud, technical support and unrelated requests do not force a pack switch.
-Invalid selector output safely leaves the pack active. Provider/timeout failures roll back
-the whole turn. The conditional selector shares a 55-second overall deadline below the
-frontend's 60-second timeout.
+`scenario_mode` or the UI selector is the only way to change assistants. Production does
+not construct or call `ScenarioSelector`, and never forwards an out-of-domain question.
+The old selector class and platform wire models remain compatibility/test artifacts.
+Insurance and Product retain isolated suspend/resume contexts across manual changes.
+Scope replies use no extra selector model call and cannot select another pack.
 
 ## Insurance Manager
 
@@ -95,6 +84,12 @@ The customer-facing path has four distinct authorities:
 3. **Grounded business logic** calculates/looks up facts and identifies the next missing field.
 4. **Conversation Composer** phrases acknowledgement and one natural next question.
 
+The SDK extraction schema is generated from the source slot catalog: closed slot names,
+JSON types, enum values, identifier patterns and nonempty collections/strings. Invalid
+optional entities need not invalidate an otherwise clear request. The business adapter
+still independently validates dates, patterns, scenario IDs and ownership. A bare preference
+to call «later» supplies callback intent, not a usable requested time; time collection continues.
+
 Composer functionality lives in `packs/insurance_manager/composer.py` and uses the existing
 bounded `StructuredAgent`. Its typed output is act, acknowledgement, question, recognized
 conversation context and expected answer type. The server tracks expected_slot from the
@@ -108,6 +103,11 @@ Grounded localized facts are immutable blocks inserted by the server between ack
 and question. This deliberate constraint preserves exact numbers, dates, statuses, documents,
 coverage and limitations; free wording cannot add numerical facts or claim an executed write.
 The LLM controls conversational framing rather than reauthoring authoritative insurance facts.
+Policy status is a concise localized fact without identifiers or dataset dates. The Composer
+may select an offered immutable end-date/period variant for an explicit date question;
+the server suppresses follow-up filler for this answer. These dates still use the owned
+record and canonical snapshot reference date. A completed scenario is never continued by
+a stale model flag: its selected follow-up is treated as a fresh request.
 Final dialogue no longer comes directly from scenario classification; deterministic replies
 remain the grounded source and safe fallback. Invalid/provider-failed composition keeps
 the business state and next step, with an allowlisted composer_error and measured latency.
@@ -130,6 +130,43 @@ Meaningful answers reset misunderstanding. A non-explicit comprehension handoff 
 multiple different repair attempts with no progress; operational handoff follows collection
 of required useful data. Explicit SC37 bypasses Composer and preserves the exact friendly
 handoff phrase. Urgent catalog guidance retains its existing priority rules.
+
+## Insurance manager behavior and local data
+
+Router `scope_kind` distinguishes social, identity, banking and unrelated enquiries only
+within `SYS_OUT_OF_SCOPE`; contradictory structured outputs are rejected. Asking whether
+the assistant is human is distinct from requesting a human transfer. Scope replies preserve
+the active scenario, collected data and expected field. Short answers resolve against the
+previous question/history. Acknowledgement is optional; server guards remove filler and
+consecutive reaction prefixes. Terminal facts need no extra reaction or repeated transfer.
+
+Literal phones are masked across Router input/history/slots before provider transport.
+Requested phone values are parsed from the original utterance locally, normalized from
+domestic `8`, international `7` or a full ten-digit national number to `+7`, and merged only
+into an authorized flow. Shorter local suffixes are not guessed. Composer
+already receives masked identifiers. Lookup is demo ownership filtering, not authentication.
+There are at most two client lookup attempts, including corrected identifiers; an unresolved
+client still allows general information, while private operations collect remaining useful
+context and hand off. Changing a resolved identity discards stale owned records.
+
+`data/demo_profile.py` generates an optional in-memory overlay from runtime `DEMO_TEST_PHONE`.
+The canonical kit remains intact; all other fields are deterministic fictional fixtures.
+Docker's existing runtime `.env` mechanism is sufficient. `scripts/show_demo_profile.py`
+prints only the created client's linked records and manual test guidance. Never commit its
+personal phone output. Tests/evaluations use synthetic inputs with the personal overlay off.
+
+`tools/capabilities.py` derives pending unavailable actions from authoritative scenario/action
+definitions and an explicit allowlist of implemented grounded readers/calculators. It also
+constructs a typed `ManagerSummary`: reason, scenario, collected field names, known-client
+flag, successful read-only checks and next unavailable action. Actual writes/delivery/booking
+are unimplemented regardless of the catalog's `irreversible` flag. Future integrations must
+update capability/execution and confirmation policy together. Optional SMS on an information
+flow does not force handoff when only the information was requested.
+
+The safe summary is included in trace and the pack-local result; it contains no identifier
+values and is not read verbatim to the customer. Explicit SC37 skips collection/Composer
+and keeps the verified Russian phrase. Handoff is a demo terminal state, not a contact-center
+connection. Available grounded checks run before unavailable-operation handoff.
 
 ## Product Promoter
 
@@ -161,7 +198,7 @@ are recorded only; no product opens, link sends or callback schedules.
 
 ## SDK transport and errors
 
-Insurance Router retains its bounded transport. Composer, Product and selector use
+Insurance Router retains its bounded transport. Composer and Product use
 `packs/structured_agent.py`: no SDK tools/handoffs, max_turns=1, SDK/client retry=0,
 45-second per-call timeout, disabled SDK tracing and provider storage. Only narrow routing
 settings reach the transport. No environment values enter prompts, manifests or traces.
@@ -180,7 +217,7 @@ never an invalid business action. Shared terminal replies preserve exactly
 
 `POST /api/message` accepts `{session_id, text, scenario_mode?}`. Responses retain six fields:
 session_id, response_text, routing, state, trace, conversation_status. OpenAPI declares
-Insurance, Product and minimal platform-confirmation variants. Insurance keeps its flat
+Insurance, Product and legacy platform variants; production emits no switch-confirmation turn. Insurance keeps its flat
 legacy state; Product exposes only its own state/result and shown catalog records.
 
 `POST /api/conversation/start` accepts `{session_id, scenario_mode}` and opens either pack via

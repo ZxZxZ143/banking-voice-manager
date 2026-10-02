@@ -19,6 +19,8 @@ from app.agent.schemas import RouterAgentOutput
 from app.core.config import Settings
 from app.data.loaders import load_starter_kit
 from app.dialog.models import DialogState, DialogTurn
+from app.packs.insurance_manager.agent.schemas import source_output_type
+from app.packs.insurance_manager.state import ConversationState
 from app.scenarios.catalog import ScenarioCatalog
 
 
@@ -84,6 +86,47 @@ def output(*ids, language="ru", response_language="ru", slots=None, continuation
     )
 
 
+def test_followup_to_completed_answer_keeps_selection_as_fresh_request(kit, settings, sdk):
+    sdk.run.return_value = SimpleNamespace(final_output=output("SC25", continuation=True))
+    state = DialogState(
+        session_id="followup",
+        active_scenario=None,
+        conversation=ConversationState(last_assistant_act="answer", phase="resolve"),
+    )
+    router = RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots)
+    result = asyncio.run(router.route("Когда заканчивается мой полис?", state))
+    assert [item.scenario_id for item in result.scenarios] == ["SC25"]
+    assert not result.is_continuation
+    assert state.active_scenario is None
+    sdk.run.assert_awaited_once()
+
+
+def test_phone_redaction_marker_is_omitted_without_losing_model_selection(kit, settings, sdk):
+    sdk.run.return_value = SimpleNamespace(
+        final_output=output("SC25", slots={"phone": "[локальный телефон получен]"})
+    )
+    router = RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots)
+    result = asyncio.run(
+        router.route("Проверьте полис по телефону +77075551234", DialogState(session_id="private"))
+    )
+    assert [item.scenario_id for item in result.scenarios] == ["SC25"]
+    assert "phone" not in result.slots
+    assert "+77075551234" not in sdk.run.await_args.kwargs["input"]
+
+
+@pytest.mark.parametrize("time", ["позже", "кейін", "later"])
+def test_vague_callback_preference_does_not_complete_time_collection(kit, settings, sdk, time):
+    sdk.run.return_value = SimpleNamespace(
+        final_output=output("SC36", slots={"callback_time": time})
+    )
+    router = RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots)
+    result = asyncio.run(
+        router.route("Запрос обратного звонка", DialogState(session_id="callback"))
+    )
+    assert [item.scenario_id for item in result.scenarios] == ["SC36"]
+    assert "callback_time" not in result.slots
+
+
 @pytest.mark.parametrize(
     "ids,language,response_language",
     [
@@ -117,7 +160,7 @@ def test_one_structured_call_no_retries_or_sdk_memory(
     agent = sdk.run.call_args.args[0]
     args = sdk.run.call_args.kwargs
     assert not agent.tools and not agent.handoffs
-    assert agent.output_type is RouterAgentOutput
+    assert issubclass(agent.output_type, RouterAgentOutput)
     assert agent.model_settings.retry.max_retries == 0
     assert agent.model_settings.max_tokens == settings.router_max_output_tokens
     assert agent.model_settings.store is False
@@ -154,8 +197,8 @@ def test_catalog_and_prompt_preserve_authoritative_boundaries(kit):
     assert "U001" not in prompt and '"expected"' not in prompt
 
 
-def test_sdk_schema_has_closed_objects_and_required_fields():
-    schema = AgentOutputSchema(RouterAgentOutput)
+def test_sdk_schema_has_closed_objects_and_required_fields(kit):
+    schema = AgentOutputSchema(source_output_type(kit.slots))
     assert schema.is_strict_json_schema()
 
     def check(node):
@@ -174,6 +217,31 @@ def test_sdk_schema_has_closed_objects_and_required_fields():
     assert properties["scenarios"]["minItems"] == 1
     assert properties["segments"]["minItems"] == 1
     assert properties["alternatives"]["maxItems"] == 2
+
+
+@pytest.mark.parametrize(
+    "slots",
+    [
+        {"callback_time": ""},
+        {"drivers_iin": ["relative"]},
+        {"phone": "[локальный телефон получен]"},
+        {"region": "unknown"},
+    ],
+)
+def test_source_sdk_schema_cannot_emit_empty_or_malformed_catalog_values(kit, slots):
+    with pytest.raises(ValidationError):
+        source_output_type(kit.slots).model_validate(output("SC36", slots=slots).model_dump())
+
+
+def test_source_sdk_schema_accepts_valid_identifiers_and_catalog_types(kit):
+    values = {
+        "phone": "+77075551234",
+        "drivers_iin": ["000101300000"],
+        "region": "other",
+        "travelers_count": 1,
+    }
+    typed = source_output_type(kit.slots).model_validate(output("SC01", slots=values).model_dump())
+    assert typed.to_decision().slots == values
 
 
 @pytest.mark.parametrize("field", ["scenarios", "segments"])

@@ -14,7 +14,6 @@ from app.packs.product_promoter.agent import ProductAgent
 from app.packs.product_promoter.catalog import load_catalog
 from app.packs.product_promoter.pack import ProductPromoterPack
 from app.packs.registry import ScenarioRegistry
-from app.packs.selector import ScenarioSelector
 from app.tracing.collector import TraceCollector
 from app.triage.service import TriageService
 
@@ -105,6 +104,9 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
             if router_override is None
             else None
         ),
+        demo_test_phone=(
+            settings.demo_test_phone.get_secret_value() if settings.demo_test_phone else None
+        ),
     )
     registry = ScenarioRegistry(default_pack_id=pack.manifest.id)
     registry.register(pack)
@@ -120,6 +122,4 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         pack.processor.replies,
         registry=registry,
     )
-    if settings.openai_api_key and settings.openai_router_model:
-        messages.selector = ScenarioSelector(transport)
     return Services(registry, dialogs, traces, messages, TriageService())

@@ -210,10 +210,8 @@ def test_policy_answer_requires_identifier_then_uses_owned_fixture_and_keeps_ses
         assert first["trace"]["completed_scenario"] is None
 
         body = send(client, "owned-policy", owner.phone)
-        assert policy.policy_number in body["response_text"]
-        assert policy.start_date.isoformat() in body["response_text"]
-        assert policy.end_date.isoformat() in body["response_text"]
-        assert kit.scenarios.meta.as_of_date.isoformat() in body["response_text"]
+        assert body["response_text"] == "Сейчас ваш полис действует."
+        assert "?" not in body["response_text"]
         assert owner.iin not in body["response_text"]
         assert owner.address not in body["response_text"]
         assert body["state"]["active_scenario"] is None
@@ -370,14 +368,17 @@ def test_corrected_phone_replaces_conflicting_old_iin(kit):
         assert first["trace"]["completed_scenario"] is None
         corrected = send(client, "correct-identity", owner.phone)
         assert "iin" not in corrected["state"]["slots"]
-        assert policy.policy_number in corrected["response_text"]
+        assert corrected["response_text"] == "Сейчас ваш полис действует."
+        assert corrected["trace"]["source_keys"] == [
+            "mock_backend.clients",
+            "mock_backend.policies.[номер скрыт]",
+        ]
         assert corrected["trace"]["completed_scenario"] == "SC25"
 
 
 def test_changed_identity_does_not_inherit_previous_owned_record(kit):
     owner, other = kit.mock_backend.clients[:2]
     first_policy = next(p for p in kit.mock_backend.policies if p.client_id == owner.client_id)
-    next_policy = next(p for p in kit.mock_backend.policies if p.client_id == other.client_id)
     router = ScriptedRouter(
         decision("SC25", slots={"phone": owner.phone, "policy_number": first_policy.policy_number}),
         decision("SC25", slots={"phone": other.phone}),
@@ -387,5 +388,11 @@ def test_changed_identity_does_not_inherit_previous_owned_record(kit):
         changed = send(client, "changed-identity", "Теперь проверить по другому телефону.")
         assert "policy_number" not in changed["state"]["slots"]
         assert first_policy.policy_number not in changed["response_text"]
-        assert next_policy.policy_number in changed["response_text"]
+        assert changed["response_text"] == "Сейчас ваш полис действует."
+        assert changed["trace"]["source_keys"] == [
+            "mock_backend.clients",
+            "mock_backend.policies.[номер скрыт]",
+        ]
         assert changed["trace"]["completed_scenario"] == "SC25"
+        private = client.app.state.services.dialogs.get_conversation("changed-identity")
+        assert private.scenario_contexts["insurance_manager"].state.client_id == other.client_id

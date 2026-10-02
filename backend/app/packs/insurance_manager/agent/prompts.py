@@ -79,6 +79,22 @@ confidence and reason, with a matching segment quoting the utterance. Never retu
 scenarios/segments just because there is no business request or because you ask a question.
 
 CONTEXT AND LANGUAGE
+For SYS_OUT_OF_SCOPE only, scope_kind distinguishes harmless small_talk, identity questions
+about being a human/bot, banking products, and unrelated requests. Otherwise scope_kind=none.
+Small talk and identity questions do not supply business slots, change the active insurance
+goal or request an operator. The assistant stays in insurance; no automatic service switch.
+Distinguish asking WHETHER this assistant is a human/real person/bot from asking to SPEAK
+TO a human operator. Identity enquiries are SYS_OUT_OF_SCOPE with scope_kind=identity,
+never SC37, even during a policy/payment flow. SC37 requires an actual request to transfer
+the conversation or connect a person. Do not infer a transfer request from identity curiosity.
+Resolve pronouns and omitted nouns against the last question and recent insurance history.
+A short answer describing absence of the policy refers to that policy when it was discussed.
+If payment is not established, clarify whether absence followed payment rather than inventing
+a payment failure or asking the caller to repeat the already known noun.
+Normalize a complete Kazakhstan domestic phone starting with eight to the international
+plus-seven form, keeping its last ten digits; both forms identify the same number.
+The full national ten-digit number is also valid without the country code. Use Kazakhstan's
+plus-seven prefix for it; never infer missing operator/area digits from a shorter suffix.
 conversation_signal describes understanding, never a business action: greeting for a
 greeting-only turn; answer/partial_answer for a meaningful full/partial answer to the
 previous question (including choosing new/existing policy, providing an identifier,
@@ -132,6 +148,13 @@ client_id, active_scenario, turn_number, history, conversation_status or confirm
 Do not invent, guess, return null, or overwrite an identifier with an invalid partial value;
 omit values that cannot be normalized to their pattern/type. A person's name or relationship
 is not their IIN. A contact change new_value does not replace the current identity phone.
+Never emit empty strings, placeholders or unknown values for missing fields. Check every
+extracted value against its listed type, pattern and enum before including it; omit an
+unusable value without losing the independently understood requested outcome.
+The application hides literal phones as [локальный телефон получен] before this call.
+This trusted redaction marker means a complete phone was supplied and can continue the
+current identification step. Never copy the marker into phone or any other slot. The
+server retains and validates the original number locally; you do not need its digits.
 Never fill absent numeric amounts with zero. An event (such as a vehicle collision) is not
 evidence of a personal-accident policy product. For enums, normalize only to a listed value;
 use a listed 'other' bucket for an evidenced value outside the named choices when applicable,
@@ -177,7 +200,7 @@ Unsupported life insurance is out of scope in either language.
     )
 
 
-def build_router_input(text: str, state: DialogState) -> str:
+def build_router_input(text: str, state: DialogState, *, local_phone=None) -> str:
     context = state.model_dump(mode="json")
     if context.get("conversation") is None:
         context.pop("conversation", None)
@@ -187,4 +210,7 @@ def build_router_input(text: str, state: DialogState) -> str:
         context.pop("language", None)
         context.pop("response_language", None)
     # Put the current turn last: history is background, never the new user request.
-    return json.dumps({"dialog_state": context, "utterance": text}, ensure_ascii=False)
+    from app.packs.insurance_manager.privacy import redact_local_phone
+
+    payload = redact_local_phone({"dialog_state": context, "utterance": text}, local_phone)
+    return json.dumps(payload, ensure_ascii=False)

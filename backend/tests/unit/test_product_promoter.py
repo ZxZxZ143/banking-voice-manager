@@ -354,53 +354,38 @@ def test_failed_pack_switch_rolls_back_all_contexts_and_trace(failure):
     assert built.dialogs.get_conversation("rollback") == before
 
 
-@pytest.mark.parametrize("answer", ["Да, переключай", "Иә", "Нет", "Жоқ"])
-def test_natural_switch_confirmation_preserves_old_context_and_original_question(answer):
+def test_out_of_scope_never_calls_selector_and_manual_switch_preserves_insurance():
     built = build_services(
-        Settings(_env_file=None), router_override=InsuranceFixture("SC06", "SYS_OUT_OF_SCOPE")
+        Settings(_env_file=None),
+        router_override=InsuranceFixture("SC06", "SYS_OUT_OF_SCOPE", "SC06"),
     )
-    built.messages.selector = SelectorFixture("product_promoter")
+    built.messages.selector = SelectorFixture(RouterProviderError())
     product = ProductFixture(decision("deposit_interest"))
     built.registry.get("product_promoter").agent = product
 
     async def flow():
-        await built.messages.process("confirm", "insurance")
+        await built.messages.process("manual-only", "insurance")
+        turn = await built.messages.process("manual-only", "Хочу депозит")
+        assert turn.scenario_pack_id == "insurance_manager"
+        assert turn.trace.pack_switch is None and not built.messages.selector.inputs
         before = (
-            built.dialogs.get_conversation("confirm").scenario_contexts["insurance_manager"].state
+            built.dialogs.get_conversation("manual-only")
+            .scenario_contexts["insurance_manager"]
+            .state
         )
-        suggested = await built.messages.process("confirm", "Хочу депозит")
-        assert suggested.conversation_status == "awaiting_confirmation"
+        selected = await built.messages.process("manual-only", "Хочу депозит", "product_promoter")
+        assert selected.trace.pack_switch.source == "explicit"
+        assert product.inputs[0][0] == "Хочу депозит"
         assert (
-            built.dialogs.get_conversation("confirm").scenario_contexts["insurance_manager"].state
+            built.dialogs.get_conversation("manual-only")
+            .scenario_contexts["insurance_manager"]
+            .state
             == before
         )
-        replied = await built.messages.process("confirm", answer)
-        if answer.startswith(("Да", "Иә")):
-            assert replied.scenario_pack_id == "product_promoter"
-            assert product.inputs[0][0] == "Хочу депозит"
-            assert replied.trace.pack_switch.source == "confirmed"
-        else:
-            assert replied.scenario_pack_id == "insurance_manager" and not product.inputs
-        assert built.dialogs.get_conversation("confirm").pending_switch is None
+        resumed = await built.messages.process("manual-only", "продолжим", "insurance_manager")
+        assert resumed.state.active_scenario == "SC06"
 
     asyncio.run(flow())
-    args = built.messages.selector.inputs[0]
-    assert len(args) == 4 and all(set(m) == {"id", "name", "description"} for m in args[2])
-
-
-def test_unsupported_question_does_not_switch_and_selector_failure_rolls_back():
-    built = build_services(
-        Settings(_env_file=None),
-        router_override=InsuranceFixture("SYS_OUT_OF_SCOPE", "SYS_OUT_OF_SCOPE"),
-    )
-    built.messages.selector = SelectorFixture(None)
-    first = asyncio.run(built.messages.process("scope", "weather"))
-    assert first.scenario_pack_id == "insurance_manager" and first.trace.pack_switch is None
-    before = built.dialogs.get_conversation("scope")
-    built.messages.selector = SelectorFixture(RouterProviderError())
-    with pytest.raises(RouterProviderError):
-        asyncio.run(built.messages.process("scope", "weather again"))
-    assert built.dialogs.get_conversation("scope") == before
 
 
 def test_product_api_contract_and_unknown_switch_does_not_mutate():

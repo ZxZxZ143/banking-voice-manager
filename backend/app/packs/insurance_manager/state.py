@@ -21,6 +21,7 @@ class ConversationState(Contract):
     phase: Literal["discover", "collect", "resolve", "confirm", "handoff"] = "discover"
     acknowledged_information: list[str] = Field(default_factory=list, max_length=8)
     travel_duration_days: int | None = Field(default=None, ge=1, le=365)
+    last_acknowledgement: str = ""
 
 
 class DialogueState(Contract):
@@ -29,6 +30,9 @@ class DialogueState(Contract):
     language: Language | None = None
     response_language: Literal["ru", "kk"] = "ru"
     client_id: str | None = None
+    client_lookup_attempts: list[str] = Field(
+        default_factory=list, max_length=2, exclude_if=lambda v: not v
+    )
     active_scenario: str | None = None
     scenario_stack: list[str] = Field(default_factory=list)
     pending_scenarios: list[str] = Field(default_factory=list)
@@ -51,6 +55,9 @@ DialogState = DialogueState
 class InsuranceScenarioContext(Contract):
     response_language: Literal["ru", "kk"] = "ru"
     client_id: str | None = None
+    client_lookup_attempts: list[str] = Field(
+        default_factory=list, max_length=2, exclude_if=lambda v: not v
+    )
     active_scenario: str | None = None
     scenario_stack: list[str] = Field(default_factory=list)
     pending_scenarios: list[str] = Field(default_factory=list)

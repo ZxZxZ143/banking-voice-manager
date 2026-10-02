@@ -17,7 +17,11 @@ from pydantic import ValidationError
 from app.agent.errors import RouterConfigurationError, RouterOutputError, RouterProviderError
 from app.core.config import Settings
 from app.packs.insurance_manager.agent.prompts import build_router_input, build_router_instructions
-from app.packs.insurance_manager.agent.schemas import RouterAgentOutput, RouterDecision
+from app.packs.insurance_manager.agent.schemas import (
+    RouterAgentOutput,
+    RouterDecision,
+    source_output_type,
+)
 from app.packs.insurance_manager.data.models import SlotDataset, SlotDefinition
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.state import DialogState
@@ -37,7 +41,7 @@ def build_router_agent(
         name="Voice Router",
         instructions=build_router_instructions(catalog, slots),
         model=model,
-        output_type=RouterAgentOutput,
+        output_type=source_output_type(slots),
         tools=[],
         handoffs=[],
     )
@@ -52,8 +56,10 @@ class RouterAgent:
         *,
         settings: Settings | None = None,
         slots: SlotDataset | None = None,
+        local_phone: str | None = None,
     ) -> None:
         self.catalog = catalog
+        self.local_phone = local_phone
         self.settings = settings if settings is not None else Settings()
         self.slots = slots.model_copy(deep=True) if slots is not None else None
         self._slot_definitions = (
@@ -82,6 +88,12 @@ class RouterAgent:
                 "Do not omit a destination explicitly named in the utterance. "
                 "Hesitation or filler alone is not meaningful progress: conversation_signal "
                 "must be none unless the answer actually narrows a goal or supplies data."
+                " A purely social question about this assistant's wellbeing is small talk: "
+                "select SYS_OUT_OF_SCOPE, scope_kind=small_talk, conversation_signal=none. "
+                "An identity enquiry is SYS_OUT_OF_SCOPE, scope_kind=identity. "
+                "These rules apply even while awaiting a phone or other business field. "
+                "Do not reinterpret a social/identity question as an attempted field answer "
+                "or a human transfer request. Preserve the business goal for the next turn."
             )
         agent.model_settings = ModelSettings(
             temperature=self.settings.router_temperature,
@@ -99,7 +111,7 @@ class RouterAgent:
                     agent.model = OpenAIResponsesModel(model=model.strip(), openai_client=client)
                     result = await Runner.run(
                         agent,
-                        input=build_router_input(text, state),
+                        input=build_router_input(text, state, local_phone=self.local_phone),
                         max_turns=1,
                         run_config=RunConfig(
                             tracing_disabled=True,
@@ -112,11 +124,11 @@ class RouterAgent:
             self._normalize_enums(decision)
             if (
                 state.conversation is not None
-                and state.conversation.expected_answer_type
                 and decision.is_continuation
                 and [s.scenario_id for s in decision.scenarios] != [state.active_scenario]
             ):
-                # Conversational progress does not select a business scenario.
+                # Completed or different scenarios cannot be continued. Keep the model's
+                # selection as a fresh request; lifecycle owns which scenario is active.
                 decision.is_continuation = False
                 if decision.conversation_signal == "none" and [
                     s.scenario_id for s in decision.scenarios
@@ -145,7 +157,29 @@ class RouterAgent:
 
     def _normalize_enums(self, decision: RouterDecision) -> None:
         """Normalize exact source enum spellings; never choose or repair scenario IDs."""
+        if decision.slots.get("phone") == "[локальный телефон получен]":
+            # This app-owned transport marker is not an extracted identifier. The
+            # processor separately validates the original literal phone locally.
+            del decision.slots["phone"]
+        callback_time = decision.slots.get("callback_time")
+        if isinstance(callback_time, str) and callback_time.strip().casefold() in {
+            "позже",
+            "потом",
+            "позднее",
+            "кейін",
+            "кейінірек",
+            "later",
+        }:
+            # A request to call later supplies intent, but no usable time preference.
+            del decision.slots["callback_time"]
         for name, value in decision.slots.items():
+            if name == "phone" and isinstance(value, str):
+                from app.packs.insurance_manager.data.demo_profile import normalize_phone
+
+                try:
+                    decision.slots[name] = normalize_phone(value)
+                except ValueError:
+                    pass  # Invalid values still fail source-schema validation.
             definition = self._slot_definitions.get(name)
             if definition is None or definition.type != "enum" or not isinstance(value, str):
                 continue
@@ -183,11 +217,20 @@ class RouterAgent:
             raise RouterOutputError("system_mix")
         if {segment.scenario_id for segment in decision.segments} != set(selections):
             raise RouterOutputError("segment_coverage")
+        if decision.scope_kind != "none" and selections != ["SYS_OUT_OF_SCOPE"]:
+            raise RouterOutputError("scope_contract")
         if decision.is_continuation and (
             state.active_scenario is None or selections != [state.active_scenario]
         ):
             raise RouterOutputError("continuation")
         for name, value in decision.slots.items():
+            if name == "phone" and isinstance(value, str):
+                from app.packs.insurance_manager.data.demo_profile import normalize_phone
+
+                try:
+                    decision.slots[name] = normalize_phone(value)
+                except ValueError:
+                    pass  # Invalid values still fail source-schema validation.
             definition = self._slot_definitions.get(name)
             if definition is None:
                 raise RouterOutputError("unknown_slot")

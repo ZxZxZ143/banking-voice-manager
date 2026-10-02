@@ -10,6 +10,15 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 3.2:** manual assistant selection only; no natural selector/forwarding.
+  SDK slot schema uses source types/enums/patterns; policy status is short, with separate
+  grounded date variants for explicit date questions.
+  Insurance scope replies preserve expected fields, identity enquiries stay separate from
+  operator requests, filler acknowledgement is optional. Client lookup is bounded to two
+  attempts. `DEMO_TEST_PHONE` creates a runtime-only synthetic linked profile; canonical data
+  stays intact. Explicit action capabilities and safe manager summaries drive handoff.
+  Evidence: `STAGE3_2_MANAGER_VALIDATION.md`. Fraud/Risk and Stage 4 are not started.
+
 - **Stage 3.1:** Insurance now separates Router, Decision Policy, grounded facts and a
   pack-local LLM Composer. Both packs have assistant-only openers. Insurance tracks the
   previous question/expected answer, resets repair counters on progress, normalizes requested
@@ -18,7 +27,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   Literal trip duration survives date collection; only an explicit start allows the server
   to derive an inclusive end. Sensitive ID/contact fields are masked in public results.
 
-- **Stage 3:** two production packs, conditional public-manifest selector with confirmation,
+- **Stage 3:** two production packs (natural selection superseded by Stage 3.2),
   isolated suspend/resume and rollback, six synthetic banking products, grounded discovery,
   comparisons, objections, refusal and SalesLeadResult. Product starts the conversation with
   a branded greeting and uses human currency speech. UI selection, lead/conditions and switch
@@ -57,7 +66,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
 | `backend/app/packs/contracts.py`, `registry.py`, `lifecycle.py` | Pack contract, manifest/modes, registry, isolated contexts and lifecycle |
 | `backend/app/packs/product_promoter/` | Product decision/state/result, deterministic catalog matching and human speech |
-| `backend/app/packs/selector.py`, `structured_agent.py` | Conditional public-manifest selection and bounded SDK transport |
+| `backend/app/packs/selector.py`, `structured_agent.py` | Legacy unused selector and bounded production SDK transport |
 | `backend/app/packs/insurance_manager/` | Production pack, InsuranceResult, local state, insurance processor and public wire projection |
 | `backend/app/packs/insurance_manager/agent/` | One-call SDK Router, structured routing plus conversational progress signal |
 | `backend/app/packs/insurance_manager/composer.py` | Natural acknowledgement/question, strict output, immutable facts and safe fallback |
@@ -89,6 +98,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `docs/STAGE1_VALIDATION.md` | Current Stage 1 evidence, eval comparison and remaining limits |
 | `docs/STAGE3_VALIDATION.md` | Stage 3 product, switching, speech, live eval, Docker and security evidence |
 | `data/insurance_conversation/eval_cases.json`, `scripts/evaluate_insurance_conversation.py` | Separate 32-dialogue live conversation metrics, no style judge |
+| `docs/STAGE3_2_MANAGER_VALIDATION.md` | Stage 3.2 phone, scope, overlay, handoff, eval/browser/voice/security evidence |
 | `docs/STAGE3_1_CONVERSATION_VALIDATION.md` | Stage 3.1 dialogue design, measured regressions, browser/voice/security evidence |
 | `docs/STAGE2_VALIDATION.md` | Stage 2 migration, context isolation, measured compatibility and regression results |
 
@@ -97,10 +107,10 @@ Backend paths in this table are relative to `backend/app/` where abbreviated.
 ## Actual and planned flow
 
 Startup constructs both production packs from separate canonical catalogs. The shared
-store contains global metadata, active pack, isolated typed entries and minimal pending-switch
+store contains global metadata, active pack, isolated typed entries and legacy unused pending-switch
 metadata. A pack receives only its own state and a copied global context. Latest InsuranceResult
 and SalesLeadResult remain in their respective entries. Explicit selection is registry lookup;
-natural selection runs only after an out-of-domain result and requires customer confirmation.
+natural selection is disabled; out-of-domain questions stay in the selected assistant.
 
 A normal request locks/snapshots the session, activates/resumes the selected pack, calls its
 Router, runs deterministic policy/business logic, then Insurance Composer phrases the next
@@ -175,7 +185,8 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - `tracing/models.py`: transcript, scenarios, alternatives, concise reason, slots, actions,
   session/turn, clarification/handoff/status, active/pending and measured timings
   (router/policy/business/composer/response/total), source_keys, policy_outcome, completed_scenario,
-  conversation act/phase/expected slot/repair count and allowlisted composer_error.
+  conversation act/phase/expected slot/repair count, allowlisted composer_error and optional
+  safe manager_summary (field/action names only).
   Actions list only attempted read-only helpers; unmeasured stages = null. Read-only helper
   duration is included in response latency, not a separately measured tools span.
 - `PolicySettings` defaults: accept 0.75, low 0.45, legacy low threshold two and unresolved
@@ -247,7 +258,9 @@ Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Rout
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
-Root .env.example contains no credentials; .env is ignored.
+Root .env.example contains no credentials/personal phone; .env is ignored. Optional
+`DEMO_TEST_PHONE` seeds a generated local overlay via `data/demo_profile.py`;
+`python scripts/show_demo_profile.py` prints only that synthetic profile. Canonical data is untouched.
 Health, UI and offline tests need no credentials. Live routing/evaluation needs an explicit
 Responses/structured-output-compatible model and key. Local .env has a verified key and
 `gpt-4.1-mini`; the model remains configurable, with no implicit production default.

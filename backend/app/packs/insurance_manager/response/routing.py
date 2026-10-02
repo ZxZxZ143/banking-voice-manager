@@ -1,7 +1,5 @@
 """Local slot replies and a small, explicitly read-only grounded response slice."""
 
-from datetime import date
-
 from pydantic import Field
 
 from app.conversation.terminal import terminal_reply
@@ -12,8 +10,8 @@ from app.packs.insurance_manager.data.repositories import KnowledgeRepository, M
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.scenarios.decision_policy import PolicyResult
 from app.packs.insurance_manager.state import DialogState
+from app.packs.insurance_manager.tools.capabilities import ManagerSummary
 from app.packs.insurance_manager.tools.read_only import (
-    find_client,
     get_claim,
     get_policy,
     kb_lookup,
@@ -127,6 +125,12 @@ class RoutingReplyResult(Contract):
     completed: bool = False
     handoff: bool = False
     expected_slot: str | None = None
+    fact_text: str | None = None
+    fact_variants: dict[str, str] = Field(default_factory=dict, exclude=True)
+    allow_followup: bool = Field(default=True, exclude=True)
+    manager_summary: ManagerSummary | None = None
+    resolved_client_id: str | None = Field(default=None, exclude=True)
+    lookup_attempts: list[str] = Field(default_factory=list, exclude=True)
 
 
 class RoutingReplyGenerator:
@@ -136,12 +140,14 @@ class RoutingReplyGenerator:
         slots: SlotDataset,
         knowledge: KnowledgeRepository | None = None,
         backend: MockBackendRepository | None = None,
+        capabilities=None,
     ) -> None:
         self.catalog = catalog
         self.slot_dataset = slots.model_copy(deep=True)
         self.slots = {slot.name: slot for slot in slots.slots}
         self.knowledge = knowledge
         self.backend = backend
+        self.capabilities = capabilities
 
     def generate(self, state: DialogState, policy: PolicyResult) -> str:
         return self.generate_result(state, policy).text
@@ -152,10 +158,49 @@ class RoutingReplyGenerator:
         policy: PolicyResult,
         decision: RouterDecision | None = None,
     ) -> RoutingReplyResult:
+        working = state.model_copy(deep=True)
+        result = self._generate_result(working, policy, decision)
+        result.resolved_client_id = working.client_id
+        result.lookup_attempts = list(working.client_lookup_attempts)
+        return result
+
+    def _generate_result(self, state, policy, decision):
         language = state.response_language
         if state.conversation_status == "handoff":
             return RoutingReplyResult(text=terminal_reply("handoff", language))
         selected = policy.scenario_ids[0]
+        if selected == "SYS_OUT_OF_SCOPE":
+            kind = decision.scope_kind if decision else "unrelated"
+            phrases = {
+                "identity": (
+                    "Я виртуальный помощник Saqta Insurance, помогаю по вопросам страхования.",
+                    "Мен Saqta Insurance виртуалды көмекшісімін, сақтандыру бойынша көмектесемін.",
+                ),
+                "small_talk": (
+                    "Спасибо, всё хорошо. Могу помочь с вопросами по страховке.",
+                    "Рақмет, бәрі жақсы. Сақтандыру бойынша көмектесе аламын.",
+                ),
+                "banking": (
+                    (
+                        "Я консультирую по страхованию. По депозитам, картам и кредитам "
+                        "обратитесь к менеджеру банковских продуктов — его можно выбрать "
+                        "отдельно."
+                    ),
+                    (
+                        "Мен сақтандыру бойынша кеңес беремін. Депозит, карта және кредит "
+                        "бойынша бөлек банк өнімдері менеджерін таңдаңыз."
+                    ),
+                ),
+                "unrelated": (
+                    "Я здесь помогаю по вопросам страхования.",
+                    "Мен сақтандыру мәселелері бойынша көмектесемін.",
+                ),
+            }
+            message = phrases.get(kind, phrases["unrelated"])[0 if language == "ru" else 1]
+            return RoutingReplyResult(
+                text=message,
+                expected_slot=state.conversation.expected_slot if state.conversation else None,
+            )
         if selected == "SYS_UNCLEAR":
             # The source template requires option_a/option_b, which may be absent.
             # Do not invent alternatives or expose unfilled template placeholders.
@@ -213,13 +258,13 @@ class RoutingReplyGenerator:
         if scenario is None:
             raise ValueError("Cannot respond to an unknown scenario")
         if scenario.scenario_id in {"SC25", "SC17"} and self.backend is not None:
-            return self._private_reply(state, scenario.scenario_id)
+            return self._private_reply(state, scenario.scenario_id, decision)
         if self.knowledge is not None and self.backend is not None:
             from app.packs.insurance_manager.response.insurance import InsuranceReplies
 
-            result = InsuranceReplies(self.catalog, self.slots, self.knowledge, self.backend).reply(
-                state, scenario
-            )
+            result = InsuranceReplies(
+                self.catalog, self.slots, self.knowledge, self.backend, self.capabilities
+            ).reply(state, scenario, decision)
             if result is not None:
                 return RoutingReplyResult(**result)
         for name in scenario.slots.required:
@@ -340,28 +385,50 @@ class RoutingReplyGenerator:
             completed=completed,
         )
 
-    def _private_reply(self, state: DialogState, scenario_id: str) -> RoutingReplyResult:
+    def _private_reply(
+        self, state: DialogState, scenario_id: str, decision=None
+    ) -> RoutingReplyResult:
         assert self.backend is not None
         language = state.response_language
         phone, iin = self._string_slot(state, "phone"), self._string_slot(state, "iin")
         if phone is None and iin is None:
             return self._ask(state, "phone")
-        client = find_client(self.backend, phone=phone, iin=iin)
-        if not client.success:
+        from app.packs.insurance_manager.response.lookup import lookup_client
+
+        client_id, alternative = lookup_client(
+            state, self.backend, decision.slots if decision else ()
+        )
+        if alternative:
+            return RoutingReplyResult(**alternative)
+        if not client_id:
+            identifier = "policy_number" if scenario_id == "SC25" else "claim_number"
+            if not state.slots.get(identifier):
+                return self._ask(state, identifier)
+            scenario = self.catalog.get_by_id(scenario_id)
             return RoutingReplyResult(
-                text={
-                    "ru": "Не удалось найти клиента в демонстрационных данных. Уточните телефон.",
-                    "kk": "Демонстрациялық деректерден клиент табылмады. Телефонды нақтылаңызшы.",
-                }[language],
-                actions=["find_client"],
-                expected_slot="phone",
+                text=(
+                    (
+                        "В доступной базе клиента найти не удалось. Для проверки записи "
+                        "потребуется специалист. Передаю ему диалог и собранные сведения."
+                    )
+                    if language == "ru"
+                    else (
+                        "Қолжетімді қорда клиент табылмады. Жазбаны тексеру үшін диалогты "
+                        "маманға тапсырамын."
+                    )
+                ),
+                handoff=True,
+                manager_summary=self.capabilities.summary(state, scenario, [], "client_not_found")
+                if self.capabilities
+                else None,
             )
+        state.client_id = client_id
         identifier = "policy_number" if scenario_id == "SC25" else "claim_number"
         function = get_policy if scenario_id == "SC25" else get_claim
         action = "get_policy" if scenario_id == "SC25" else "get_claim"
         result = function(
             self.backend,
-            client_id=client.data["client_id"],
+            client_id=client_id,
             **{identifier: self._string_slot(state, identifier)},
         )
         actions = ["find_client", action]
@@ -387,30 +454,12 @@ class RoutingReplyGenerator:
             language
         ]
         completed = True
+        variants = {}
         if scenario_id == "SC25":
+            from app.packs.insurance_manager.response.presentation import policy_facts
+
             reference = str(self.catalog.get_compact_router_catalog()["reference_date"])
-            current = date.fromisoformat(reference)
-            start, end = (
-                date.fromisoformat(record["start_date"]),
-                date.fromisoformat(record["end_date"]),
-            )
-            status = "future" if current < start else "expired" if current > end else "active"
-            label = {
-                "ru": {
-                    "future": "ещё не начал действовать",
-                    "expired": "срок истёк",
-                    "active": "действует",
-                },
-                "kk": {
-                    "future": "әлі күшіне енбеген",
-                    "expired": "мерзімі аяқталған",
-                    "active": "жарамды",
-                },
-            }[language][status]
-            text = (
-                f"{prefix}, {reference}: {record['policy_number']} — {label}. "
-                f"{record['start_date']} — {record['end_date']}."
-            )
+            text, variants = policy_facts(record, reference, language)
             source = f"mock_backend.policies.{record['policy_number']}"
         else:
             label = {"ru": "Статус", "kk": "Мәртебесі"}[language]
@@ -428,4 +477,6 @@ class RoutingReplyGenerator:
             actions=actions,
             source_keys=["mock_backend.clients", source],
             completed=completed,
+            fact_variants=variants,
+            allow_followup=scenario_id != "SC25",
         )

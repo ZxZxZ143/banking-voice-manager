@@ -118,9 +118,9 @@ def test_production_registry_manifest_and_owned_capabilities():
     assert not built.registry.exists("fixture_only")
 
 
-def test_stage31_prompt_fingerprint_documents_conversation_signal_extension():
+def test_stage32_prompt_fingerprint_documents_context_and_scope_extension():
     assert hashlib.sha256(services().insurance.prompt.encode()).hexdigest() == (
-        "0d5514b88790b4374a70a8e46bf075948875fd9b83f7486488b2cc7a2007c288"
+        "23ad6ac9cb0352d5df29586d4f0fbf3f1ebec23397320f82841bd95097202a05"
     )
 
 

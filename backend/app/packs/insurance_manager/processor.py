@@ -121,6 +121,16 @@ class InsuranceTurnProcessor:
                 ],
             )
         supplied = expected_identifier(text, previous, self.replies.slots)
+        if not supplied and (
+            self.replies.catalog.get_by_id(decision.scenarios[0].scenario_id)
+            or (previous.active_scenario and decision.scenarios[0].scenario_id == "SYS_UNCLEAR")
+        ):
+            # Read only literal phone data locally; the model need not receive the demo phone.
+            phone_context = previous.model_copy(deep=True)
+            from app.packs.insurance_manager.state import ConversationState
+
+            phone_context.conversation = ConversationState(expected_slot="phone")
+            supplied = expected_identifier(text, phone_context, self.replies.slots)
         if supplied:
             name, value = supplied
             decision.slots[name] = value
@@ -182,6 +192,15 @@ class InsuranceTurnProcessor:
         policy_ms = (perf_counter() - policy_started) * 1000
         response_started = perf_counter()
         reply = self.replies.generate_result(state, policy, decision)
+        state.client_id = reply.resolved_client_id
+        state.client_lookup_attempts = reply.lookup_attempts
+        if (
+            policy.outcome == "clarify"
+            and previous.conversation
+            and previous.conversation.expected_slot
+            and state.active_scenario == previous.active_scenario
+        ):
+            reply.expected_slot = previous.conversation.expected_slot
         if (
             self.composer is not None
             and policy.outcome == "handoff"
@@ -236,6 +255,7 @@ class InsuranceTurnProcessor:
                             "unexpected_slot",
                             "missing_next_question",
                             "repeated_question",
+                            "unsupported_fact_variant",
                         }
                         else "composer_validation"
                     )
@@ -247,12 +267,28 @@ class InsuranceTurnProcessor:
                 if part
             )
             meta = state.conversation
+            variant = getattr(composed, "fact_variant", "default")
+            if variant in payload["grounded_variants"]:
+                payload["grounded_facts"] = payload["grounded_variants"][variant]
+            if not payload["allow_followup"]:
+                composed.question = None
+                composed.acknowledgement = ""
             if set(composed.acknowledged_information) & {"existing_policy", "new_policy"}:
                 # Communicative progress is not business authorization. It only resets
                 # misunderstanding; neither scenarios nor facts are chosen here.
                 meta.repair_attempts = 0
                 state.consecutive_low_confidence = 0
                 state.unclear_count = 0
+            # Omit mechanical reactions, including a repeated acknowledgement prefix.
+            from app.packs.insurance_manager.composer import optional_acknowledgement
+
+            ack = optional_acknowledgement(composed.acknowledgement, meta.last_acknowledgement)
+            if payload["allowed_action"] in {"handoff", "goodbye", "scope_reply"}:
+                ack = ""
+            response = " ".join(
+                part for part in (ack, payload["grounded_facts"], composed.question) if part
+            )
+            meta.last_acknowledgement = ack
             meta.last_assistant_act = composed.conversation_act
             meta.last_question = composed.question
             meta.expected_answer_type = (
@@ -316,6 +352,7 @@ class InsuranceTurnProcessor:
             scenario_mode=state.scenario_mode,
             conversation_status=state.conversation_status,
             handoff=state.conversation_status == "handoff",
+            manager_summary=reply.manager_summary.model_dump() if reply.manager_summary else None,
             latency_ms=LatencyRecord(
                 router=router_ms,
                 policy=policy_ms,
@@ -381,7 +418,11 @@ class InsuranceTurnProcessor:
         state.unclear_count = 0
         state.clarification_options = []
         selected = policy.scenario_ids[0]
-        if state.conversation and previous.active_scenario != selected:
+        if (
+            state.conversation
+            and selected != "SYS_OUT_OF_SCOPE"
+            and previous.active_scenario != selected
+        ):
             state.conversation.travel_duration_days = None
         if selected == "SYS_GOODBYE":
             state.conversation_status = "ended"
@@ -430,16 +471,17 @@ class InsuranceTurnProcessor:
     def _merge_slots(state: DialogState, decision: RouterDecision) -> None:
         incoming = {name: value for name, value in decision.slots.items() if value is not None}
         identity = {name for name in ("phone", "iin") if name in incoming}
-        prior_identity = {name for name in ("phone", "iin") if name in state.slots}
         if identity:
             # Demo lookup identifiers are not authentication. A corrected one-sided
             # identifier supersedes its old counterpart instead of trapping the user.
-            changed = bool(prior_identity) and any(
+            changed = bool(state.client_id) and any(
                 state.slots.get(name) != incoming[name] for name in identity
             )
             for name in {"phone", "iin"} - identity:
                 state.slots.pop(name, None)
             if changed:
+                if state.client_id:
+                    state.client_lookup_attempts = []
                 state.client_id = None
                 state.scenario_slots = {}
                 for name in ("policy_number", "claim_number"):

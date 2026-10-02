@@ -59,6 +59,13 @@ class DecisionPolicy:
                 consecutive_low_confidence=low_count,
                 reason="Operator assistance is required",
             )
+        if ids == ["SYS_OUT_OF_SCOPE"]:
+            return PolicyResult(
+                outcome="accept",
+                scenario_ids=ids,
+                consecutive_low_confidence=0,
+                reason="Insurance scope reply; preserve business context",
+            )
         conversational = state.conversation
         progress = bool(
             (decision.slots and decision.is_continuation)
@@ -72,7 +79,13 @@ class DecisionPolicy:
             low_count = 0
         if (
             conversational
-            and conversational.expected_slot in decision.slots
+            and (
+                conversational.expected_slot in decision.slots
+                or (
+                    conversational.expected_slot in {"phone", "iin"}
+                    and bool({"phone", "iin"} & decision.slots.keys())
+                )
+            )
             and state.active_scenario is not None
             and (ids == [state.active_scenario] or ids == ["SYS_UNCLEAR"])
         ):

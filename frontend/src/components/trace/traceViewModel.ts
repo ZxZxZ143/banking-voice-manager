@@ -140,8 +140,9 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     if (browserValue) latency.push({ label, value: browserValue, source: 'browser' });
   }
   const slots = record(trace?.slots) ?? record(routing?.slots);
+  const manager = record(trace?.manager_summary);
   const handoffInfo = trace?.handoff === true
-    ? { queue: null, summary: null, reason: string(trace.reason) }
+    ? { queue: null, summary: manager ? displayValue(manager) : null, reason: string(manager?.reason) ?? string(trace.reason) }
     : handoff(trace?.handoff ?? state?.handoff);
   const packSwitch = record(trace?.pack_switch);
 

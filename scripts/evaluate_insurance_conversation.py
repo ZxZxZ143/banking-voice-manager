@@ -16,7 +16,7 @@ from app.packs.insurance_manager.composer import normalized_question
 from app.packs.insurance_manager.privacy import redact_text
 
 
-async def evaluate(output: Path):
+async def evaluate(output: Path, only=()):
     if output.exists():
         raise FileExistsError("Never overwrite evaluation evidence")
     source = (
@@ -24,7 +24,7 @@ async def evaluate(output: Path):
         / "data/insurance_conversation/eval_cases.json"
     )
     dataset = json.loads(source.read_text(encoding="utf-8"))
-    services = build_services(Settings())
+    services = build_services(Settings(demo_test_phone=None))
     counts, rows, latencies = defaultdict(lambda: [0, 0]), [], defaultdict(list)
     composer = services.insurance.processor.composer
     actual_run = composer.agent.run
@@ -61,6 +61,8 @@ async def evaluate(output: Path):
     output.parent.mkdir(parents=True, exist_ok=True)
     output.touch(exist_ok=False)
     for case in dataset["cases"]:
+        if only and case["id"] not in only:
+            continue
         session = "conversation-eval-" + case["id"]
         row = {"id": case["id"], "language": case["lang"], "turns": []}
         rows.append(row)
@@ -136,10 +138,13 @@ async def evaluate(output: Path):
                     "act_progression", meta.last_assistant_act in spec["acts"]
                 )
             if spec.get("facts"):
+                offered_facts = [
+                    observed.get("grounded_facts"),
+                    *observed.get("grounded_variants", {}).values(),
+                ]
                 checks["grounded_fact_preservation"] = measure(
                     "grounded_fact_preservation",
-                    bool(observed.get("grounded_facts"))
-                    and observed["grounded_facts"] in turn.response_text
+                    any(fact and fact in turn.response_text for fact in offered_facts)
                     and bool(trace.source_keys),
                 )
             expected_language = spec.get("language", case["lang"])
@@ -185,4 +190,6 @@ async def evaluate(output: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    asyncio.run(evaluate(parser.parse_args().output))
+    parser.add_argument("--case", action="append", default=[])
+    args = parser.parse_args()
+    asyncio.run(evaluate(args.output, args.case))

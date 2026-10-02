@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
@@ -69,4 +69,7 @@ class TraceRecord(Contract):
     next_action: str | None = None
     conversation_status: ConversationStatus = "active"
     handoff: bool = False
+    manager_summary: dict[str, JsonValue] | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
     latency_ms: LatencyRecord = Field(default_factory=LatencyRecord)

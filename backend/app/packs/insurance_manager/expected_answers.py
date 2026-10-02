@@ -65,8 +65,13 @@ def expected_identifier(text: str, state, definitions) -> tuple[str, str] | None
         candidates = re.findall(r"\b(?:SQ-[A-Z]+|CL)-\d+\b", text.upper())
     valid = set()
     for value in candidates:
-        if name == "phone" and len(value) == 11 and value[0] in {"7", "8"}:
-            value = "+7" + value[1:]
+        if name == "phone":
+            from app.packs.insurance_manager.data.demo_profile import normalize_phone
+
+            try:
+                value = normalize_phone(value)
+            except ValueError:
+                continue
         if re.fullmatch(definition.pattern, value):
             valid.add(value)
     return (name, valid.pop()) if len(valid) == 1 else None

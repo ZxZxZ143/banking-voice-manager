@@ -13,6 +13,21 @@ SENSITIVE_SLOTS = {
 }
 
 
+def redact_local_phone(value, phone):
+    """Before provider transport: hide every literal phone, including unknown callers."""
+    if isinstance(value, dict):
+        return {key: redact_local_phone(item, phone) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_local_phone(item, phone) for item in value]
+    if isinstance(value, str):
+        return re.sub(
+            r"(?<!\d)(?:\+?[78](?:[\s()-]*\d){10}|\d(?:[\s()-]*\d){9})(?!\d)",
+            "[локальный телефон получен]",
+            value,
+        )
+    return value
+
+
 def redact_text(text: str, slots: dict | None = None) -> str:
     number_words = {
         "ноль",

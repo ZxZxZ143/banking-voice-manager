@@ -10,6 +10,7 @@ ROUTER_VALIDATION_REASONS = frozenset(
         "continuation",
         "unknown_slot",
         "invalid_slot",
+        "scope_contract",
     }
 )
 

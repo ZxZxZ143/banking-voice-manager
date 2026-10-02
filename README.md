@@ -6,10 +6,11 @@ Insurance uses the supplied **fictional Saqta Insurance** snapshot. Product Prom
 
 `ScenarioRegistry` selects the default Insurance Manager for a new session; later turns
 continue the active pack. The UI selector opens Product immediately during listening and applies Insurance on the next request, preserving
-history and session ID. Natural out-of-domain requests use a conditional platform selector
-with public manifests only; the customer confirms before switching. A suspended pack resumes
-its own context and result. The conversation container holds global session metadata and a minimal pending
-switch request; business data never crosses packs. See [the architecture](docs/ARCHITECTURE.md).
+history and session ID. Assistants change only through explicit UI/API selection.
+Out-of-domain questions never invoke or forward to another pack. Insurance briefly answers
+small talk and identity enquiries, explains its scope for unrelated/banking questions, and
+retains the current insurance goal. Suspended packs resume their own context and result.
+See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
@@ -66,6 +67,36 @@ docker compose down
 
 Stopping/recreating the backend clears its in-memory conversations and traces. `.env` is supplied at runtime and excluded from Git and Docker build context. The frontend never receives the API key.
 
+## Optional local Insurance demo profile
+
+Add `DEMO_TEST_PHONE` to the ignored local `.env`, then restart the backend. Complete
+Kazakhstan international `+7`, domestic `8` and full ten-digit numbers without a country
+code are accepted and normalized to `+7`. A shorter suffix still needs the operator/area
+code; missing digits are never guessed. No canonical file is
+rewritten and no overlay file or extra mount is required; Compose already reads `.env`
+at runtime. Blank configuration leaves the canonical backend intact.
+
+The generated client has one active OGPO policy, one successful payment with no issued
+policy attached, and one claim under review. Every field except the supplied phone is
+fictional. Print only this profile with:
+
+```powershell
+./.venv/Scripts/python.exe -X utf8 scripts/show_demo_profile.py
+```
+
+Do not publish this command's personal phone output. It prints no API key or unrelated
+clients. Literal phones are removed from Router input; requested identifiers are parsed
+locally. Composer and supervisor traces mask identifiers too. Voice uses external STT.
+
+After an unknown valid identifier, Insurance offers one alternative lookup. A correction
+can use that second lookup; two unsuccessful attempts lead to useful context collection
+and specialist handoff for identity-dependent work. General knowledge/quotes stay available.
+
+`tools/capabilities.py` declares actual grounded read-only support. Unavailable writes and
+delivery actions collect the scenario's useful required fields, perform available checks,
+then hand off with a safe `manager_summary` (field/action names, no identifier values).
+The UI supervisor panel shows that summary. No policy, claim, callback or SMS is fabricated.
+
 ## Environment
 
 | Variable | Meaning |
@@ -73,6 +104,7 @@ Stopping/recreating the backend clears its in-memory conversations and traces. `
 | `OPENAI_API_KEY` | Server-only local secret; required for live routing/STT |
 | `OPENAI_ROUTER_MODEL` | Explicit structured-output model; measured with `gpt-4.1-mini` |
 | `OPENAI_RESPONSE_MODEL` | Optional Insurance Composer model; blank reuses Router model |
+| `DEMO_TEST_PHONE` | Optional personal phone for a runtime-only fictional Insurance profile; keep in ignored `.env` |
 | `ROUTER_TEMPERATURE` | Optional model setting; example uses `0` |
 | `ROUTER_TIMEOUT_SECONDS` | 45 seconds; no automatic routing retry |
 | `ROUTER_MAX_OUTPUT_TOKENS` | 2500 |
@@ -92,12 +124,10 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 
 `POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
 `scenario_mode=insurance_manager|product_promoter`. Reuse the ID across turns.
-Normal Product turns call their agent once. Normal Insurance turns call Router and Composer;
-an out-of-domain turn may additionally call the
-platform selector. Confirming a proposed switch processes the original request in the target
-pack; rejecting it preserves the current business context without another model call.
-Terminal sessions reject further turns with 409; reset creates a new session. Invalid input
-is 422, missing model/key 503, provider outage 502 and timeout 504.
+Normal Product turns call their agent once. Normal Insurance turns call Router and Composer.
+Automatic natural switching is disabled. Only explicit `scenario_mode` or the UI selector changes the active assistant; the original question is never forwarded.
+Policy status is brief: «Сейчас ваш полис действует». An explicit end-date question returns
+the recorded date in ordinary words, without a policy number or a generic follow-up offer.
 
 `POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Insurance
 or Product with zero model calls and no fabricated customer turn. TTS finishes before listening.
@@ -107,7 +137,7 @@ Unregistered packs return 422 before any model call. All responses retain six to
 adds conversation metadata and a Router conversation signal to its existing state/schema.
 Public Insurance identifiers, source references and transcripts are masked; actual values
 remain in the pack's private business state. Product state exposes `sales_lead` and the
-actually displayed catalog records; switch confirmations expose minimal platform state.
+actually displayed catalog records; legacy platform wire variants remain for compatibility and are not emitted by manual-only switching.
 OpenAPI declares these three typed variants. The latest InsuranceResult and SalesLeadResult
 remain in their own internal entries. Trace includes pack, mode, lifecycle and safe switch/product metadata.
 
@@ -164,6 +194,7 @@ npm run build
 node --experimental-transform-types --test tests/*.test.mjs
 ```
 
+Stage 3.2 results are in [Manager validation](docs/STAGE3_2_MANAGER_VALIDATION.md).
 Stage 3.1 conversation results and limitations are in
 [Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md). Earlier evidence is in
 [Stage 3 validation](docs/STAGE3_VALIDATION.md),

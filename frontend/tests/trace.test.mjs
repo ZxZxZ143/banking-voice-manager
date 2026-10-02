@@ -58,6 +58,21 @@ test('boolean clarification and handoff from the real API retain visible details
   assert.equal(terminal.handoff.reason, 'Operator requested');
 });
 
+test('manager handoff exposes field names and real checks supplied by the server', () => {
+  const summary = {
+    reason: 'operation_requires_human', scenario: 'SC04',
+    collected_fields: ['phone', 'policy_number', 'new_driver_iin'], known_client: true,
+    completed_read_only_checks: ['find_client', 'get_policy', 'get_bm_class'],
+    next_required_action: 'update_policy',
+  };
+  const view = createTraceViewModel(snapshot({
+    conversationStatus: 'handoff', latestTrace: { handoff: true, manager_summary: summary },
+  }));
+  assert.equal(view.handoff.reason, summary.reason);
+  assert.deepEqual(JSON.parse(view.handoff.summary), summary);
+  assert.equal(view.packSwitch, null);
+});
+
 test('multi-intent and state order follow the agent; backend latency wins', () => {
   const view = createTraceViewModel(snapshot({
     conversationStatus: 'awaiting_confirmation',

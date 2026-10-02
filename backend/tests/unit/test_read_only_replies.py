@@ -124,9 +124,9 @@ def test_missing_product_installment_terms_leave_question_incomplete(replies, pr
 def test_policy_reports_expired_at_dataset_date_and_only_owned_fields(replies):
     result = respond(replies, "SC25", {"phone": "+77010000003"})
     assert result.completed
-    assert "2026-10-01" in result.text
-    assert "SQ-OGPO-102850" in result.text
-    assert "2026-09-29" in result.text and "срок истёк" in result.text
+    assert result.text == "Срок действия вашего полиса истёк."
+    assert not result.allow_followup
+    assert "29 сентября 2026 года" in result.fact_variants["policy_end_date"]
     assert "Yerlan" not in result.text and "222ABC17" not in result.text
     assert result.actions == ["find_client", "get_policy"]
 
@@ -267,12 +267,14 @@ def test_unknown_source_text_is_not_rendered_or_silently_replaced_with_facts(
 
 
 @pytest.mark.parametrize("language", ["ru", "kk"])
-def test_policy_reply_localizes_status_and_preserves_only_identifiers_and_dates(replies, language):
+def test_policy_reply_localizes_status_and_offers_grounded_dates_separately(replies, language):
     result = respond(replies, "SC25", {"phone": "+77010000003"}, language)
-    assert result.completed and "SQ-OGPO-102850" in result.text
-    assert "2026-09-29" in result.text and "2026-10-01" in result.text
-    assert ("срок истёк" if language == "ru" else "мерзімі аяқталған") in result.text
-    assert not re.search(r"[A-Za-z]", result.text.replace("SQ-OGPO-102850", ""))
+    assert result.completed
+    assert ("истёк" if language == "ru" else "мерзімі аяқталған") in result.text
+    assert not re.search(r"[A-Za-z0-9]", result.text)
+    assert (
+        "29 сентября 2026 года" if language == "ru" else "2026 жылғы 29 қыркүйек"
+    ) in result.fact_variants["policy_end_date"]
 
 
 def test_exact_helpers_reject_ambiguous_or_conflicting_identity_and_return_copies(sources):

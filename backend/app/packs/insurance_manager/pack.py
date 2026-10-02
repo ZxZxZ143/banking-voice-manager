@@ -14,6 +14,7 @@ from app.packs.insurance_manager.agent.prompts import build_router_instructions
 from app.packs.insurance_manager.agent.router import Router, RouterAgent
 from app.packs.insurance_manager.agent.schemas import RouterDecision
 from app.packs.insurance_manager.composer import ConversationComposer
+from app.packs.insurance_manager.data.demo_profile import with_demo_profile
 from app.packs.insurance_manager.data.loaders import load_starter_kit
 from app.packs.insurance_manager.data.repositories import KnowledgeRepository, MockBackendRepository
 from app.packs.insurance_manager.history import append_turn
@@ -29,6 +30,7 @@ from app.packs.insurance_manager.state import (
     DialogTurn,
     InsuranceScenarioContext,
 )
+from app.packs.insurance_manager.tools.capabilities import ActionCapabilities, ManagerSummary
 from app.packs.insurance_manager.tools.registry import ActionRegistry
 from app.tracing.models import TraceRecord
 
@@ -48,6 +50,7 @@ class InsuranceResult(ScenarioResult):
     collected_data: Slots = Field(default_factory=dict)
     actions: list[str] = Field(default_factory=list)
     source_keys: list[str] = Field(default_factory=list)
+    manager_summary: ManagerSummary | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class InsuranceManagerPack:
@@ -183,6 +186,7 @@ class InsuranceManagerPack:
             collected_data=collected_data,
             actions=reply.actions,
             source_keys=reply.source_keys,
+            manager_summary=reply.manager_summary,
             completed=reply.completed,
             handoff=state.conversation_status == "handoff",
         )
@@ -220,21 +224,29 @@ def build_insurance_pack(
     policy_settings: PolicySettings,
     router_override: Router | None = None,
     composer_settings=None,
+    demo_test_phone=None,
 ) -> InsuranceManagerPack:
     kit = load_starter_kit(dataset_path)
     catalog = ScenarioCatalog(kit.scenarios)
     knowledge = KnowledgeRepository(kit.knowledge)
-    backend = MockBackendRepository(kit.mock_backend)
+    backend = MockBackendRepository(with_demo_profile(kit.mock_backend, demo_test_phone))
     router = (
         router_override
         if router_override is not None
-        else RouterAgent(catalog, settings=router_settings, slots=kit.slots)
+        else RouterAgent(
+            catalog,
+            settings=router_settings,
+            slots=kit.slots,
+            local_phone=backend.get_all("clients")[-1]["phone"] if demo_test_phone else None,
+        )
     )
     pack = InsuranceManagerPack(
         InsuranceTurnProcessor(
             router,
             DecisionPolicy(catalog, policy_settings),
-            RoutingReplyGenerator(catalog, kit.slots, knowledge, backend),
+            RoutingReplyGenerator(
+                catalog, kit.slots, knowledge, backend, ActionCapabilities(kit.actions)
+            ),
             ConversationComposer(composer_settings) if composer_settings is not None else None,
         )
     )
