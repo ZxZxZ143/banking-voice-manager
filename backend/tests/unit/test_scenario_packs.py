@@ -100,6 +100,8 @@ def test_production_registry_manifest_and_owned_capabilities():
     assert [pack.manifest.id for pack in built.registry.list()] == [
         "insurance_manager",
         "product_promoter",
+        "card_promoter",
+        "loan_promoter",
     ]
     pack = built.registry.get()
     assert built.registry.exists("insurance_manager")

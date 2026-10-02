@@ -6,6 +6,7 @@ import { VoiceControls } from '../voice/VoiceControls';
 import { createVoiceInputController, type VoiceControlsHandle } from '../voice/voiceRuntimeBridge';
 import { SalesLeadPanel } from './SalesLeadPanel';
 import type { ScenarioPackId } from '../../types/agent';
+import { isSalesPack, scenarioPackNames } from '../../types/agent';
 
 interface Props {
   runtime: ConversationRuntime;
@@ -44,16 +45,22 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
 
   return (
     <section className="panel conversation-panel" aria-labelledby="conversation-title">
-      <p className="eyebrow">Для клиента</p>
+      <p className="eyebrow">Демонстрация звонка</p>
       <h2 id="conversation-title">Разговор</h2>
-      <label htmlFor="scenario-pack">Сценарий консультации</label>
+      <label htmlFor="scenario-pack">Бот и кампания звонка</label>
       <select id="scenario-pack" value={snapshot.requestedPack ?? snapshot.activePack}
         disabled={['processing', 'speaking', 'handoff', 'ended'].includes(snapshot.runtimeStatus)}
         onChange={(event) => runtime.selectScenarioPack(event.target.value as ScenarioPackId)}>
         <option value="insurance_manager">Insurance Manager</option>
-        <option value="product_promoter">Product Promoter</option>
+        {(['product_promoter', 'card_promoter', 'loan_promoter'] as const).map(pack => (
+          <option key={pack} value={pack} disabled={isSalesPack(snapshot.activePack)
+            && snapshot.sessionId !== null && snapshot.activePack !== pack}>
+            {scenarioPackNames[pack]}
+          </option>
+        ))}
       </select>
-      <p><strong>Активный пакет: {snapshot.activePack === 'product_promoter' ? 'Product Promoter' : 'Insurance Manager'}</strong></p>
+      <p className="muted">Оператор задаёт кампанию до звонка. Клиенту предлагается выбранный продукт.</p>
+      <p><strong>Активный бот: {scenarioPackNames[snapshot.activePack]}</strong></p>
       {snapshot.requestedPack && <p className="muted">Следующий запрос переключит сценарий на {snapshot.requestedPack}.</p>}
       {snapshot.packNotice && <p role="status">{snapshot.packNotice}</p>}
       <div className="controls">
@@ -106,7 +113,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
         <div className="conversation-notice"><strong>Разговор завершён</strong></div>
       )}
       {snapshot.error && <p className="error" role="alert">{snapshot.error}</p>}
-      {snapshot.activePack === 'product_promoter' && <SalesLeadPanel state={snapshot.latestState} />}
+      {isSalesPack(snapshot.activePack) && <SalesLeadPanel state={snapshot.latestState} />}
       <div className="history" aria-label="История разговора" aria-live="polite">
         {snapshot.messages.length === 0 ? <p className="empty-state">История пуста.</p> : (
           <ol className="message-list">{snapshot.messages.map((message) => (

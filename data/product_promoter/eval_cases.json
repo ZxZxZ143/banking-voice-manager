@@ -1,45 +1,720 @@
 {
   "synthetic": true,
   "cases": [
-    {"id":"P01","lang":"ru","turns":[{"text":"Помогите разобраться с вашими банковскими продуктами.","intents":["general_discovery"],"question":"category"}]},
-    {"id":"P02","lang":"ru","turns":[{"text":"Ищу депозит для накоплений.","intents":["deposit_interest"],"question":"liquidity"}]},
-    {"id":"P03","lang":"ru","turns":[{"text":"Подбираю дебетовую карту.","intents":["card_interest"],"question":"card_priority"}]},
-    {"id":"P04","lang":"ru","turns":[{"text":"Сравните Гибкий и Накопительный депозиты.","intents":["product_comparison"],"compared":["DEP-FLEX","DEP-SAVE"]}]},
-    {"id":"P05","lang":"ru","turns":[{"text":"Какая комиссия за обслуживание у Бонусной карты?","intents":["conditions_question"],"products":["CARD-REWARD"]}]},
-    {"id":"P06","lang":"ru","turns":[{"text":"У Гибкого депозита можно забрать часть денег?","intents":["conditions_question"],"products":["DEP-FLEX"]}]},
-    {"id":"P07","lang":"ru","turns":[{"text":"Никакие продукты мне сейчас не нужны, не предлагайте.","intents":["decline"],"outcome":"declined"}]},
-    {"id":"P08","lang":"ru","turns":[{"text":"Позовите, пожалуйста, живого консультанта.","intents":["operator_request"],"status":"handoff"}]},
-    {"id":"P09","lang":"ru","turns":[{"text":"На этом всё, до следующей встречи.","intents":["goodbye"],"status":"ended"}]},
-    {"id":"P10","lang":"ru","turns":[{"text":"Нужен кредит на ремонт квартиры.","intents":["out_of_scope"]}]},
-    {"id":"P11","lang":"kk","turns":[{"text":"Банк өнімін таңдауға көмектесіңізші.","intents":["general_discovery"],"question":"category"}]},
-    {"id":"P12","lang":"kk","turns":[{"text":"Ақша жинау үшін депозит қарастырып жүрмін.","intents":["deposit_interest"],"question":"liquidity"}]},
-    {"id":"P13","lang":"kk","turns":[{"text":"Маған күнделікті төлем үшін дебеттік карта керек.","intents":["card_interest"],"preferences":{"goal":"daily_payments"}}]},
-    {"id":"P14","lang":"kk","turns":[{"text":"Икемді мен Жинақ депозиттерін салыстырып беріңіз.","intents":["product_comparison"],"compared":["DEP-FLEX","DEP-SAVE"]}]},
-    {"id":"P15","lang":"kk","turns":[{"text":"Бонустық картаның ай сайынғы қызмет ақысы қанша?","intents":["conditions_question"],"products":["CARD-REWARD"]}]},
-    {"id":"P16","lang":"kk","turns":[{"text":"Өнім керек емес, ұсынысты тоқтатыңыз.","intents":["decline"],"outcome":"declined"}]},
-    {"id":"P17","lang":"kk","turns":[{"text":"Адам операторымен сөйлескім келеді.","intents":["operator_request"],"status":"handoff"}]},
-    {"id":"P18","lang":"kk","turns":[{"text":"Рақмет, сау болыңыз.","intents":["goodbye"],"status":"ended"}]},
-    {"id":"P19","lang":"kk","turns":[{"text":"Телефон қосымшам істемей қалды, техникалық көмек керек.","intents":["out_of_scope"]}]},
-    {"id":"P20","lang":"mixed","reply_language":"kk","turns":[{"text":"Маған cashback беретін карта керек, комиссиясы болмаса жақсы.","intents":["card_interest"],"preferences":{"cashback":true,"fee_sensitive":true},"products":["CARD-DAILY"]}]},
-    {"id":"P21","lang":"mixed","reply_language":"ru","turns":[{"text":"Хочу депозит в теңге, но с возможностью снять часть.","intents":["deposit_interest"],"preferences":{"currency":"KZT","liquidity":true},"products":["DEP-FLEX"]}]},
-    {"id":"P22","lang":"ru","turns":[{"text":"Подбираю депозит.","intents":["deposit_interest"]},{"text":"Снимать не планирую. Есть 200000 тенге на 12 месяцев, хочу пополнять.","intents":["deposit_interest","general_discovery"],"preferences":{"liquidity":false,"amount":200000,"currency":"KZT","term_months":12,"replenishment":true},"products":["DEP-SAVE"]},{"text":"Хочу оформить этот вариант.","intents":["application_interest"],"outcome":"interested","selected":"DEP-SAVE"}]},
-    {"id":"P23","lang":"kk","turns":[{"text":"Депозит таңдағым келеді.","intents":["deposit_interest"]},{"text":"Ақшаның бір бөлігін алу керек, 50000 теңге саламын.","intents":["deposit_interest","general_discovery"],"preferences":{"liquidity":true,"amount":50000,"currency":"KZT"},"products":["DEP-FLEX"]},{"text":"Осы өнімді рәсімдеуге қызығушылығым бар.","intents":["application_interest"],"outcome":"interested","selected":"DEP-FLEX"}]},
-    {"id":"P24","lang":"ru","turns":[{"text":"Хочу карту с cashback.","intents":["card_interest"],"products":["CARD-REWARD"]},{"text":"Платить 700 за обслуживание не хочу. Нужна бесплатная.","intents":["objection"],"preferences":{"fee_sensitive":true},"products":["CARD-DAILY"]},{"text":"Пришлите ссылку на заявку на бесплатную карту.","intents":["application_interest"],"outcome":"interested","next_action":"send_application_link"}]},
-    {"id":"P25","lang":"kk","turns":[{"text":"Cashback бар карта керек.","intents":["card_interest"]},{"text":"Қызмет ақысы тым қымбат, ақысыз карта керек.","intents":["objection"],"preferences":{"fee_sensitive":true},"products":["CARD-DAILY"]}]},
-    {"id":"P26","lang":"ru","turns":[{"text":"Интересует карта для частого снятия наличных.","intents":["card_interest"],"preferences":{"cash_withdrawal":true},"products":["CARD-CASH"]},{"text":"Нет, всё же отказываюсь от предложений.","intents":["decline"],"outcome":"declined"},{"text":"Понятно, спасибо за информацию.","intents":["general_discovery","decline"],"outcome":"declined"}]},
-    {"id":"P27","lang":"kk","turns":[{"text":"Цифрлық карта іздеп жүрмін.","intents":["card_interest"],"preferences":{"digital_only":true}},{"text":"Cashback маңызды, ай сайынғы ақыға келісемін.","intents":["card_interest","general_discovery"],"preferences":{"cashback":true,"fee_sensitive":false},"products":["CARD-REWARD"]}]},
-    {"id":"P28","lang":"mixed","reply_language":"ru","turns":[{"text":"Хочу накопить ақша на депозите.","intents":["deposit_interest"]},{"text":"Можно без снятия, на 12 месяцев, 300000 KZT.","intents":["deposit_interest","general_discovery"],"preferences":{"liquidity":false,"term_months":12,"amount":300000,"currency":"KZT"},"products":["DEP-SAVE"]}]},
-    {"id":"P29","lang":"ru","turns":[{"text":"Есть 50000 для депозита, могу часть снимать.","intents":["deposit_interest"],"preferences":{"amount":50000,"liquidity":true},"question":"currency"},{"text":"В тенге.","intents":["deposit_interest","general_discovery"],"preferences":{"currency":"KZT"},"products":["DEP-FLEX"]}]},
-    {"id":"P30","lang":"kk","turns":[{"text":"100 USD депозитке саламын, алу қажет емес.","intents":["deposit_interest"],"preferences":{"amount":100,"currency":"USD","liquidity":false},"products":["DEP-USD"]},{"text":"Кеңесші маған қоңырау шалса, осы депозитке өтініш бергім келеді.","intents":["application_interest"],"outcome":"interested","next_action":"callback_requested"}]},
-    {"id":"P31","lang":"ru","turns":[{"text":"Покажите депозит с частичным снятием в долларах.","intents":["deposit_interest"],"preferences":{"currency":"USD","liquidity":true},"products":[]}]},
-    {"id":"P32","lang":"mixed","reply_language":"kk","turns":[{"text":"Бұл ұсыныс маған сәйкес емес, продавать тоқтатыңыз.","intents":["decline"],"outcome":"declined"}]},
-    {"id":"S01","lang":"ru","selector":{"current":"insurance_manager","text":"Расскажите о накопительном банковском депозите.","target":"product_promoter"}},
-    {"id":"S02","lang":"kk","selector":{"current":"insurance_manager","text":"Cashback картасын таңдауға көмек керек.","target":"product_promoter"}},
-    {"id":"S03","lang":"mixed","selector":{"current":"insurance_manager","text":"Депозит керек, какие варианты есть?","target":"product_promoter"}},
-    {"id":"S04","lang":"ru","selector":{"current":"product_promoter","text":"Проверьте срок моего страхового полиса.","target":"insurance_manager"}},
-    {"id":"S05","lang":"kk","selector":{"current":"product_promoter","text":"Сақтандыру төлемінің мәртебесін білгім келеді.","target":"insurance_manager"}},
-    {"id":"S06","lang":"ru","selector":{"current":"product_promoter","text":"Какая температура воздуха будет завтра?","target":null}},
-    {"id":"S07","lang":"kk","selector":{"current":"insurance_manager","text":"Ипотекалық несие рәсімдеу керек.","target":null}},
-    {"id":"S08","lang":"mixed","selector":{"current":"product_promoter","text":"Картамды алаяқ қолданған, нужно срочно заблокировать её.","target":null}}
+    {
+      "id": "P01",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Помогите разобраться с вашими банковскими продуктами.",
+          "intents": [
+            "general_discovery",
+            "conditions_question"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P02",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Ищу депозит для накоплений.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "question": "liquidity"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P03",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Подбираю дебетовую карту.",
+          "intents": [
+            "card_interest"
+          ],
+          "question": "card_priority"
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P04",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Сравните Гибкий и Накопительный депозиты.",
+          "intents": [
+            "product_comparison"
+          ],
+          "compared": [
+            "DEP-FLEX",
+            "DEP-SAVE"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P05",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Какая комиссия за обслуживание у Бонусной карты?",
+          "intents": [
+            "conditions_question"
+          ],
+          "products": [
+            "CARD-REWARD"
+          ]
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P06",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "У Гибкого депозита можно забрать часть денег?",
+          "intents": [
+            "conditions_question"
+          ],
+          "products": [
+            "DEP-FLEX"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P07",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Никакие продукты мне сейчас не нужны, не предлагайте.",
+          "intents": [
+            "decline"
+          ],
+          "outcome": "declined"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P08",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Позовите, пожалуйста, живого консультанта.",
+          "intents": [
+            "operator_request"
+          ],
+          "status": "handoff"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P09",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "На этом всё, до следующей встречи.",
+          "intents": [
+            "goodbye"
+          ],
+          "status": "ended"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P10",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Нужен кредит на ремонт квартиры.",
+          "intents": [
+            "out_of_scope"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P11",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Банк өнімін таңдауға көмектесіңізші.",
+          "intents": [
+            "general_discovery",
+            "conditions_question"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P12",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Ақша жинау үшін депозит қарастырып жүрмін.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "question": "liquidity"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P13",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Маған күнделікті төлем үшін дебеттік карта керек.",
+          "intents": [
+            "card_interest"
+          ],
+          "preferences": {
+            "goal": "daily_payments"
+          }
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P14",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Икемді мен Жинақ депозиттерін салыстырып беріңіз.",
+          "intents": [
+            "product_comparison"
+          ],
+          "compared": [
+            "DEP-FLEX",
+            "DEP-SAVE"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P15",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Бонустық картаның ай сайынғы қызмет ақысы қанша?",
+          "intents": [
+            "conditions_question"
+          ],
+          "products": [
+            "CARD-REWARD"
+          ]
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P16",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Өнім керек емес, ұсынысты тоқтатыңыз.",
+          "intents": [
+            "decline"
+          ],
+          "outcome": "declined"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P17",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Адам операторымен сөйлескім келеді.",
+          "intents": [
+            "operator_request"
+          ],
+          "status": "handoff"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P18",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Рақмет, сау болыңыз.",
+          "intents": [
+            "goodbye"
+          ],
+          "status": "ended"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P19",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Телефон қосымшам істемей қалды, техникалық көмек керек.",
+          "intents": [
+            "out_of_scope"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P20",
+      "lang": "mixed",
+      "reply_language": "kk",
+      "turns": [
+        {
+          "text": "Маған cashback беретін карта керек, комиссиясы болмаса жақсы.",
+          "intents": [
+            "card_interest"
+          ],
+          "preferences": {
+            "cashback": true,
+            "fee_sensitive": true
+          },
+          "products": [
+            "CARD-DAILY"
+          ]
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P21",
+      "lang": "mixed",
+      "reply_language": "ru",
+      "turns": [
+        {
+          "text": "Хочу депозит в теңге, но с возможностью снять часть.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "preferences": {
+            "currency": "KZT",
+            "liquidity": true
+          },
+          "products": [
+            "DEP-FLEX"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P22",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Подбираю депозит.",
+          "intents": [
+            "deposit_interest"
+          ]
+        },
+        {
+          "text": "Снимать не планирую. Есть 200000 тенге на 12 месяцев, хочу пополнять.",
+          "intents": [
+            "deposit_interest",
+            "general_discovery"
+          ],
+          "preferences": {
+            "liquidity": false,
+            "amount": 200000,
+            "currency": "KZT",
+            "term_months": 12,
+            "replenishment": true
+          },
+          "products": [
+            "DEP-SAVE"
+          ]
+        },
+        {
+          "text": "Хочу оформить этот вариант.",
+          "intents": [
+            "application_interest"
+          ],
+          "outcome": "interested",
+          "selected": "DEP-SAVE"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P23",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Депозит таңдағым келеді.",
+          "intents": [
+            "deposit_interest"
+          ]
+        },
+        {
+          "text": "Ақшаның бір бөлігін алу керек, 50000 теңге саламын.",
+          "intents": [
+            "deposit_interest",
+            "general_discovery"
+          ],
+          "preferences": {
+            "liquidity": true,
+            "amount": 50000,
+            "currency": "KZT"
+          },
+          "products": [
+            "DEP-FLEX"
+          ]
+        },
+        {
+          "text": "Осы өнімді рәсімдеуге қызығушылығым бар.",
+          "intents": [
+            "application_interest"
+          ],
+          "outcome": "interested",
+          "selected": "DEP-FLEX"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P24",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Хочу карту с cashback.",
+          "intents": [
+            "card_interest"
+          ],
+          "products": [
+            "CARD-REWARD"
+          ]
+        },
+        {
+          "text": "Платить 700 за обслуживание не хочу. Нужна бесплатная.",
+          "intents": [
+            "objection"
+          ],
+          "preferences": {
+            "fee_sensitive": true
+          },
+          "products": [
+            "CARD-DAILY"
+          ]
+        },
+        {
+          "text": "Пришлите ссылку на заявку на бесплатную карту.",
+          "intents": [
+            "application_interest"
+          ],
+          "outcome": "interested",
+          "next_action": "send_application_link"
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P25",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Cashback бар карта керек.",
+          "intents": [
+            "card_interest"
+          ]
+        },
+        {
+          "text": "Қызмет ақысы тым қымбат, ақысыз карта керек.",
+          "intents": [
+            "objection"
+          ],
+          "preferences": {
+            "fee_sensitive": true
+          },
+          "products": [
+            "CARD-DAILY"
+          ]
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P26",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Интересует карта для частого снятия наличных.",
+          "intents": [
+            "card_interest"
+          ],
+          "preferences": {
+            "cash_withdrawal": true
+          },
+          "products": [
+            "CARD-CASH"
+          ]
+        },
+        {
+          "text": "Нет, всё же отказываюсь от предложений.",
+          "intents": [
+            "decline"
+          ],
+          "outcome": "consulting",
+          "question": "refusal_check"
+        },
+        {
+          "text": "Нет, я уверен, мне не нужно.",
+          "intents": [
+            "decline"
+          ],
+          "outcome": "declined",
+          "status": "ended"
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P27",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "Цифрлық карта іздеп жүрмін.",
+          "intents": [
+            "card_interest"
+          ],
+          "preferences": {
+            "digital_only": true
+          }
+        },
+        {
+          "text": "Cashback маңызды, ай сайынғы ақыға келісемін.",
+          "intents": [
+            "card_interest",
+            "general_discovery"
+          ],
+          "preferences": {
+            "cashback": true,
+            "fee_sensitive": false
+          },
+          "products": [
+            "CARD-REWARD"
+          ]
+        }
+      ],
+      "campaign": "card"
+    },
+    {
+      "id": "P28",
+      "lang": "mixed",
+      "reply_language": "ru",
+      "turns": [
+        {
+          "text": "Хочу накопить ақша на депозите.",
+          "intents": [
+            "deposit_interest"
+          ]
+        },
+        {
+          "text": "Можно без снятия, на 12 месяцев, 300000 KZT.",
+          "intents": [
+            "deposit_interest",
+            "general_discovery"
+          ],
+          "preferences": {
+            "liquidity": false,
+            "term_months": 12,
+            "amount": 300000,
+            "currency": "KZT"
+          },
+          "products": [
+            "DEP-SAVE"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P29",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Есть 50000 для депозита, могу часть снимать.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "preferences": {
+            "amount": 50000,
+            "liquidity": true
+          },
+          "question": "currency"
+        },
+        {
+          "text": "В тенге.",
+          "intents": [
+            "deposit_interest",
+            "general_discovery"
+          ],
+          "preferences": {
+            "currency": "KZT"
+          },
+          "products": [
+            "DEP-FLEX"
+          ]
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P30",
+      "lang": "kk",
+      "turns": [
+        {
+          "text": "100 USD депозитке саламын, алу қажет емес.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "preferences": {
+            "amount": 100,
+            "currency": "USD",
+            "liquidity": false
+          },
+          "products": [
+            "DEP-USD"
+          ]
+        },
+        {
+          "text": "Кеңесші маған қоңырау шалса, осы депозитке өтініш бергім келеді.",
+          "intents": [
+            "application_interest"
+          ],
+          "outcome": "interested",
+          "next_action": "callback_requested"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P31",
+      "lang": "ru",
+      "turns": [
+        {
+          "text": "Покажите депозит с частичным снятием в долларах.",
+          "intents": [
+            "deposit_interest"
+          ],
+          "preferences": {
+            "currency": "USD",
+            "liquidity": true
+          },
+          "products": []
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "P32",
+      "lang": "mixed",
+      "reply_language": "kk",
+      "turns": [
+        {
+          "text": "Бұл ұсыныс маған сәйкес емес, продавать тоқтатыңыз.",
+          "intents": [
+            "decline"
+          ],
+          "outcome": "declined"
+        }
+      ],
+      "campaign": "deposit"
+    },
+    {
+      "id": "S01",
+      "lang": "ru",
+      "selector": {
+        "current": "insurance_manager",
+        "text": "Расскажите о накопительном банковском депозите.",
+        "target": "product_promoter"
+      }
+    },
+    {
+      "id": "S02",
+      "lang": "kk",
+      "selector": {
+        "current": "insurance_manager",
+        "text": "Cashback картасын таңдауға көмек керек.",
+        "target": "product_promoter"
+      }
+    },
+    {
+      "id": "S03",
+      "lang": "mixed",
+      "selector": {
+        "current": "insurance_manager",
+        "text": "Депозит керек, какие варианты есть?",
+        "target": "product_promoter"
+      }
+    },
+    {
+      "id": "S04",
+      "lang": "ru",
+      "selector": {
+        "current": "product_promoter",
+        "text": "Проверьте срок моего страхового полиса.",
+        "target": "insurance_manager"
+      }
+    },
+    {
+      "id": "S05",
+      "lang": "kk",
+      "selector": {
+        "current": "product_promoter",
+        "text": "Сақтандыру төлемінің мәртебесін білгім келеді.",
+        "target": "insurance_manager"
+      }
+    },
+    {
+      "id": "S06",
+      "lang": "ru",
+      "selector": {
+        "current": "product_promoter",
+        "text": "Какая температура воздуха будет завтра?",
+        "target": null
+      }
+    },
+    {
+      "id": "S07",
+      "lang": "kk",
+      "selector": {
+        "current": "insurance_manager",
+        "text": "Ипотекалық несие рәсімдеу керек.",
+        "target": null
+      }
+    },
+    {
+      "id": "S08",
+      "lang": "mixed",
+      "selector": {
+        "current": "product_promoter",
+        "text": "Картамды алаяқ қолданған, нужно срочно заблокировать её.",
+        "target": null
+      }
+    }
   ]
 }

@@ -1,7 +1,8 @@
 # Scenario Pack architecture — Stage 3.2
 
-The two production packs are `insurance_manager` (consultative) and
-`product_promoter` (proactive). Shared sessions, HTTP, voice, traces and lifecycle remain
+Production registers `insurance_manager` and three proactive campaigns: `product_promoter`
+(deposit), `card_promoter` and `loan_promoter`. The sales campaigns reuse one implementation
+with distinct manifests and isolated contexts. Shared sessions, HTTP, voice, traces and lifecycle remain
 independent of their business logic. No database, queue, RAG or dynamic plugin loading
 is introduced.
 
@@ -41,18 +42,19 @@ between trusted developer-controlled Python components, not an OS sandbox for pl
 `packs/contracts.py` defines the manifest, prompt, knowledge, tools, policies, state/output
 schemas, completion rules, new-context factory and `handle_turn`. Product also implements
 an optional `open_turn`; Insurance implements it too. Manifests contain public routing descriptions and no configuration
-secrets. `core/services.py` explicitly constructs and registers exactly the two packs.
+secrets. `core/services.py` explicitly constructs and registers these four assistants.
 
 `packs/registry.py` performs dictionary lookup, never semantic routing or dynamic import.
 Unknown IDs return 422 before any model call. New sessions default to Insurance; omitted
 mode on later requests continues the active pack. Explicit mode switches immediately.
 
 `packs/lifecycle.py` initializes, suspends, resumes and completes entries. Production
-switching preserves completed leads and refusals; it does not start selling again after a
-refusal. Explicit new deposit/card interest can start a fresh Product consultation.
+switching preserves completed leads. A soft first refusal permits one confirmation; a second
+refusal closes the sales session. Explicit stop-sales requests close it immediately. A new
+sales call needs a new session.
 Insurance SCxx stack/pending lifecycle remains entirely within Insurance Manager.
-Handoff/goodbye complete the pack and close the global session. Product interest/refusal
-completes the lead while leaving the global conversation active.
+Handoff/goodbye and a final sales refusal close the global session. Product interest
+completes the local lead while leaving the global conversation active.
 
 ## Explicit manual selection only
 
@@ -172,29 +174,44 @@ connection. Available grounded checks run before unavailable-operation handoff.
 
 `packs/product_promoter/agent.py` interprets intent, language and explicit preferences in one
 structured SDK call. It does not write dialogue or invent conditions. The independent
-`data/product_promoter/catalog.json` contains six synthetic Merei Demo Bank products:
-three deposits and three debit/payment cards, reference date 2026-10-01.
+`data/product_promoter/catalog.json` contains eight synthetic Merei Demo Bank products:
+three deposits, three debit/payment cards and two loans, reference date 2026-10-01.
+It also supplies fictional opening steps; the bot does not invent an existing bank app or
+approval decision. No full Loan Consultant or Fraud/Risk stage is introduced.
 
 `models.py` defines strict catalog, decision, preferences, local context and `SalesLeadResult`
 schemas. No identity, income, wealth, insurance or vulnerability fields exist. Context owns
 category, explicit preferences, shown/compared/selected products, objections, interest,
-next action and last discovery question. ISO currencies remain normalized machine values.
+next action, assigned campaign, last actual assistant text/question, sales phase and a bounded
+refusal counter. The provider receives the previous question, not the whole offered product
+text, so advertised features/numbers cannot become customer preferences. ISO currencies
+remain normalized machine values. The first customer reply is not
+language-biased by the default Russian opener.
 
 `catalog.py` deterministically filters/ranks by currency, amount, term, liquidity,
 replenishment, fees, cashback, withdrawals and digital availability. Amount without explicit
 currency leads to a currency question. A comparison retains alternatives with different
 restrictions. No universally best product or guaranteed return is promised.
 
-`pack.py` asks one useful question, presents actual candidates, handles objections without
-changing rates, respects refusal and records only explicit application interest. Opening
-names Merei Demo Bank before asking about the customer's goal. `presentation.py` produces
-conversational, catalog-based summaries with human currency names, decimal commas, percentages
+`pack.py` starts with a branded offer for the already assigned campaign, presents actual
+candidates and handles objections without changing rates. A typed information focus selects
+facts, while `accepts_explanation` follows the actual previous explanation/opening offer;
+the trace preserves both model intent and effective dialogue act. This is progression from
+model interpretation and application context, with no text keyword intent selector.
+A `question_topic` selects grounded facts rather than repeating the whole catalog.
+Opening instructions and interest to apply are separate speech acts. A first soft refusal
+gets one follow-up, a second ends the call; an explicit stop request ends it immediately.
+Answers are brief and direct, with no suitability-check preface. Opening guides have two
+catalog-owned steps; the next question invites opening/application, not another suitability
+survey. `presentation.py` produces catalog-based summaries with human currency names, decimal commas, percentages
 and amounts such as «50 тысяч тенге». Complete conditions are returned separately in
 `product_conditions` for the UI disclosure; the frontend calculates no banking terms.
 
 `SalesLeadResult` includes outcome, category, selected ID, explicit preferences, presented/
 compared products, objections, interest and next action. Link/callback/application requests
-are recorded only; no product opens, link sends or callback schedules.
+are recorded only; no product opens, loan is approved/issued, link sends or callback schedules.
+Caller-side scoring/target selection may assign the campaign through the existing start
+API. No customer profiling, scoring algorithm or actual outbound phone call is implemented.
 
 ## SDK transport and errors
 

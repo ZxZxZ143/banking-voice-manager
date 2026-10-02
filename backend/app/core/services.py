@@ -112,6 +112,12 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
     registry.register(pack)
     products = load_catalog(settings.product_catalog_path)
     registry.register(ProductPromoterPack(products, ProductAgent(transport, products)))
+    registry.register(
+        ProductPromoterPack(products, ProductAgent(transport, products), campaign="card")
+    )
+    registry.register(
+        ProductPromoterPack(products, ProductAgent(transport, products), campaign="loan")
+    )
     dialogs = InMemoryDialogStore()
     traces = TraceCollector()
     messages = MessageService(

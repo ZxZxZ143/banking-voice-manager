@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from app.agent.errors import RouterOutputError, RouterProviderError
 from app.agent.schemas import RouterDecision
+from app.conversation.service import SessionClosedError
 from app.core.config import Settings
 from app.core.services import build_services
 from app.main import create_app
@@ -76,12 +77,13 @@ class SelectorFixture:
         return PackSelection(target_pack_id=self.target, confidence=0.99, response_language="ru")
 
 
-def handle(agent, context=None):
+def handle(agent, context=None, *, campaign="deposit"):
+    pack = ProductPromoterPack(catalog(), agent, campaign=campaign)
     return asyncio.run(
-        ProductPromoterPack(catalog(), agent).handle_turn(
+        pack.handle_turn(
             "synthetic test text",
             GlobalConversationContext(session_id="unit"),
-            context or ProductScenarioContext(),
+            context or pack.new_context(),
         )
     )
 
@@ -163,15 +165,19 @@ def test_explainable_card_matching(prefs, expected):
 @pytest.mark.parametrize(
     "intent,question",
     [
-        ("general_discovery", "category"),
+        ("general_discovery", "offer_details"),
         ("deposit_interest", "liquidity"),
         ("card_interest", "card_priority"),
     ],
 )
 def test_one_useful_discovery_question(intent, question):
-    turn = handle(ProductFixture(decision(intent)))
+    turn = handle(
+        ProductFixture(decision(intent)),
+        campaign="card" if intent == "card_interest" else "deposit",
+    )
     assert turn.context.last_question == question
-    assert turn.response_text.count("?") == 1 and not turn.public_state.products
+    assert turn.response_text.count("?") == 1
+    assert bool(turn.public_state.products) == (intent == "general_discovery")
 
 
 def test_multi_turn_preferences_conditions_objection_and_explicit_interest():
@@ -216,20 +222,25 @@ def test_comparison_includes_different_restrictions_and_keeps_grounding():
     assert "отличаются ставка и доступ к деньгам" in turn.response_text
 
 
-def test_named_conditions_skip_unneeded_discovery_without_claiming_match():
-    turn = handle(ProductFixture(decision("conditions_question", product_ids=["CARD-REWARD"])))
+def test_named_conditions_answer_directly_without_unneeded_discovery_or_preface():
+    turn = handle(
+        ProductFixture(decision("conditions_question", product_ids=["CARD-REWARD"])),
+        campaign="card",
+    )
     assert "700 тенге в месяц" in turn.response_text
-    assert turn.context.last_question == "next_action"
-    assert "подходят ли вам его ограничения" in turn.response_text
+    assert turn.context.last_question == "opening_offer"
+    assert "подходят ли" not in turn.response_text
+    assert "Расскажу об этом варианте" not in turn.response_text
 
 
-def test_decline_stops_pitch_and_neutral_followup_does_not_restart():
+def test_decline_checks_once_then_ends_sales_call():
     first = handle(ProductFixture(decision("decline")))
-    second = handle(ProductFixture(decision("general_discovery")), first.context)
-    for turn in (first, second):
-        assert turn.result.interest_level == "declined" and turn.result.status == "active"
-        assert turn.result.completed and not turn.public_state.products
-        assert "?" not in turn.response_text
+    assert first.context.refusal_count == 1 and first.context.last_question == "refusal_check"
+    assert not first.result.completed and first.response_text.count("?") == 1
+    second = handle(ProductFixture(decision("decline")), first.context)
+    assert second.result.interest_level == "declined" and second.result.status == "ended"
+    assert second.result.completed and not second.public_state.products
+    assert "?" not in second.response_text
 
 
 @pytest.mark.parametrize("language", ["ru", "kk", "mixed"])
@@ -240,7 +251,7 @@ def test_terminal_replies(language, intent, status):
         ProductFixture(
             ProductDecision(intent=intent, language=language, response_language=reply_language)
         ),
-        ProductScenarioContext(last_question="category"),
+        ProductScenarioContext(last_question="offer_details"),
     )
     assert turn.result.status == status and turn.complete_pack
     assert not turn.trace.clarification and turn.context.last_question is None
@@ -391,7 +402,7 @@ def test_out_of_scope_never_calls_selector_and_manual_switch_preserves_insurance
 def test_product_api_contract_and_unknown_switch_does_not_mutate():
     app = create_app(Settings(_env_file=None), router_override=InsuranceFixture())
     with TestClient(app) as client:
-        app.state.services.registry.get("product_promoter").agent = ProductFixture(
+        app.state.services.registry.get("card_promoter").agent = ProductFixture(
             decision("card_interest", preferences=Preferences(cashback=True))
         )
         response = client.post(
@@ -399,7 +410,7 @@ def test_product_api_contract_and_unknown_switch_does_not_mutate():
             json={
                 "session_id": "api-product",
                 "text": "cashback",
-                "scenario_mode": "product_promoter",
+                "scenario_mode": "card_promoter",
             },
         )
         assert response.status_code == 200, response.text
@@ -503,23 +514,22 @@ def test_clear_kazakh_orthography_corrects_stale_reply_language_only():
     assert turn.routing.response_language == "kk" and "ақшаның" in turn.response_text
 
 
-def test_completed_decline_survives_switch_away_back_and_new_consultation_can_start():
+def test_second_decline_closes_call_and_only_new_session_starts_a_new_offer():
     built = build_services(Settings(_env_file=None), router_override=InsuranceFixture())
     built.registry.get("product_promoter").agent = ProductFixture(
         decision("decline"),
-        decision("general_discovery"),
+        decision("decline"),
         decision("deposit_interest"),
     )
 
     async def flow():
         first = await built.messages.process("complete", "decline", "product_promoter")
-        assert (
-            first.trace.context_lifecycle == "completed" and first.conversation_status == "active"
-        )
-        await built.messages.process("complete", "insurance", "insurance_manager")
-        back = await built.messages.process("complete", "neutral", "product_promoter")
-        assert back.state.interest_level == "declined" and not back.state.products
-        new = await built.messages.process("complete", "new consultation")
+        assert first.trace.context_lifecycle == "active" and first.state.refusal_count == 1
+        second = await built.messages.process("complete", "decline again")
+        assert second.state.interest_level == "declined" and second.conversation_status == "ended"
+        with pytest.raises(SessionClosedError):
+            await built.messages.process("complete", "new consultation")
+        new = await built.messages.process("new-call", "new call", "product_promoter")
         assert new.trace.context_lifecycle == "active" and new.state.last_question == "liquidity"
 
     asyncio.run(flow())
@@ -547,7 +557,7 @@ def test_selector_rejects_unregistered_model_target():
         (700, "KZT", "ru", "700 тенге"),
         (100, "USD", "ru", "100 долларов США"),
         (2, "USD", "ru", "2 доллара США"),
-        (50000, "KZT", "kk", "50 мың тенге"),
+        (50000, "KZT", "kk", "50 мың теңге"),
         (100, "USD", "kk", "100 АҚШ доллары"),
     ],
 )
@@ -565,7 +575,8 @@ def test_money_after_from_or_up_to_uses_genitive(amount, expected):
 
 def test_generic_payment_goal_still_asks_about_card_priorities():
     turn = handle(
-        ProductFixture(decision("card_interest", preferences=Preferences(goal="daily_payments")))
+        ProductFixture(decision("card_interest", preferences=Preferences(goal="daily_payments"))),
+        campaign="card",
     )
     assert turn.context.last_question == "card_priority"
     assert not turn.public_state.products and turn.response_text.count("?") == 1

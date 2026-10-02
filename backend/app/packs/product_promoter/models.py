@@ -5,13 +5,15 @@ from pydantic import Field, model_validator
 from app.core.contracts import Contract, Language
 from app.packs.contracts import ScenarioResult
 
-Category = Literal["deposit", "card"]
+Category = Literal["deposit", "card", "loan"]
 Intent = Literal[
     "general_discovery",
     "deposit_interest",
     "card_interest",
+    "loan_interest",
     "product_comparison",
     "conditions_question",
+    "opening_question",
     "objection",
     "application_interest",
     "decline",
@@ -30,12 +32,21 @@ NextAction = Literal[
 ]
 Objection = Literal["fees", "yield", "liquidity", "restrictions", "other"]
 Question = Literal[
-    "category", "currency", "liquidity", "card_priority", "amount", "term", "next_action"
+    "currency",
+    "liquidity",
+    "card_priority",
+    "amount",
+    "term",
+    "next_action",
+    "offer_details",
+    "opening_offer",
+    "refusal_check",
 ]
+Topic = Literal["overview", "rate", "liquidity", "fees", "term", "currency", "restrictions"]
 
 
 class Preferences(Contract):
-    goal: Literal["save", "daily_payments", "cashback", "withdrawals"] | None = None
+    goal: Literal["save", "daily_payments", "cashback", "withdrawals", "borrowing"] | None = None
     amount: float | None = Field(default=None, gt=0, le=1e12, allow_inf_nan=False)
     currency: Literal["KZT", "USD"] | None = None
     term_months: int | None = Field(default=None, ge=1, le=120)
@@ -48,15 +59,41 @@ class Preferences(Contract):
 
 
 class ProductDecision(Contract):
-    intent: Intent
+    intent: Intent = Field(
+        description=(
+            "Current speech act. Hearing/explaining an offered product's conditions, including "
+            "acceptance of offer_details/refusal_check, is conditions_question. How to open or "
+            "acceptance of opening_offer is opening_question, without application consent. "
+            "Category interest is explicit preference discovery, "
+            "not every reply about that category."
+        )
+    )
     language: Language
     response_language: Literal["ru", "kk"]
     category: Category | None = None
     preferences: Preferences = Field(default_factory=Preferences)
-    product_ids: list[str] = Field(default_factory=list, max_length=3)
+    product_ids: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description=(
+            "Only explicit current customer references to named/previously offered products. "
+            "Empty for preference statements and recommendations. Never echo IDs from context."
+        ),
+    )
     objection: Objection | None = None
     next_action: NextAction = "continue_consultation"
     confidence: float = Field(default=1, ge=0, le=1)
+    question_topic: Topic = "overview"
+    accepts_explanation: bool = Field(
+        default=False,
+        description=(
+            "The customer accepts the actual previous offer to EXPLAIN conditions or opening "
+            "steps, including a short affirmative reply. Interpret last_question_text. "
+            "This is permission to hear that explanation, never consent to an application. "
+            "False for supplying new needs, asking a different question or refusing."
+        ),
+    )
+    stop_sales: bool = False
 
 
 class SalesLeadResult(ScenarioResult):
@@ -72,6 +109,7 @@ class SalesLeadResult(ScenarioResult):
 
 
 class ProductScenarioContext(Contract):
+    campaign: Category = "deposit"
     product_category: Category | None = None
     preferences: Preferences = Field(default_factory=Preferences)
     presented_products: list[str] = Field(default_factory=list)
@@ -83,13 +121,20 @@ class ProductScenarioContext(Contract):
     last_question: Question | None = None
     response_language: Literal["ru", "kk"] = "ru"
     last_intent: Intent | None = None
+    last_assistant_text: str | None = Field(default=None, max_length=7000)
+    last_question_text: str | None = Field(default=None, max_length=500)
     completed: bool = False
     recommended_product_id: str | None = None
     unclear_turns: int = Field(default=0, ge=0)
+    sales_phase: Literal["pitch", "needs", "conditions", "opening", "refusal_check", "closed"] = (
+        "pitch"
+    )
+    refusal_count: int = Field(default=0, ge=0, le=2)
+    customer_turns: int = Field(default=0, ge=0)
 
 
 class Product(Contract):
-    id: str = Field(pattern=r"^(DEP|CARD)-[A-Z]+$")
+    id: str = Field(pattern=r"^(DEP|CARD|LOAN)-[A-Z]+$")
     category: Category
     name_ru: str
     name_kk: str
@@ -97,6 +142,7 @@ class Product(Contract):
     nominal_rate_percent: float | None = Field(default=None, ge=0, le=100)
     effective_rate_percent: float | None = Field(default=None, ge=0, le=100)
     minimum_amount: float | None = Field(default=None, ge=0)
+    maximum_amount: float | None = Field(default=None, gt=0)
     term_months: list[int] = Field(default_factory=list)
     replenishment: bool = False
     partial_withdrawal: bool = False
@@ -113,6 +159,8 @@ class Product(Contract):
     restrictions_ru: str
     restrictions_kk: str
     reference_date: Literal["2026-10-01"]
+    opening_steps_ru: list[str] = Field(default_factory=list, max_length=6)
+    opening_steps_kk: list[str] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def category_conditions(self):
@@ -125,13 +173,22 @@ class Product(Contract):
             or not self.early_termination_kk
         ):
             raise ValueError("Deposit conditions must be complete")
+        if self.category == "loan" and (
+            self.nominal_rate_percent is None
+            or self.effective_rate_percent is None
+            or self.minimum_amount is None
+            or self.maximum_amount is None
+            or self.minimum_amount > self.maximum_amount
+            or not self.term_months
+        ):
+            raise ValueError("Loan conditions must be complete")
         return self
 
 
 class ProductCatalog(Contract):
     brand: Literal["Merei Demo Bank"]
     synthetic: Literal[True]
-    products: list[Product] = Field(min_length=4, max_length=6)
+    products: list[Product] = Field(min_length=4, max_length=9)
 
     @model_validator(mode="after")
     def distinct_products(self):
@@ -141,12 +198,16 @@ class ProductCatalog(Contract):
             not 2 <= sum(p.category == c for p in self.products) <= 3 for c in ("deposit", "card")
         ):
             raise ValueError("Provide two or three products in each category")
+        if sum(p.category == "loan" for p in self.products) > 3:
+            raise ValueError("Provide at most three loan products")
         return self
 
 
 class ProductPublicState(ProductScenarioContext):
     session_id: str
-    scenario_mode: Literal["product_promoter"] = "product_promoter"
+    scenario_mode: Literal["product_promoter", "card_promoter", "loan_promoter"] = (
+        "product_promoter"
+    )
     turn_number: int
     sales_lead: SalesLeadResult
     products: list[Product] = Field(default_factory=list)

@@ -1,0 +1,51 @@
+{
+  "synthetic": true,
+  "cases": [
+    {"id":"O01","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Да, расскажите, какая ставка?","intents":["conditions_question"],"products":["DEP-FLEX"],"sales_phase":"conditions"},
+      {"text":"А как его открыть?","intents":["opening_question"],"products":["DEP-FLEX"],"sales_phase":"opening","outcome":"consulting"}
+    ]},
+    {"id":"O02","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Нет, сейчас неинтересно.","intents":["decline"],"question":"refusal_check","refusal_count":1,"outcome":"consulting"},
+      {"text":"Да, уверен. Не нужно.","intents":["decline"],"refusal_count":2,"outcome":"declined","status":"ended"}
+    ]},
+    {"id":"O03","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Не хочу открывать депозит.","intents":["decline"],"refusal_count":1},
+      {"text":"Ладно, расскажите подробнее.","intents":["conditions_question"],"refusal_count":1,"sales_phase":"conditions"},
+      {"text":"Всё-таки нет, отказываюсь.","intents":["decline"],"refusal_count":2,"status":"ended"}
+    ]},
+    {"id":"O04","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Не звоните мне больше и ничего не предлагайте.","intents":["decline"],"stop_sales":true,"refusal_count":1,"status":"ended"}
+    ]},
+    {"id":"O05","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Лучше предложите кредит.","intents":["out_of_scope"],"products":[],"outcome":"consulting"},
+      {"text":"Вернёмся к депозиту, можно ли частично снимать деньги?","intents":["conditions_question"],"products":["DEP-FLEX"]}
+    ]},
+    {"id":"O06","lang":"ru","campaign":"card","turns":[
+      {"text":"Мне важнее кешбэк, обслуживание может быть платным.","intents":["card_interest"],"preferences":{"cashback":true,"fee_sensitive":false},"products":["CARD-REWARD"]},
+      {"text":"Как оформить эту карту?","intents":["opening_question"],"products":["CARD-REWARD"],"outcome":"consulting"}
+    ]},
+    {"id":"O07","lang":"ru","campaign":"loan","turns":[
+      {"text":"Мне нужно четыреста тысяч тенге на двенадцать месяцев.","intents":["loan_interest"],"preferences":{"amount":400000,"currency":"KZT","term_months":12},"products":["LOAN-DIGITAL"]},
+      {"text":"Как подать заявку?","intents":["opening_question"],"products":["LOAN-DIGITAL"],"outcome":"consulting"}
+    ]},
+    {"id":"O08","lang":"kk","campaign":"deposit","turns":[
+      {"text":"Мөлшерлемесі қандай?","intents":["conditions_question"],"products":["DEP-FLEX"]},
+      {"text":"Оны қалай ашуға болады?","intents":["opening_question"],"products":["DEP-FLEX"],"outcome":"consulting"}
+    ]},
+    {"id":"O09","lang":"kk","campaign":"deposit","turns":[
+      {"text":"Жоқ, қазір қызық емес.","intents":["decline"],"refusal_count":1},
+      {"text":"Иә, сенімдімін, керек емес.","intents":["decline"],"refusal_count":2,"status":"ended"}
+    ]},
+    {"id":"O10","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Да, расскажите.","intents":["conditions_question"],"outcome":"consulting"},
+      {"text":"Да, объясните.","intents":["opening_question"],"outcome":"consulting","sales_phase":"opening"}
+    ]},
+    {"id":"O11","lang":"ru","campaign":"card","turns":[
+      {"text":"Я хочу депозит вместо карты.","intents":["out_of_scope"],"products":[]}
+    ]},
+    {"id":"O12","lang":"ru","campaign":"deposit","turns":[
+      {"text":"Снимать не планирую, хочу положить двести тысяч тенге на год.","intents":["deposit_interest"],"preferences":{"liquidity":false,"amount":200000,"currency":"KZT","term_months":12},"products":["DEP-SAVE"]}
+    ]}
+  ]
+}

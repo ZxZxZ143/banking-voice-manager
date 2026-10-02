@@ -2,13 +2,25 @@
 
 ## Purpose and requirements
 
-Banking Voice Platform: Insurance Manager for fictional Saqta Insurance and proactive Product Promoter for synthetic Merei Demo Bank deposits/cards. Prioritize LLM-based scenario
+Banking Voice Platform: Insurance Manager for fictional Saqta Insurance and three outbound
+sales campaigns for synthetic Merei Demo Bank deposits, cards and loans. Prioritize LLM-based scenario
 selection in Russian, Kazakh and mixed-language dialogue, context, ambiguity, topic
 changes, clarification and handoff. Final MVP requires voice; text remains available.
 No encoder intent classifier or hardcoded evaluation utterances.
 Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
+
+- **Outbound sales follow-up:** `product_promoter` sells a preassigned deposit;
+  `card_promoter` and `loan_promoter` reuse the implementation with separate manifests/context.
+  Bot initiates a branded offer, answers focused conditions/opening questions, adapts to
+  explicit preferences and asks once after a soft refusal. Second refusal ends the call;
+  explicit stop requests end immediately. Customer cannot switch campaigns through speech.
+  Replies are brief, direct and grounded; explanation acceptance uses the actual previous
+  question and is separate from application consent. Full conditions remain in UI details.
+  Operator/caller chooses before the call; scoring and outbound telephony remain external.
+  Eight synthetic products and catalog-owned opening steps. Evidence:
+  `OUTBOUND_SALES_VALIDATION.md`. No Fraud/Risk or full Loan Consultant stage started.
 
 - **Stage 3.2:** manual assistant selection only; no natural selector/forwarding.
   SDK slot schema uses source types/enums/patterns; policy status is short, with separate
@@ -85,7 +97,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
-| `data/product_promoter/` | Six synthetic products and separate 40-case live evaluation |
+| `data/product_promoter/` | Eight synthetic products/opening guides, 40-case regression and 12 outbound flows |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
@@ -310,4 +322,5 @@ and STT timing stay on the runtime side; only session_id/text cross the Core API
 
 Next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.
-No DB was added; actual insurer/bank writes remain disabled. Product and public-manifest selection use their own bounded agents.
+No DB was added; actual insurer/bank writes remain disabled. Product turns use one bounded
+structured agent. Assistant/campaign selection is explicit registry lookup, never a model call.

@@ -16,13 +16,13 @@ from app.packs.contracts import GlobalConversationContext
 from app.packs.product_promoter.models import SalesLeadResult
 
 
-async def evaluate(output: Path):
+async def evaluate(output: Path, dataset_path: Path | None = None):
     if output.exists():
         raise FileExistsError("Never overwrite evaluation evidence")
     settings = Settings()
     services = build_services(settings)
     pack = services.registry.get("product_promoter")
-    source = settings.product_catalog_path.parent / "eval_cases.json"
+    source = dataset_path or settings.product_catalog_path.parent / "eval_cases.json"
     dataset = json.loads(source.read_text(encoding="utf-8"))
     rows = []
     counts = defaultdict(lambda: [0, 0])
@@ -54,7 +54,27 @@ async def evaluate(output: Path):
                 measure("manual_only_policy", False)
             measure("no_automatic_switch", case_passed)
         else:
+            campaign = case.get("campaign", "deposit")
+            mode = {
+                "deposit": "product_promoter",
+                "card": "card_promoter",
+                "loan": "loan_promoter",
+            }[campaign]
+            pack = services.registry.get(mode)
             context = pack.new_context()
+            opening = await pack.open_turn(
+                GlobalConversationContext(session_id=case["id"]), context
+            )
+            context = opening.context
+            row["campaign"] = campaign
+            row["opening"] = opening.response_text
+            opening_ok = (
+                context.campaign == campaign
+                and context.last_question == "offer_details"
+                and bool(opening.public_state.products)
+            )
+            measure("assigned_outbound_opening", opening_ok)
+            case_passed &= opening_ok
             for index, expected in enumerate(case["turns"]):
                 try:
                     # Only utterance, own context and minimal global context are passed.
@@ -112,7 +132,16 @@ async def evaluate(output: Path):
                         "structured_output": valid,
                         "grounding": grounded,
                         "reply_language": language,
+                        "fixed_campaign": context.campaign == campaign
+                        and context.product_category == campaign,
                     }
+                    for name in ("refusal_count", "sales_phase"):
+                        if name in expected:
+                            checks[name] = getattr(context, name) == expected[name]
+                    if "stop_sales" in expected:
+                        checks["stop_sales"] = (
+                            turn.routing.stop_sales == expected["stop_sales"]
+                        )
                     if "question" in expected:
                         checks["question"] = (
                             context.last_question == expected["question"]
@@ -154,6 +183,7 @@ async def evaluate(output: Path):
                         "structured_output",
                         "grounding",
                         "reply_language",
+                        "fixed_campaign",
                     ):
                         measure(name, checks[name])
                     measure(f"language_{case['lang']}", language)
@@ -204,4 +234,6 @@ async def evaluate(output: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
-    asyncio.run(evaluate(parser.parse_args().output))
+    parser.add_argument("--dataset", type=Path)
+    args = parser.parse_args()
+    asyncio.run(evaluate(args.output, args.dataset))

@@ -1,8 +1,8 @@
 # Banking Voice Platform
 
-Modular conversational platform for Russian, Kazakh and mixed speech. Two production Scenario Packs share sessions, streaming transcription, browser speech synthesis and supervisor traces: **Insurance Manager** and the proactive **Product Promoter**. Each pack owns its isolated business context. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
+Modular conversational platform for Russian, Kazakh and mixed speech. Insurance Manager and three outbound sales campaigns share sessions, streaming transcription, browser speech synthesis and supervisor traces. Each registered assistant owns its isolated business context. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
 
-Insurance uses the supplied **fictional Saqta Insurance** snapshot. Product Promoter uses six synthetic products from **Merei Demo Bank**: three deposits and three debit/payment cards. Both catalogs have reference date **2026-10-01**. These are demonstration conditions and records, not real-bank offers. Fraud & Security and Loan Consultant are unimplemented.
+Insurance uses the supplied **fictional Saqta Insurance** snapshot. The outbound bots use eight synthetic **Merei Demo Bank** products: three deposits, three debit/payment cards and two loans. Both catalogs have reference date **2026-10-01**. These are demonstration conditions and records. Fraud & Security and a full Loan Consultant remain unimplemented; the loan sales campaign only explains catalog terms and records interest.
 
 `ScenarioRegistry` selects the default Insurance Manager for a new session; later turns
 continue the active pack. The UI selector opens Product immediately during listening and applies Insurance on the next request, preserving
@@ -22,12 +22,15 @@ See [the architecture](docs/ARCHITECTURE.md).
   to acknowledge partial answers and ask one useful follow-up. Facts are immutable server
   blocks; only acknowledgement and question wording come from the Composer.
   Valid requested identifiers continue the flow and reset misunderstanding counters.
-- Product consultation: one useful discovery question, explicit multi-field preferences,
-  deterministic candidate matching, catalog conditions, conditional comparison, objections,
-  respectful refusal and a typed `SalesLeadResult`. Interest, requested link and callback are
+- Outbound sales: the caller assigns deposit/card/loan before the call. The bot offers the
+  assigned product first, gives short direct answers and opening steps, and adapts to explicit
+  needs. Full conditions remain in the UI. One soft refusal gets one follow-up; the next ends
+  the call. Deterministic matching, comparisons and objections produce `SalesLeadResult`.
+  Interest, requested link and callback are
   recorded as demo next actions; no product opens, link sends or callback schedules.
 - Pack selector, visible active pack, switch notice, SalesLeadResult view and product/switch
-  supervisor fields. Completing or declining a lead leaves the global conversation active.
+  supervisor fields. Interest completes the lead while keeping conversation active;
+  a final refusal ends the global call. New sales campaigns require a reset in the demo UI.
 - The existing catalog: 40 insurance scenarios and three system intents. Natural wording, independent multi-intent requests, clarification, topic switching and same-session continuation.
 - Source-based quotes for ОГПО, standard КАСКО, travel, property and accident insurance; DMS package information, clinics, documents, payment methods and owned policy/claim/payment lookups.
 - Application and servicing flows collect the catalog's required information and transfer the prepared conversation to an operator when an insurer operation is needed.
@@ -123,14 +126,21 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 `GET /health` confirms startup and loaded dataset counts; it does not test OpenAI availability.
 
 `POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
-`scenario_mode=insurance_manager|product_promoter`. Reuse the ID across turns.
+`scenario_mode=insurance_manager|product_promoter|card_promoter|loan_promoter`. Reuse the ID across turns.
 Normal Product turns call their agent once. Normal Insurance turns call Router and Composer.
 Automatic natural switching is disabled. Only explicit `scenario_mode` or the UI selector changes the active assistant; the original question is never forwarded.
 Policy status is brief: «Сейчас ваш полис действует». An explicit end-date question returns
 the recorded date in ordinary words, without a policy number or a generic follow-up offer.
 
 `POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Insurance
-or Product with zero model calls and no fabricated customer turn. TTS finishes before listening.
+or an assigned sales campaign with zero model calls and no fabricated customer turn. TTS finishes before listening.
+Before an outbound call, the caller's system assigns `product_promoter` (deposit),
+`card_promoter` (card) or `loan_promoter` (loan). The local demo offers the same pre-call
+operator setting. Customer speech cannot choose another campaign. Target scoring and
+actual outbound telephony are external integrations and are not simulated as completed.
+The bot offers its product first, explains conditions/opening and adapts to explicit needs.
+One soft refusal receives one follow-up; a second refusal ends the call. An explicit request
+to stop sales/calls ends it immediately. See [outbound sales validation](docs/OUTBOUND_SALES_VALIDATION.md).
 
 Unregistered packs return 422 before any model call. All responses retain six top-level fields:
 `session_id`, `response_text`, `routing`, `state`, `trace`, `conversation_status`. Insurance
@@ -206,12 +216,13 @@ Offline fixtures establish contract/state behavior, not model accuracy.
 
 Start a conversation. Uncheck «Голосовой ввод» for text-only testing with the same runtime and browser TTS.
 
-Select Product Promoter → «Хочу открыть депозит.» → answer the liquidity question with an
-explicit amount/currency/term → inspect conditions and SalesLeadResult → select Insurance
-Manager and ask a travel-insurance question → switch back and inspect resumed preferences.
-Express application interest, then ask an operator: **«Конечно, передаю диалог оператору.»**
-Reset for goodbye or a new consultation. Product opens on Start or selection during listening;
-Insurance selection applies to the next customer message.
+Before Start select «Продажа депозита». The bot names Merei Demo Bank and offers a deposit
+without asking the customer to choose a category. Answer «Расскажите о ставке», then
+«Как его открыть?»; only explicit application interest produces a local sales lead.
+For refusal testing, answer «Сейчас неинтересно», then «Нет, я уверен»: one follow-up, then
+the call ends. Reset before choosing «Продажа карты» or «Продажа кредита». An operator can
+explicitly switch to Insurance; customer speech never changes the assigned campaign.
+An operator request still answers **«Конечно, передаю диалог оператору.»**
 
 1. RU: «Я оплатил страховку, но полис не появился.» — collects payment details.
 2. KK: «Маған саяхат сақтандыруы керек.» then «Екі аптаға.» — same travel scenario and session.

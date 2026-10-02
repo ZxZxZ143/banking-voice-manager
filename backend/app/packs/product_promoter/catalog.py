@@ -17,7 +17,7 @@ def matching_products(catalog: ProductCatalog, category: str, prefs: Preferences
         if (
             (prefs.currency is None or prefs.currency in p.currencies)
             and (
-                category != "deposit"
+                category not in {"deposit", "loan"}
                 or (
                     (
                         prefs.amount is None
@@ -25,6 +25,11 @@ def matching_products(catalog: ProductCatalog, category: str, prefs: Preferences
                         or prefs.amount >= p.minimum_amount
                     )
                     and (prefs.term_months is None or prefs.term_months in p.term_months)
+                    and (
+                        p.maximum_amount is None
+                        or prefs.amount is None
+                        or prefs.amount <= p.maximum_amount
+                    )
                     and (prefs.liquidity is not True or p.partial_withdrawal)
                     and (prefs.replenishment is not True or p.replenishment)
                 )
@@ -37,6 +42,8 @@ def matching_products(catalog: ProductCatalog, category: str, prefs: Preferences
     def score(p):
         if category == "deposit":
             return p.effective_rate_percent
+        if category == "loan":
+            return -p.effective_rate_percent
         if prefs.cash_withdrawal or prefs.goal == "withdrawals":
             return p.atm_free_limit_kzt
         if prefs.cashback or prefs.goal == "cashback":
@@ -83,6 +90,19 @@ def conditions(p: Product, language: str) -> str:
                 f"капиталдандыру — {capitalization}. "
                 f"Мерзімінен бұрын жабу: {p.early_termination_kk} "
             )
+    elif p.category == "loan":
+        terms = "/".join(str(v) for v in p.term_months)
+        body = (
+            f"{name} ({p.id}): {currencies}; "
+            f"номинальная ставка {p.nominal_rate_percent:g}% годовых, "
+            f"ГЭСВ {p.effective_rate_percent:g}%; сумма {p.minimum_amount:g}–{p.maximum_amount:g} "
+            f"{currencies}; срок {terms} мес. "
+            if ru
+            else f"{name} ({p.id}): {currencies}; "
+            f"номиналды мөлшерлеме жылына {p.nominal_rate_percent:g}%, "
+            f"ЖТСМ {p.effective_rate_percent:g}%; сома {p.minimum_amount:g}–{p.maximum_amount:g} "
+            f"{currencies}; мерзімі {terms} ай. "
+        )
     elif ru:
         body = (
             f"{name} ({p.id}): {currencies}; обслуживание {p.monthly_fee_kzt} KZT/мес.; "

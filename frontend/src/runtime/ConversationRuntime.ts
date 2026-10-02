@@ -3,6 +3,7 @@ import type {
 } from '../types/agent';
 import type { AgentClient } from '../services/agentClient';
 import type { TtsService } from '../services/tts';
+import { isScenarioPack, isSalesPack, scenarioPackNames } from '../types/agent.ts';
 
 export interface VoiceInputController {
   startListening(): Promise<void> | void;
@@ -83,9 +84,12 @@ export class ConversationRuntime {
   selectScenarioPack(pack: ScenarioPackId): void {
     if (this.disposed || !['idle', 'listening', 'error'].includes(this.snapshot.runtimeStatus)
       || this.snapshot.conversationStatus === 'handoff' || this.snapshot.conversationStatus === 'ended') return;
-    if (pack !== 'insurance_manager' && pack !== 'product_promoter') return;
+    if (!isScenarioPack(pack)) return;
+    // Campaign selection belongs to the operator before a sales call starts.
+    if (isSalesPack(pack) && isSalesPack(this.snapshot.activePack)
+      && this.snapshot.sessionId && pack !== this.snapshot.activePack) return;
     this.update({ requestedPack: pack === this.snapshot.activePack ? null : pack });
-    if (pack === 'product_promoter' && pack !== this.snapshot.activePack
+    if (isSalesPack(pack) && pack !== this.snapshot.activePack
       && this.snapshot.runtimeStatus === 'listening' && this.agentClient.startScenario) {
       void this.processTranscript({ text: '' }, true);
     }
@@ -222,12 +226,12 @@ export class ConversationRuntime {
       if (!this.isCurrent(generation)) return;
       const trace = response.trace as Record<string, unknown> | undefined;
       const returnedPack = trace?.scenario_pack_id;
-      const activePack = returnedPack === 'insurance_manager' || returnedPack === 'product_promoter'
+      const activePack = isScenarioPack(returnedPack)
         ? returnedPack : this.snapshot.activePack;
       this.update({
         activePack, requestedPack: null,
         packNotice: activePack !== this.snapshot.activePack
-          ? `Переключено: ${activePack === 'product_promoter' ? 'Product Promoter' : 'Insurance Manager'}`
+          ? `Переключено: ${scenarioPackNames[activePack]}`
           : this.snapshot.packNotice,
         messages: [...this.snapshot.messages, {
           id: crypto.randomUUID(), role: 'assistant', text: response.response_text, timestamp: Date.now(),

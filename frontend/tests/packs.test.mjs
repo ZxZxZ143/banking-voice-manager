@@ -23,7 +23,7 @@ test('explicit selector switches on next turn, keeps UUID/history, then resumes 
   assert.equal(runtime.getSnapshot().activePack, 'insurance_manager');
   await runtime.sendText('Депозит');
   assert.equal(runtime.getSnapshot().activePack, 'product_promoter');
-  assert.equal(runtime.getSnapshot().packNotice, 'Переключено: Product Promoter');
+  assert.equal(runtime.getSnapshot().packNotice, 'Переключено: Продажа депозита');
   await runtime.sendText('Снятие нужно');
   runtime.selectScenarioPack('insurance_manager');
   await runtime.sendText('Продолжим страховку');
@@ -165,4 +165,36 @@ test('insurance starts with an assistant-only opener and TTS finishes before cap
   assert.equal(events[0][1].scenario_mode, 'insurance_manager');
   assert.deepEqual(runtime.getSnapshot().messages.map(m => m.role), ['assistant']);
   runtime.dispose();
+});
+
+for (const campaign of ['product_promoter', 'card_promoter', 'loan_promoter']) {
+  test(`assigned ${campaign} starts before customer input and cannot change sales campaign mid-call`, async () => {
+    const calls = [];
+    const runtime = new ConversationRuntime({
+      startScenario: async request => { calls.push(request); return {
+        response_text: 'Предлагаю продукт выбранной кампании. Рассказать условия?',
+        conversation_status: 'active', trace: {scenario_pack_id: request.scenario_mode},
+      }; },
+      sendMessage: async () => { throw new Error('No customer turn needed'); },
+    }, tts);
+    await runtime.setVoiceInputEnabled(false);
+    runtime.selectScenarioPack(campaign);
+    await runtime.startConversation();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].scenario_mode, campaign);
+    assert.equal(runtime.getSnapshot().activePack, campaign);
+    assert.deepEqual(runtime.getSnapshot().messages.map(m => m.role), ['assistant']);
+    runtime.selectScenarioPack(campaign === 'card_promoter' ? 'product_promoter' : 'card_promoter');
+    assert.equal(runtime.getSnapshot().requestedPack, null);
+    assert.equal(calls.length, 1);
+    runtime.dispose();
+  });
+}
+
+test('sales lead view accepts separate card and loan bot state', () => {
+  for (const mode of ['card_promoter', 'loan_promoter']) {
+    const view = createSalesLeadView({scenario_mode: mode,
+      sales_lead: {outcome: 'consulting', product_category: mode === 'card_promoter' ? 'card' : 'loan'}});
+    assert.equal(view.outcome, 'consulting');
+  }
 });
