@@ -3,16 +3,20 @@
 import asyncio
 import io
 import json
+import logging
 import wave
+from contextlib import asynccontextmanager
 from typing import get_args
 
 import pytest
 from pydantic import ValidationError
 
 from app.core.channels import Channel
+from app.core.config import Settings
 from app.events.models import ConversationEvent
 from app.events.store import InMemoryEventStore
 from app.speech.stt import streaming_provider
+from app.speech.stt.endpointing import PauseTracker
 from app.speech.stt.streaming_provider import OpenAIStreamingSTT
 from app.telephony.audio import PcmPassThroughNormalizer
 from app.telephony.base import CallEnded, CallStarted, IncomingAudio, ProviderAudio, ProviderError
@@ -531,6 +535,130 @@ def test_phone_audio_uses_the_same_streaming_relay_as_browser(monkeypatch):
         assert all(connection.closed for connection in connections)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("value", [799, 5001])
+def test_phone_silence_cannot_be_below_800_or_above_bound(value):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, phone_endpoint_silence_ms=value)
+
+
+def test_short_phone_endpoint_once_after_continuation_with_latency_stages(monkeypatch, caplog):
+    async def run():
+        detectors, upstreams = [], []
+
+        class Detector:
+            def __init__(self, pause_ms):
+                self.tracker = PauseTracker(pause_ms)
+                self.processed = 0
+                detectors.append(self)
+
+            def feed(self, pcm):
+                speech = pcm[0] == 1  # Explicit fixture classification; real PauseTracker.
+                ended = self.tracker.step(speech)
+                self.processed += 1
+                return ended, 0.9 if speech else 0.0
+
+        class Upstream:
+            def __init__(self):
+                self.events = asyncio.Queue()
+                self.commits = 0
+                upstreams.append(self)
+
+            async def send(self, raw):
+                if json.loads(raw)["type"] == "input_audio_buffer.commit":
+                    self.commits += 1
+                    for _ in range(2):  # A repeated provider completion must not route twice.
+                        self.events.put_nowait(
+                            {
+                                "type": "input_audio_transcription.completed",
+                                "transcript": "PRIVATE_FIXTURE_TRANSCRIPT",
+                                "item_id": "same-final",
+                            }
+                        )
+
+            async def recv(self):
+                return json.dumps({"type": "session.updated"})
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                return json.dumps(await self.events.get())
+
+        @asynccontextmanager
+        async def connect(*args, **kwargs):
+            yield Upstream()
+
+        monkeypatch.setattr(streaming_provider, "connect", connect)
+        monkeypatch.setattr(streaming_provider, "SpeechEndDetector", Detector)
+        settings = Settings(_env_file=None)
+        assert settings.phone_endpoint_silence_ms == 1200
+        runtime = make_runtime()
+        runtime.stt = OpenAIStreamingSTT(
+            api_key="PRIVATE_FIXTURE_KEY", pause_ms=settings.phone_endpoint_silence_ms
+        )
+        session = runtime.start_call(CallStarted("call"))
+        count = 0
+
+        async def feed(speech, frames):
+            nonlocal count
+            for _ in range(frames):
+                count += 1
+                await runtime.feed_audio("call", ProviderAudio(bytes([int(speech), 0]) * 768))
+                await until(lambda: bool(detectors) and detectors[0].processed == count)
+
+        await feed(True, 3)
+        await feed(False, 37)  # 1184ms < 1200ms: no premature final/Agent turn.
+        assert runtime.agent.messages.requests == [] and upstreams[0].commits == 0
+        await feed(True, 3)  # Continuation resets the silence timer.
+        await feed(False, 37)
+        assert runtime.agent.messages.requests == [] and upstreams[0].commits == 0
+        await feed(False, 1)  # 1216ms, matching the existing VAD's 32ms resolution.
+        await until(lambda: len(runtime.provider.outgoing.get("call", [])) == 1)
+        await until(lambda: session.status == "active")
+        assert upstreams[0].commits == 1 and detectors[0].tracker.pause_ms == 1200
+        assert runtime.agent.messages.requests == [
+            (session.session_id, "PRIVATE_FIXTURE_TRANSCRIPT")
+        ]
+        assert not await runtime.handle_transcript("call", final(item_id="same-final"))
+        assert runtime._calls["call"].turn_number == 1
+        await runtime.shutdown()
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(run())
+    stages = [
+        dict(piece.split("=", 1) for piece in record.message.split() if "=" in piece)
+        for record in caplog.records
+        if "phone latency stage=" in record.message
+    ]
+    by_stage = {stage["stage"]: stage for stage in stages}
+    ordered = [
+        "endpointing_decision",
+        "stt_final",
+        "agent_start",
+        "agent_done",
+        "tts_start",
+        "tts_ready",
+        "playback_start",
+        "playback_complete",
+        "total_turn",
+    ]
+    assert [stage["stage"] for stage in stages if stage["stage"] != "speech_end"] == ordered
+    assert "speech_end" in by_stage and by_stage["total_turn"]["basis"] == "speech_end"
+    assert all(float(stage["duration_ms"]) >= 0 for stage in stages)
+    for end, start in [
+        ("agent_done", "agent_start"),
+        ("tts_ready", "tts_start"),
+        ("playback_complete", "playback_start"),
+        ("total_turn", "speech_end"),
+    ]:
+        elapsed = float(by_stage[end]["monotonic_ms"]) - float(by_stage[start]["monotonic_ms"])
+        assert float(by_stage[end]["duration_ms"]) == pytest.approx(elapsed, abs=0.003)
+    assert "silence_ms=1216" in caplog.text
+    assert (
+        "PRIVATE_FIXTURE_TRANSCRIPT" not in caplog.text and "PRIVATE_FIXTURE_KEY" not in caplog.text
+    )
 
 
 def test_event_failure_and_cleanup_failure_do_not_break_call_flow():

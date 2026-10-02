@@ -65,4 +65,4 @@ class OpenAIStreamingSTT:
                 max_size=2_000_000,
             ) as upstream:
                 await configure_transcription(upstream)
-                await relay_stream(receive, emit, upstream, detector)
+                await relay_stream(receive, emit, upstream, detector, phone_timing=True)

@@ -117,6 +117,19 @@ def receive_until(socket, kind):
     raise AssertionError(f"Did not receive expected {kind} event")
 
 
+def test_phone_setting_does_not_change_omitted_web_pause_default(monkeypatch, client):
+    patch_provider(monkeypatch)
+    client.app.state.settings.phone_endpoint_silence_ms = 800
+    with client.websocket_connect(
+        "/api/v1/voice", headers={"origin": "http://localhost:5173"}
+    ) as socket:
+        socket.send_json(
+            {"type": "start", "session_id": str(uuid4()), "sample_rate": 24000, "channels": 1}
+        )
+        assert socket.receive_json() == {"type": "ready", "pause_ms": 2500}
+        socket.send_json({"type": "cancel"})
+
+
 def test_stream_configuration_partial_commit_and_final_do_not_route(monkeypatch, client):
     upstream, connections = patch_provider(monkeypatch)
     session_id = str(uuid4())

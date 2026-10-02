@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     public_base_url: str | None = None
     backend_tts_model: str | None = None
     backend_tts_voice: str | None = None
+    phone_endpoint_silence_ms: int = Field(default=1200, ge=800, le=5000)
     vonage_enabled: bool = False
     vonage_application_id: str | None = None
     vonage_private_key_path: Path | None = Field(default=None, repr=False)

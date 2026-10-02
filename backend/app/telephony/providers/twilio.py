@@ -51,10 +51,11 @@ class TwilioTelephonyProvider:
         if future is not None and not future.done():
             future.set_result(None)
             logger.info(
-                "twilio playback_complete call_sid=%s stream_sid=%s mark=%s",
+                "twilio playback_complete call_sid=%s stream_sid=%s mark=%s monotonic_ms=%.3f",
                 stream.call_id,
                 stream.stream_id,
                 name,
+                perf_counter() * 1000,
             )
 
     async def send_audio(self, call_id: str, speech: SpeechResult) -> None:
@@ -76,6 +77,16 @@ class TwilioTelephonyProvider:
                 if stream.closed or self.streams.get(call_id) is not stream:
                     raise PlaybackCancelled("Stream closed during conversion")
                 stream.marks[name] = future
+                playback_at = perf_counter()
+                logger.info(
+                    "twilio playback_start call_sid=%s stream_sid=%s mark=%s "
+                    "monotonic_ms=%.3f conversion_lock_ms=%.3f",
+                    call_id,
+                    stream.stream_id,
+                    name,
+                    playback_at * 1000,
+                    (playback_at - started) * 1000,
+                )
                 for offset in range(0, len(audio), 800):
                     await stream.socket.send_json(
                         {

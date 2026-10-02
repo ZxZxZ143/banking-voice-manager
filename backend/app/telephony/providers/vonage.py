@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from time import perf_counter
 from uuid import uuid4
 
 from fastapi import WebSocket
@@ -48,11 +49,15 @@ class VonageTelephonyProvider:
         if future is not None and not future.done():
             future.set_result(None)
             logger.info(
-                "vonage playback_complete call_uuid=%s reply_id=%s", stream.call_id, reply_id
+                "vonage playback_complete call_uuid=%s reply_id=%s monotonic_ms=%.3f",
+                stream.call_id,
+                reply_id,
+                perf_counter() * 1000,
             )
 
     async def send_audio(self, call_id: str, speech: SpeechResult):
         stream = self.streams[call_id]
+        started = perf_counter()
         try:
             audio = await asyncio.to_thread(speech_to_l16, speech)
         except Exception:
@@ -65,6 +70,15 @@ class VonageTelephonyProvider:
                 if stream.closed or self.streams.get(call_id) is not stream:
                     raise PlaybackCancelled("Stream closed during conversion")
                 stream.notifications[reply_id] = future
+                playback_at = perf_counter()
+                logger.info(
+                    "vonage playback_start call_uuid=%s reply_id=%s monotonic_ms=%.3f "
+                    "conversion_lock_ms=%.3f",
+                    call_id,
+                    reply_id,
+                    playback_at * 1000,
+                    (playback_at - started) * 1000,
+                )
                 for offset in range(0, len(audio), FRAME_BYTES):
                     frame = audio[offset : offset + FRAME_BYTES]
                     await stream.socket.send_bytes(frame.ljust(FRAME_BYTES, b"\0"))

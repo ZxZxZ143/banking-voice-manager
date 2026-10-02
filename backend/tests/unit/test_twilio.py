@@ -717,10 +717,12 @@ def test_live_factory_reuses_existing_speech_and_message_boundaries():
         openai_router_model="offline-router",
         backend_tts_model="offline-tts",
         backend_tts_voice="offline-voice",
+        phone_endpoint_silence_ms=1100,
     )
     gateway = build_twilio_gateway(settings, agent)
     assert gateway.runtime.agent.messages is agent
     assert isinstance(gateway.runtime.stt, OpenAIStreamingSTT)
+    assert gateway.runtime.stt._pause_ms == 1100
     assert isinstance(gateway.runtime.tts, OpenAITTSProvider)
     settings.backend_tts_model = " "
     assert build_twilio_gateway(settings, agent) is None

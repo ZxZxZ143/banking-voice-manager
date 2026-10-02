@@ -311,7 +311,7 @@ def build_vonage_gateway(settings: Settings, messages) -> VonageGateway | None:
         key = settings.openai_api_key.get_secret_value()
         runtime = PhoneRuntime(
             messages,
-            OpenAIStreamingSTT(api_key=key),
+            OpenAIStreamingSTT(api_key=key, pause_ms=settings.phone_endpoint_silence_ms),
             OpenAITTSProvider(
                 api_key=key, model=settings.backend_tts_model, voice=settings.backend_tts_voice
             ),

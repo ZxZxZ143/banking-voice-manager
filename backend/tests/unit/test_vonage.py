@@ -921,10 +921,12 @@ def test_application_wiring_reuses_real_speech_and_shared_messages():
         openai_router_model="offline-router",
         backend_tts_model="offline-tts",
         backend_tts_voice="offline-voice",
+        phone_endpoint_silence_ms=1000,
     )
     gateway = build_vonage_gateway(settings, agent)
     assert gateway.runtime.agent.messages is agent
     assert isinstance(gateway.runtime.stt, OpenAIStreamingSTT)
+    assert gateway.runtime.stt._pause_ms == 1000
     assert isinstance(gateway.runtime.tts, OpenAITTSProvider)
     settings.vonage_signature_secret = None
     assert build_vonage_gateway(settings, agent) is None

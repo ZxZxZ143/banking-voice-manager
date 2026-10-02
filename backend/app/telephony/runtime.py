@@ -34,6 +34,16 @@ class _Capture:
     queue: asyncio.Queue[StreamInput] = field(default_factory=lambda: asyncio.Queue(maxsize=16))
     accepting: bool = True
     backpressure_logged: bool = False
+    speech_end_at: float | None = None
+    endpoint_at: float | None = None
+
+
+@dataclass(frozen=True)
+class _TurnTiming:
+    turn: int
+    final_at: float
+    speech_end_at: float | None
+    endpoint_at: float | None
 
 
 @dataclass
@@ -43,6 +53,7 @@ class _Call:
     turn_task: asyncio.Task | None = None
     capture_tasks: set[asyncio.Task] = field(default_factory=set)
     final_ids: set[str] = field(default_factory=set)
+    turn_number: int = 0
 
 
 class PhoneRuntime:
@@ -75,6 +86,28 @@ class PhoneRuntime:
 
     def _current(self, call: _Call) -> bool:
         return self._calls.get(call.session.call_id) is call
+
+    @staticmethod
+    def _latency(
+        call: _Call,
+        stage: str,
+        turn: int,
+        at: float,
+        duration_ms: float = 0,
+        basis: str = "stage",
+    ) -> None:
+        # Fixed stage names/IDs and monotonic durations only; no content or credentials.
+        logger.info(
+            "phone latency stage=%s call_id=%s session_id=%s turn=%s "
+            "monotonic_ms=%.3f duration_ms=%.3f basis=%s",
+            stage,
+            call.session.call_id,
+            call.session.session_id,
+            turn,
+            at * 1000,
+            duration_ms,
+            basis,
+        )
 
     def _record(self, call: _Call, event_type: EventType, **fields: Any) -> None:
         try:
@@ -186,6 +219,40 @@ class PhoneRuntime:
             nonlocal activity_logged
             if not self._current(call) or call.capture is not capture or not capture.accepting:
                 return
+            if event.get("type") == "activity" and event.get("silence_ms") == 0:
+                capture.speech_end_at = None  # Speech resumed after a short, non-final pause.
+            if event.get("type") in ("speech.end", "endpoint.decided"):
+                at = event.get("at")
+                if isinstance(at, (int, float)) and math.isfinite(at):
+                    if event["type"] == "speech.end":
+                        capture.speech_end_at = at
+                        self._latency(
+                            call, "speech_end", call.turn_number + 1, at, basis="last_vad_positive"
+                        )
+                    else:
+                        capture.endpoint_at = at
+                        silence_ms = event.get("silence_ms")
+                        if isinstance(silence_ms, int) and 0 <= silence_ms <= 150000:
+                            logger.info(
+                                "phone endpointing_decision call_id=%s turn=%s silence_ms=%s",
+                                call.session.call_id,
+                                call.turn_number + 1,
+                                silence_ms,
+                            )
+                        elapsed = (
+                            (at - capture.speech_end_at) * 1000
+                            if (capture.speech_end_at is not None)
+                            else 0
+                        )
+                        self._latency(
+                            call,
+                            "endpointing_decision",
+                            call.turn_number + 1,
+                            at,
+                            elapsed,
+                            "speech_end" if elapsed else "unavailable",
+                        )
+                return
             if vonage and event.get("type") == "activity" and not activity_logged:
                 activity_logged = True
                 logger.info("phone stt_activity call_id=%s", call.session.call_id)
@@ -251,6 +318,23 @@ class PhoneRuntime:
             call.final_ids.add(item_id)
         # Admission is synchronous before any await; competing finals are rejected, not queued.
         call.session.status = "processing"
+        final_at = perf_counter()
+        call.turn_number += 1
+        timing = _TurnTiming(
+            call.turn_number,
+            final_at,
+            call.capture.speech_end_at if call.capture else None,
+            call.capture.endpoint_at if call.capture else None,
+        )
+        logger.info("phone stt_final call_id=%s session_id=%s", call_id, call.session.session_id)
+        self._latency(
+            call,
+            "stt_final",
+            timing.turn,
+            final_at,
+            (final_at - timing.endpoint_at) * 1000 if timing.endpoint_at is not None else 0,
+            "endpointing_decision" if timing.endpoint_at is not None else "unavailable",
+        )
         if call.capture is not None:
             call.capture.accepting = False
         language = event.get("language")
@@ -264,7 +348,7 @@ class PhoneRuntime:
             language=language if language in ("ru", "kk", "mixed") else None,
             latency={"stt": latency} if isinstance(latency, (int, float)) else None,
         )
-        task = asyncio.create_task(self._turn(call, text))
+        task = asyncio.create_task(self._turn(call, text, timing))
         call.turn_task = task
 
         def clear_turn(done: asyncio.Task) -> None:
@@ -289,24 +373,37 @@ class PhoneRuntime:
         # Adapter fallback only; no language classification or business routing.
         return session.language if session.language in ("ru", "kk", "mixed") else "ru"
 
-    async def _turn(self, call: _Call, text: str) -> None:
-        started = perf_counter()
-        logger.info(
-            "phone stt_final call_id=%s session_id=%s",
-            call.session.call_id,
-            call.session.session_id,
-        )
+    async def _turn(self, call: _Call, text: str, timing: _TurnTiming) -> None:
+        started = timing.final_at
         try:
             async with asyncio.timeout(self.turn_timeout_seconds):
+                agent_started = perf_counter()
+                self._latency(
+                    call,
+                    "agent_start",
+                    timing.turn,
+                    agent_started,
+                    (agent_started - started) * 1000,
+                    "stt_final",
+                )
                 response = await self.agent.respond(call.session.session_id, text)
+                agent_done = perf_counter()
                 if not self._current(call):
                     return
+                self._latency(
+                    call,
+                    "agent_done",
+                    timing.turn,
+                    agent_done,
+                    (agent_done - agent_started) * 1000,
+                    "agent_start",
+                )
                 logger.info(
                     "phone agent_response call_id=%s session_id=%s status=%s agent_ms=%.1f",
                     call.session.call_id,
                     call.session.session_id,
                     response.conversation_status,
-                    (perf_counter() - started) * 1000,
+                    (agent_done - agent_started) * 1000,
                 )
                 call.session.conversation_status = response.conversation_status
                 try:
@@ -327,23 +424,67 @@ class PhoneRuntime:
                     logger.warning("Phone response event recording failed")
                 call.session.status = "speaking"
                 tts_started = perf_counter()
+                self._latency(
+                    call,
+                    "tts_start",
+                    timing.turn,
+                    tts_started,
+                    (tts_started - agent_done) * 1000,
+                    "agent_done",
+                )
                 speech = await self.tts.synthesize(
                     response.response_text, self._reply_language(response, call.session)
                 )
                 if not self._current(call):
                     return
+                tts_ready = perf_counter()
+                self._latency(
+                    call,
+                    "tts_ready",
+                    timing.turn,
+                    tts_ready,
+                    (tts_ready - tts_started) * 1000,
+                    "tts_start",
+                )
                 logger.info(
                     "phone tts_ready call_id=%s session_id=%s tts_ms=%.1f",
                     call.session.call_id,
                     call.session.session_id,
-                    (perf_counter() - tts_started) * 1000,
+                    (tts_ready - tts_started) * 1000,
+                )
+                playback_started = perf_counter()
+                self._latency(
+                    call,
+                    "playback_start",
+                    timing.turn,
+                    playback_started,
+                    (playback_started - tts_ready) * 1000,
+                    "tts_ready",
                 )
                 await self.provider.send_audio(call.session.call_id, speech)
+                playback_complete = perf_counter()
+                self._latency(
+                    call,
+                    "playback_complete",
+                    timing.turn,
+                    playback_complete,
+                    (playback_complete - playback_started) * 1000,
+                    "playback_start",
+                )
+                origin = timing.speech_end_at if timing.speech_end_at is not None else started
+                self._latency(
+                    call,
+                    "total_turn",
+                    timing.turn,
+                    playback_complete,
+                    (playback_complete - origin) * 1000,
+                    "speech_end" if timing.speech_end_at is not None else "stt_final",
+                )
                 logger.info(
                     "phone turn_complete call_id=%s session_id=%s total_ms=%.1f",
                     call.session.call_id,
                     call.session.session_id,
-                    (perf_counter() - started) * 1000,
+                    (playback_complete - started) * 1000,
                 )
                 if not self._current(call):
                     return

@@ -27,7 +27,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   clear, lifecycle cleanup, real shared STT / MessageService / backend OpenAI TTS composition.
   Opt-in via TWILIO_ENABLED; absent settings fail visibly without mock fallback.
   Persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
-- **Implemented Vonage outbound trial adapter (PSTN/WS user-confirmed; live speech unverified):** explicit one-call CLI
+- **Implemented Vonage outbound trial adapter (full live flow user-confirmed; latency tuning unverified):** explicit one-call CLI
   with application JWT, account-working FROM 12345678901 and configured verified signup TO; signed answer /
   event callbacks and WS, L16 16k ↔ PCM24k/real TTS conversion, native notify/clear playback,
   shared PhoneRuntime/STT/MessageService/events. No rented number required. Twilio retained;
@@ -197,6 +197,10 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
   existing SpeechResult and the 4,000-character SpeechRequest limit. Defaults: 180s turn timeout,
   1s cleanup waits, 16-frame queues. Registry: 100 active/1,000 total IDs; refuses new calls at
   the total budget rather than allowing closed-call replay. Use a single runtime/process.
+  Phone factories use PHONE_ENDPOINT_SILENCE_MS (1200ms; 800–5000), while web stays 2500ms.
+  Monotonic, numbered per-turn stage logs cover VAD/endpoint/final, Agent, TTS and acknowledged
+  playback; provider logs isolate conversion/first-frame submission. Definitions and checks:
+  `docs/PHONE_TURN_LATENCY.md`. No Agent/TTS model or prompt changes.
 - `api/routes/twilio.py`, `telephony/twilio_gateway.py`: POST /api/v1/telephony/twilio/voice
   (signed form → Connect/Stream + Hangup TwiML), WS /api/v1/telephony/twilio/media (signed
   handshake → validated connected/start/media/mark/stop/ignored DTMF). Pinned HTTPS origin,
@@ -212,7 +216,8 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
   expose control type, first audio, STT activity, frame totals and close code/reason.
   Vonage opts into bounded audio-admission backpressure during STT startup (16-frame queue,
   45s blocked-admission bound); generic/Twilio defaults stay unchanged. Reproduction/logs:
-  `docs/VONAGE_WEBSOCKET_INVESTIGATION.md`. Full live speech retest remains required.
+  `docs/VONAGE_WEBSOCKET_INVESTIGATION.md`. User confirms full live speech after that fix;
+  new 1200ms phone endpointing/latency instrumentation needs a real-call retest.
 - `telephony/vonage_calls.py`, `scripts/start_vonage_call.py`: one CLI call to configured
   verified signup destination via official Voice-only SDK/application ID + RSA key JWT;
   no API secret required for dialing, 10s timeout and one SDK attempt, no public dialer.
@@ -278,7 +283,8 @@ ROUTER_MAX_OUTPUT_TOKENS (2500), BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
 Phone names: TWILIO_ENABLED (false), TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN (SecretStr),
-TWILIO_PHONE_NUMBER, PUBLIC_BASE_URL (HTTPS origin), BACKEND_TTS_MODEL, BACKEND_TTS_VOICE.
+TWILIO_PHONE_NUMBER, PUBLIC_BASE_URL (HTTPS origin), BACKEND_TTS_MODEL, BACKEND_TTS_VOICE,
+PHONE_ENDPOINT_SILENCE_MS (1200ms, validated 800–5000; phone only).
 Vonage names: VONAGE_ENABLED (false), VONAGE_APPLICATION_ID, VONAGE_PRIVATE_KEY_PATH,
 VONAGE_API_KEY, VONAGE_API_SECRET (optional/unused for this Voice flow),
 VONAGE_SIGNATURE_SECRET (Dashboard webhook signature secret), VONAGE_TEST_FROM_NUMBER
@@ -341,9 +347,9 @@ and STT timing stay on the runtime side; only session_id/text cross the Core API
 Phone next: configure Vonage application/key, signed callback secret, verified signup TO,
 account-working FROM12345678901, HTTPS/WSS tunnel and existing OpenAI/TTS settings; follow outbound
 trial checklist in `docs/PHONE_RUNTIME.md` and run `python scripts/start_vonage_call.py`.
-Vonage PSTN answer/WS upgrade are user-confirmed; repeat the live call to verify speech
-after the STT startup backpressure fix. Root .env retains working FROM12345678901. No number
-purchase is required. Twilio remains available. Verified: 471 backend/37 frontend tests,
+Vonage/STT/Agent/TTS are user-confirmed end-to-end; repeat live calls to measure shorter
+phone endpointing with comparable timing boundaries. Root .env retains working FROM12345678901. No number
+purchase is required. Twilio remains available. Verified: 475 backend/37 frontend tests,
 all three phone smokes, typecheck/build/lint/format.
 Offline: generic, Twilio and Vonage smoke scripts. Actual transfer/shared event API deferred.
 

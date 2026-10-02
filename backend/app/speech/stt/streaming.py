@@ -27,11 +27,15 @@ class StreamingSTT(Protocol):
         ...
 
 
-async def relay_stream(receive: ReceiveInput, emit: EmitEvent, upstream, detector):
+async def relay_stream(
+    receive: ReceiveInput, emit: EmitEvent, upstream, detector, *, phone_timing: bool = False
+):
     committed_at = None
     ended = asyncio.Event()
     total_bytes = 0
     start = perf_counter()
+    last_speech_at = None
+    speech_end_reported = False
 
     async def commit():
         nonlocal committed_at
@@ -42,11 +46,19 @@ async def relay_stream(receive: ReceiveInput, emit: EmitEvent, upstream, detecto
             ended.set()
             return
         committed_at = perf_counter()
+        if phone_timing:
+            await emit(
+                {
+                    "type": "endpoint.decided",
+                    "at": committed_at,
+                    "silence_ms": detector.tracker.silence_ms,
+                }
+            )
         await emit({"type": "committed"})
         await upstream.send(json.dumps({"type": "input_audio_buffer.commit"}))
 
     async def receive_audio():
-        nonlocal total_bytes
+        nonlocal total_bytes, last_speech_at, speech_end_reported
         while not ended.is_set():
             message = await receive()
             if message.kind == "cancel":
@@ -69,6 +81,14 @@ async def relay_stream(receive: ReceiveInput, emit: EmitEvent, upstream, detecto
                     )
                 )
                 finished, probability = await asyncio.to_thread(detector.feed, pcm)
+                if phone_timing and detector.tracker.has_speech:
+                    if detector.tracker.silence_ms == 0:
+                        last_speech_at = perf_counter()
+                        speech_end_reported = False
+                    elif last_speech_at is not None and not speech_end_reported:
+                        # Last VAD-positive processing time, not an exact acoustic timestamp.
+                        speech_end_reported = True
+                        await emit({"type": "speech.end", "at": last_speech_at})
                 await emit(
                     {
                         "type": "activity",
