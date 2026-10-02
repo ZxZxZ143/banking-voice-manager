@@ -1,20 +1,17 @@
-"""The existing public response schema, projected from the shared turn result."""
-
 from pydantic import Field
 
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract
-from app.packs.insurance_manager.agent.schemas import RouterDecision
-from app.packs.insurance_manager.state import DialogState
-from app.risk.models import RiskAssessment
+from app.packs.fraud_security.models import FraudPublicState
+from app.risk.models import RiskAssessment, SecurityDecision
 from app.tracing.models import TraceRecord
 
 
-class InsuranceMessageResponse(Contract):
+class FraudMessageResponse(Contract):
     session_id: str
     response_text: str
-    routing: RouterDecision
-    state: DialogState
+    routing: SecurityDecision
+    state: FraudPublicState
     trace: TraceRecord
     conversation_status: ConversationStatus
     risk: RiskAssessment | None = Field(default=None, exclude_if=lambda v: v is None)

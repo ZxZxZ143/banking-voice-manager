@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { VoiceTranscript } from '../../types/agent';
+import { redactAuthentication } from '../../runtime/privacy';
 import { finalVoiceTranscript, type VoiceControlsHandle } from './voiceRuntimeBridge';
 
 type Run = {
@@ -27,8 +28,9 @@ function release(run: Run) {
 export const VoiceControls = forwardRef<VoiceControlsHandle, {
   sessionId: string;
   enabled: boolean;
+  securityQuestion?: unknown;
   onTranscript: (transcript: VoiceTranscript) => void;
-}>(function VoiceControls({ sessionId, enabled, onTranscript }, ref) {
+}>(function VoiceControls({ sessionId, enabled, onTranscript, securityQuestion }, ref) {
   const active = useRef<Run | null>(null);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -192,7 +194,7 @@ export const VoiceControls = forwardRef<VoiceControlsHandle, {
   }));
 
   function download() {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ source, text, pause_ms: pauseMs, metrics }, null, 2)],
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ source, text: redactAuthentication(text, securityQuestion), pause_ms: pauseMs, metrics }, null, 2)],
       { type: 'application/json' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'voice-test.json'; anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -208,7 +210,7 @@ export const VoiceControls = forwardRef<VoiceControlsHandle, {
     </div>
     <p role="status" className="voice-status">{status}</p>
     <label htmlFor="voice-transcript">Транскрипция {busy ? '· промежуточная' : ''}</label>
-    <textarea id="voice-transcript" rows={2} readOnly value={text} placeholder="Здесь появится распознанная речь…" />
+    <textarea id="voice-transcript" rows={2} readOnly value={redactAuthentication(text, securityQuestion)} placeholder="Здесь появится распознанная речь…" />
     {error && <p className="error" role="alert">{error}</p>}
     <details className="developer-tools">
       <summary>Диагностика голоса · пауза, файл, задержки</summary>

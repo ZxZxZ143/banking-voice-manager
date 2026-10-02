@@ -102,6 +102,7 @@ def test_production_registry_manifest_and_owned_capabilities():
         "product_promoter",
         "card_promoter",
         "loan_promoter",
+        "fraud_security",
     ]
     pack = built.registry.get()
     assert built.registry.exists("insurance_manager")

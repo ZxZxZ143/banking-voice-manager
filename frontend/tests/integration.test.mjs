@@ -32,7 +32,8 @@ test('final STT events use the HTTP contract and reply language, keeping one ses
     }
     assert.equal(url, 'http://agent.example/api/message');
     const body = JSON.parse(options.body);
-    assert.deepEqual(Object.keys(body).sort(), ['session_id', 'text']);
+    assert.deepEqual(Object.keys(body).sort(), ['channel', 'session_id', 'text']);
+    assert.equal(body.channel, 'voice');
     requests.push(body);
     return new Response(JSON.stringify(responses[requests.length - 1]), {
       headers: { 'Content-Type': 'application/json' },

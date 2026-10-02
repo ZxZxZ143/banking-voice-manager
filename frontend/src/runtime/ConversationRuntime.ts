@@ -4,6 +4,8 @@ import type {
 import type { AgentClient } from '../services/agentClient';
 import type { TtsService } from '../services/tts';
 import { isScenarioPack, isSalesPack, scenarioPackNames } from '../types/agent.ts';
+import { redactAuthentication } from './privacy.ts';
+import { mayNeedPrecaution } from './securityCue.ts';
 
 export interface VoiceInputController {
   startListening(): Promise<void> | void;
@@ -25,6 +27,7 @@ export interface ConversationSnapshot {
   latestState: unknown;
   sttLatencyMs: number | null;
   ttsFirstAudioMs: number | null;
+  safetyFirstAudioMs: number | null;
 }
 
 const initialSnapshot = (): ConversationSnapshot => ({
@@ -42,6 +45,7 @@ const initialSnapshot = (): ConversationSnapshot => ({
   latestState: null,
   sttLatencyMs: null,
   ttsFirstAudioMs: null,
+  safetyFirstAudioMs: null,
 });
 
 function errorMessage(cause: unknown): string {
@@ -49,7 +53,9 @@ function errorMessage(cause: unknown): string {
 }
 
 function replyLanguage(response: AgentMessageResponse, transcript: VoiceTranscript): string | undefined {
-  for (const context of [response.state, response.routing]) {
+  const guard = typeof response.routing === 'object' && response.routing !== null
+    && 'kind' in response.routing && response.routing.kind === 'security_guidance';
+  for (const context of guard ? [response.routing, response.state] : [response.state, response.routing]) {
     if (typeof context === 'object' && context !== null && 'response_language' in context
       && (context.response_language === 'ru' || context.response_language === 'kk')) {
       return context.response_language;
@@ -199,15 +205,18 @@ export class ConversationRuntime {
   async handleTranscript(transcript: VoiceTranscript): Promise<void> {
     // Reject even a late final event from capture cancelled by the text-only toggle.
     if (!this.snapshot.voiceInputEnabled) return;
-    await this.processTranscript(transcript);
+    await this.processTranscript(transcript, false, true);
   }
 
-  private async processTranscript(transcript: VoiceTranscript, opening = false): Promise<void> {
-    const text = transcript.text.trim();
+  private async processTranscript(transcript: VoiceTranscript, opening = false, voice = false): Promise<void> {
+    const state = this.snapshot.latestState;
+    const question = typeof state === 'object' && state !== null && 'pending_question' in state ? state.pending_question : null;
+    const text = redactAuthentication(transcript.text.trim(), question).slice(0, 10_000);
     if ((!text && !opening) || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
 
     const generation = this.generation;
-    this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null });
+    const turnStarted = performance.now();
+    this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null, safetyFirstAudioMs: null });
     try {
       await this.runVoiceOperation('stopListening');
       if (!this.isCurrent(generation)) return;
@@ -217,12 +226,39 @@ export class ConversationRuntime {
         }],
       });
       const requestedPack = this.snapshot.requestedPack;
-      const response = opening && this.agentClient.startScenario
-        ? await this.agentClient.startScenario({session_id: this.snapshot.sessionId,
+      // Keep one authoritative message request. Attach handlers immediately so a
+      // provider error while early advice is spoken cannot become an unhandled rejection.
+      const pendingResponse = (opening && this.agentClient.startScenario
+        ? this.agentClient.startScenario({session_id: this.snapshot.sessionId,
           scenario_mode: requestedPack ?? this.snapshot.activePack})
-        : await this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text,
+        : this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text,
+        ...(voice ? { channel: 'voice' as const } : {}),
         ...(requestedPack ? { scenario_mode: requestedPack } : {}),
-      });
+      })).then(value => ({value}), error => ({error}));
+      let spokenPrecaution = '';
+      let precautionAudioMs: number | null = null;
+      if (!opening && this.agentClient.securityPrecaution && mayNeedPrecaution(text)) {
+        try {
+          const language = typeof state === 'object' && state !== null && 'response_language' in state
+            && state.response_language === 'kk' ? 'kk' : 'ru';
+          const cue = await this.agentClient.securityPrecaution({text, response_language: language});
+          if (!this.isCurrent(generation)) return;
+          if (cue.response_text) {
+            this.update({runtimeStatus: 'speaking'});
+            const cueStarted = performance.now();
+            const audio = await this.tts.speak(cue.response_text, cue.response_language);
+            if (!this.isCurrent(generation)) return;
+            spokenPrecaution = cue.response_text;
+            precautionAudioMs = audio.firstAudioMs ?? null;
+            this.update({safetyFirstAudioMs: audio.firstAudioMs === undefined ? null : cueStarted - turnStarted + audio.firstAudioMs});
+          }
+        } catch { /* Optional early advice failure leaves the authoritative turn intact. */ }
+        if (!this.isCurrent(generation)) return;
+        this.update({runtimeStatus: 'processing'});
+      }
+      const settled = await pendingResponse;
+      if ('error' in settled) throw settled.error;
+      const response = settled.value;
       if (!this.isCurrent(generation)) return;
       const trace = response.trace as Record<string, unknown> | undefined;
       const returnedPack = trace?.scenario_pack_id;
@@ -242,9 +278,12 @@ export class ConversationRuntime {
         conversationStatus: response.conversation_status,
         runtimeStatus: 'speaking',
       });
-      const ttsResult = await this.tts.speak(response.response_text, replyLanguage(response, transcript));
+      const remaining = spokenPrecaution && response.response_text.includes(spokenPrecaution)
+        ? response.response_text.replace(spokenPrecaution, '').trim() : response.response_text;
+      const ttsResult = remaining
+        ? await this.tts.speak(remaining, replyLanguage(response, transcript)) : {};
       if (!this.isCurrent(generation)) return;
-      this.update({ ttsFirstAudioMs: ttsResult.firstAudioMs ?? null });
+      this.update({ ttsFirstAudioMs: precautionAudioMs ?? ttsResult.firstAudioMs ?? null });
       if (response.conversation_status === 'handoff' || response.conversation_status === 'ended') {
         this.update({ runtimeStatus: response.conversation_status });
         return;

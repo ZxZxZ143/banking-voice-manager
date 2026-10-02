@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field, SerializeAsAny
 
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language
+from app.risk.models import RiskContext
 from app.tracing.models import TraceRecord
 
 ContextLifecycle = Literal["inactive", "active", "suspended", "resumed", "completed"]
@@ -85,6 +86,7 @@ class ScenarioContextEntry(Contract):
     lifecycle: ContextLifecycle = "inactive"
     state: SerializeAsAny[Contract]
     result: SerializeAsAny[ScenarioResult] | None = None
+    public_state: SerializeAsAny[Contract] | None = None
 
 
 class ConversationContext(Contract):
@@ -92,6 +94,7 @@ class ConversationContext(Contract):
     active_scenario_pack: str | None = None
     scenario_contexts: dict[str, ScenarioContextEntry] = Field(default_factory=dict)
     pending_switch: "PendingPackSwitch | None" = None
+    risk_context: RiskContext = Field(default_factory=RiskContext)
 
 
 class PendingPackSwitch(Contract):

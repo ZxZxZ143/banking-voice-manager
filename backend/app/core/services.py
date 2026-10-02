@@ -7,6 +7,7 @@ from pydantic import SecretStr
 from app.core.config import Settings
 from app.dialog.message import MessageService
 from app.dialog.store import InMemoryDialogStore
+from app.packs.fraud_security.pack import FraudSecurityPack
 from app.packs.insurance_manager.agent.router import Router
 from app.packs.insurance_manager.pack import INSURANCE_MANIFEST, build_insurance_pack
 from app.packs.insurance_manager.scenarios.decision_policy import PolicySettings
@@ -14,6 +15,9 @@ from app.packs.product_promoter.agent import ProductAgent
 from app.packs.product_promoter.catalog import load_catalog
 from app.packs.product_promoter.pack import ProductPromoterPack
 from app.packs.registry import ScenarioRegistry
+from app.risk.agent import RiskAgent
+from app.risk.policy import load_policy
+from app.risk.service import RiskIntelligence
 from app.tracing.collector import TraceCollector
 from app.triage.service import TriageService
 
@@ -36,6 +40,7 @@ class Services:
     traces: TraceCollector
     messages: MessageService
     triage: TriageService
+    risk: RiskIntelligence | None = None
 
     @property
     def insurance(self):
@@ -118,6 +123,19 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
     registry.register(
         ProductPromoterPack(products, ProductAgent(transport, products), campaign="loan")
     )
+    intelligence = RiskIntelligence(
+        RiskAgent(
+            replace(
+                transport,
+                router_timeout_seconds=min(
+                    transport.router_timeout_seconds, settings.risk_timeout_seconds
+                ),
+                router_max_output_tokens=min(transport.router_max_output_tokens, 1000),
+            )
+        ),
+        load_policy(settings.security_policy_path),
+    )
+    registry.register(FraudSecurityPack(intelligence))
     dialogs = InMemoryDialogStore()
     traces = TraceCollector()
     messages = MessageService(
@@ -127,5 +145,8 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         pack.policies,
         pack.processor.replies,
         registry=registry,
+        # Legacy Router fixtures isolate Insurance business behavior. Stage 4 tests
+        # explicitly inject Risk fixtures; every normal production build enables Risk.
+        risk=intelligence if router_override is None else None,
     )
-    return Services(registry, dialogs, traces, messages, TriageService())
+    return Services(registry, dialogs, traces, messages, TriageService(), risk=intelligence)

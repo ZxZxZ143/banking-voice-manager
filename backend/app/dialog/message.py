@@ -24,11 +24,12 @@ class MessageService(SharedMessageService):
         replies: RoutingReplyGenerator,
         *,
         registry: ScenarioRegistry | None = None,
+        risk=None,
     ) -> None:
         if registry is None:
             registry = ScenarioRegistry(default_pack_id=INSURANCE_MANIFEST.id)
             registry.register(InsuranceManagerPack(InsuranceTurnProcessor(router, policy, replies)))
-        super().__init__(registry, dialogs, traces)
+        super().__init__(registry, dialogs, traces, risk=risk)
 
     @property
     def router(self) -> Router:

@@ -4,6 +4,7 @@ from pydantic import Field, JsonValue
 
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
+from app.risk.models import RiskAssessment
 from app.tracing.selections import ScenarioScore, ScenarioSelection
 
 Milliseconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
@@ -27,6 +28,8 @@ class LatencyRecord(Contract):
     response: Milliseconds | None = None
     business: Milliseconds | None = None
     composer: Milliseconds | None = None
+    risk_precheck: Milliseconds | None = Field(default=None, exclude_if=lambda v: v is None)
+    risk_agent: Milliseconds | None = Field(default=None, exclude_if=lambda v: v is None)
     tts_first_audio: Milliseconds | None = None
     total: Milliseconds | None = None
 
@@ -69,6 +72,7 @@ class TraceRecord(Contract):
     next_action: str | None = None
     conversation_status: ConversationStatus = "active"
     handoff: bool = False
+    risk: RiskAssessment | None = Field(default=None, exclude_if=lambda v: v is None)
     manager_summary: dict[str, JsonValue] | None = Field(
         default=None, exclude_if=lambda v: v is None
     )

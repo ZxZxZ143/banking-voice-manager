@@ -7,6 +7,7 @@ import { useHealth } from './hooks/useHealth';
 import { ConversationRuntime } from './runtime/ConversationRuntime';
 import { HttpAgentClient, MockAgentClient } from './services/agentClient';
 import { BrowserTtsService } from './services/tts/BrowserTtsService';
+import { RiskPanel } from './components/security/SecurityPanels';
 
 const mockMode = import.meta.env.DEV && import.meta.env.VITE_USE_MOCK_AGENT === 'true';
 
@@ -24,7 +25,7 @@ export default function App() {
     <main>
       <header>
         <h1>Banking Voice Platform</h1>
-        <p>Insurance Manager · Product Promoter · синтетические данные Saqta Insurance и Merei Demo Bank</p>
+        <p>Страхование · продажи депозита, карты и кредита · Fraud & Security · синтетические данные Saqta Insurance и Merei Demo Bank</p>
         <p className="muted">Agent: {mockMode ? 'MOCK (без маршрутизации)' : 'HTTP /api/message'} · TTS: голос браузера</p>
       </header>
       <section className="health" aria-label="Состояние backend">
@@ -39,7 +40,10 @@ export default function App() {
       </section>
       <div className="workspace">
         <ConversationPanel runtime={runtime} snapshot={snapshot} view={traceView} />
-        <TracePanel view={traceView} />
+        <aside>
+          <RiskPanel risk={snapshot.lastResponse?.risk} />
+          <TracePanel view={traceView} />
+        </aside>
       </div>
       <details className="developer-tools tts-tools">
         <summary>Инструменты разработчика · проверка голоса</summary>

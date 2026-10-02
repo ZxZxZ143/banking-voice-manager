@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     openai_response_model: str | None = None
     demo_test_phone: SecretStr | None = None
     router_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
+    risk_timeout_seconds: float = Field(default=8.0, gt=0, le=15)
     router_max_output_tokens: int = Field(default=2500, ge=256, le=10000)
     router_temperature: float | None = Field(default=None, ge=0, le=2)
     router_accept_threshold: float = Field(default=0.75, ge=0, le=1)
@@ -31,3 +32,4 @@ class Settings(BaseSettings):
     enable_dev_stand: bool = False
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"
     product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"
+    security_policy_path: Path = PROJECT_ROOT / "data" / "security" / "policy.json"

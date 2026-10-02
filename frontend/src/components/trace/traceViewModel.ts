@@ -119,6 +119,7 @@ function handoff(value: unknown): TraceViewModel['handoff'] {
 const latencyStages = [
   ['stt', 'STT'], ['triage', 'Triage'], ['router', 'Router'], ['policy', 'Policy'],
   ['tools', 'Tools'], ['business', 'Business'], ['composer', 'Composer'],
+  ['risk_precheck', 'Risk precheck'], ['risk_agent', 'Risk Agent'],
   ['response', 'Response'], ['tts_first_audio', 'TTS first audio'],
   ['total', 'Total'],
 ] as const;
@@ -129,6 +130,8 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
   const state = record(snapshot.latestState);
   const latencyData = record(trace?.latency_ms);
   const latency: TraceViewModel['latency'] = [];
+  const safetyAudio = formatLatency(snapshot.safetyFirstAudioMs);
+  if (safetyAudio) latency.push({label: 'Safety first audio', value: safetyAudio, source: 'browser'});
   for (const [key, label] of latencyStages) {
     const agentValue = formatLatency(latencyData?.[key]);
     if (agentValue) {

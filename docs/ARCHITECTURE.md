@@ -1,7 +1,7 @@
-# Scenario Pack architecture — Stage 3.2
+# Scenario Pack architecture — Stage 4
 
 Production registers `insurance_manager` and three proactive campaigns: `product_promoter`
-(deposit), `card_promoter` and `loan_promoter`. The sales campaigns reuse one implementation
+(deposit), `card_promoter`, `loan_promoter`, plus consultative `fraud_security`. The sales campaigns reuse one implementation
 with distinct manifests and isolated contexts. Shared sessions, HTTP, voice, traces and lifecycle remain
 independent of their business logic. No database, queue, RAG or dynamic plugin loading
 is introduced.
@@ -9,6 +9,11 @@ is introduced.
 ```text
 Browser text / final STT → POST /api/message
     → Shared Core: lock, snapshot, registry, activate/resume
+    → mask authentication values → shared Risk candidate precheck
+        → ordinary: no Risk model call → selected pack's normal turn
+        → candidate: one structured Risk Agent call (bounded, no tools/retries)
+        → relevant: source advice, selected business state/result retained
+        → Fraud selected manually: reuse the same assessment, safe fact/question policy
     → Insurance: Router → Decision Policy → grounded business facts → LLM Composer
     → Product: structured Agent → deterministic catalog policy/reply
     → out-of-domain: current assistant scope reply, no selector/forwarding
@@ -42,7 +47,7 @@ between trusted developer-controlled Python components, not an OS sandbox for pl
 `packs/contracts.py` defines the manifest, prompt, knowledge, tools, policies, state/output
 schemas, completion rules, new-context factory and `handle_turn`. Product also implements
 an optional `open_turn`; Insurance implements it too. Manifests contain public routing descriptions and no configuration
-secrets. `core/services.py` explicitly constructs and registers these four assistants.
+secrets. `core/services.py` explicitly constructs and registers these five assistants.
 
 `packs/registry.py` performs dictionary lookup, never semantic routing or dynamic import.
 Unknown IDs return 422 before any model call. New sessions default to Insurance; omitted
@@ -177,7 +182,8 @@ structured SDK call. It does not write dialogue or invent conditions. The indepe
 `data/product_promoter/catalog.json` contains eight synthetic Merei Demo Bank products:
 three deposits, three debit/payment cards and two loans, reference date 2026-10-01.
 It also supplies fictional opening steps; the bot does not invent an existing bank app or
-approval decision. No full Loan Consultant or Fraud/Risk stage is introduced.
+approval decision. A full Loan Consultant remains unimplemented. Stage 4 adds advisory
+Fraud/Risk separately, without granting bank operation authority.
 
 `models.py` defines strict catalog, decision, preferences, local context and `SalesLeadResult`
 schemas. No identity, income, wealth, insurance or vulnerability fields exist. Context owns
@@ -232,9 +238,9 @@ never an invalid business action. Shared terminal replies preserve exactly
 
 ## HTTP, frontend and voice
 
-`POST /api/message` accepts `{session_id, text, scenario_mode?}`. Responses retain six fields:
+`POST /api/message` accepts `{session_id, text, scenario_mode?, channel?}`. Responses retain six base fields:
 session_id, response_text, routing, state, trace, conversation_status. OpenAPI declares
-Insurance, Product and legacy platform variants; production emits no switch-confirmation turn. Insurance keeps its flat
+Insurance, Product, Fraud, security-guidance and legacy platform variants; production emits no switch-confirmation turn. Optional `risk` is additive. Insurance keeps its flat
 legacy state; Product exposes only its own state/result and shown catalog records.
 
 `POST /api/conversation/start` accepts `{session_id, scenario_mode}` and opens either pack via
@@ -251,6 +257,58 @@ Voice remains pack-agnostic: PCM16/24 kHz → local Silero/OpenAI STT → final-
 → pack reply → browser TTS. Capture stops during processing/playback and resumes after
 normal speech. Handoff/ended keep it stopped, including playback failure. Opening plays
 before microphone capture starts. Partials never enter conversation history.
+
+## Shared Risk Intelligence and Fraud & Security
+
+`app/risk/` belongs to shared infrastructure. `RiskInput` allows only masked current text,
+language, text/voice channel, active assistant ID and `RiskContext`: previous stable signals,
+pending safe question, response language. It receives no full pack state, identity, catalog,
+history, prompts, tools or application Settings. Authentication values and card numbers are
+masked before any pack model/history; Risk additionally masks phones/IIN, email and URLs.
+Bare short numbers in a pending exposure answer are also masked. This is conservative
+presentation redaction, not a universal DLP guarantee.
+
+The regex precheck only identifies candidates and precautionary policy keys. It never
+assigns risk levels or signals. `RiskAgent` reuses `StructuredAgent` with `max_turns=1`,
+no tools/handoffs, `store=False`, disabled SDK tracing and no transport/model retries.
+Default deadline is eight seconds and output is capped at 1000 tokens. Failures produce
+`analysis_status=unavailable|invalid_output`, unknown relevance and no fabricated signals.
+Clear precheck hints still render advice; other optional failures remain visible in risk
+metadata while normal business processing continues.
+
+`RiskAssessment` uses stable signal enums, advisory none/low/medium/high/critical levels,
+allowlisted recommendations and application-generated reasons. Levels are neither fraud
+probabilities, customer trust/credit scores nor legal findings. The synthetic policy in
+`data/security/policy.json` owns all guidance and safe questions. No URL fetch, account
+block/freeze, transaction rejection or real security investigation occurs.
+
+Each entry keeps its last pack-produced public projection separately from private state.
+A security detour uses that safe projection and a fresh trace, preserving the selected
+business context and typed result; no business Router/Composer/Product call is made on
+that turn. The lifecycle remains active/resumed/completed as before. Only explicit
+operator/farewell may terminate it. A normal continuation then uses the retained state.
+
+The manually selected `packs/fraud_security/` consumes the same assessment once, asks at
+most one safe follow-up, tracks enum facts and asked questions, and produces
+`FraudCaseResult`. Exposed credentials, installed remote access, completed coerced
+transfers, lost card/account access concerns or a specified unknown transaction need
+human review. Global handoff means prepared demo transfer, not a real contact-center
+connection. `case_status` distinguishes open/informed/needs_review. Previous case facts
+remain in its own context; neither a Risk signal nor speech selects this pack.
+
+The common frontend renders allowlisted Risk metadata and FraudCaseResult, masks secret
+values in user history/requests/voice diagnostics and diagnostic JSON exports, and retains the existing final-only
+voice/TTS lifecycle. Guard replies use routing response_language because business state
+language is deliberately preserved. Ordinary replies keep existing language precedence.
+
+`POST /api/security/precaution` is a zero-model, session-free source lookup. The frontend
+candidate gate calls it concurrently with the single authoritative message request and
+speaks the short source sentence before awaiting model completion. Capture remains stopped.
+The canonical assistant response enters history once; already-spoken source text is removed
+only from remaining TTS audio. A failed optional cue leaves the authoritative response intact.
+It assigns no risk level or signals and cannot select assistants. Ordinary turns make no
+cue request. Browser `safetyFirstAudioMs` measures turn-to-warning audio onset; it is separate
+from backend analysis time and never derived from generated token count.
 
 Docker retains two health-checked services and loopback ports 8000/5173, Nginx HTTP/WS
 proxy, non-root backend and runtime-only `.env`. Both catalog paths are explicit in Compose.

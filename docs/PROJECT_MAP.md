@@ -3,13 +3,22 @@
 ## Purpose and requirements
 
 Banking Voice Platform: Insurance Manager for fictional Saqta Insurance and three outbound
-sales campaigns for synthetic Merei Demo Bank deposits, cards and loans. Prioritize LLM-based scenario
+sales campaigns for synthetic Merei Demo Bank deposits, cards and loans. A separately selected
+Fraud & Security assistant adds shared advisory Risk Intelligence. Prioritize LLM-based
 selection in Russian, Kazakh and mixed-language dialogue, context, ambiguity, topic
 changes, clarification and handoff. Final MVP requires voice; text remains available.
 No encoder intent classifier or hardcoded evaluation utterances.
 Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
+
+- **Stage 4:** five manually selected assistants, with `fraud_security` producing
+  `FraudCaseResult`. `app/risk/` owns typed signals/assessment, conservative candidate
+  precheck and one bounded structured Risk Agent call. Ordinary turns skip that call;
+  security advice preserves sales/Insurance state/result and never switches assistants
+  or performs bank operations. Source policy and separate 50-case evaluation live in
+  `data/security/`. Reusable Risk and Fraud case panels share the existing voice runtime.
+  Evidence and measured limits: `STAGE4_FRAUD_RISK_VALIDATION.md`.
 
 - **Outbound sales follow-up:** `product_promoter` sells a preassigned deposit;
   `card_promoter` and `loan_promoter` reuse the implementation with separate manifests/context.
@@ -20,7 +29,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   question and is separate from application consent. Full conditions remain in UI details.
   Operator/caller chooses before the call; scoring and outbound telephony remain external.
   Eight synthetic products and catalog-owned opening steps. Evidence:
-  `OUTBOUND_SALES_VALIDATION.md`. No Fraud/Risk or full Loan Consultant stage started.
+  `OUTBOUND_SALES_VALIDATION.md`. Full Loan Consultant remains unimplemented.
 
 - **Stage 3.2:** manual assistant selection only; no natural selector/forwarding.
   SDK slot schema uses source types/enums/patterns; policy status is short, with separate
@@ -29,13 +38,13 @@ Business specification: `data/starter_kit/README.ru.md`.
   operator requests, filler acknowledgement is optional. Client lookup is bounded to two
   attempts. `DEMO_TEST_PHONE` creates a runtime-only synthetic linked profile; canonical data
   stays intact. Explicit action capabilities and safe manager summaries drive handoff.
-  Evidence: `STAGE3_2_MANAGER_VALIDATION.md`. Fraud/Risk and Stage 4 are not started.
+  Evidence: `STAGE3_2_MANAGER_VALIDATION.md` (prior-stage evidence).
 
 - **Stage 3.1:** Insurance now separates Router, Decision Policy, grounded facts and a
   pack-local LLM Composer. Both packs have assistant-only openers. Insurance tracks the
   previous question/expected answer, resets repair counters on progress, normalizes requested
   numeric/spoken identifiers and masks public identifiers. Separate 32-dialogue evaluation
-  and measured evidence: `STAGE3_1_CONVERSATION_VALIDATION.md`. Stage 4 is not started.
+  and measured evidence: `STAGE3_1_CONVERSATION_VALIDATION.md` (prior-stage evidence).
   Literal trip duration survives date collection; only an explicit start allows the server
   to derive an inclusive end. Sensitive ID/contact fields are masked in public results.
 
@@ -76,6 +85,10 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
+| `backend/app/risk/` | Shared input firewall, candidate gate, typed Risk Agent, source policy and business-state-preserving guidance |
+| `backend/app/packs/fraud_security/` | Manually selected consultative security pack, safe facts/questions and FraudCaseResult |
+| `frontend/src/components/security/` | Allowlisted reusable Risk panel and Fraud case view |
+| `data/security/`, `scripts/evaluate_fraud_risk.py` | Synthetic source policy, 50-case separate live Fraud/Risk evaluation |
 | `backend/app/packs/contracts.py`, `registry.py`, `lifecycle.py` | Pack contract, manifest/modes, registry, isolated contexts and lifecycle |
 | `backend/app/packs/product_promoter/` | Product decision/state/result, deterministic catalog matching and human speech |
 | `backend/app/packs/selector.py`, `structured_agent.py` | Legacy unused selector and bounded production SDK transport |
@@ -111,6 +124,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `docs/STAGE3_VALIDATION.md` | Stage 3 product, switching, speech, live eval, Docker and security evidence |
 | `data/insurance_conversation/eval_cases.json`, `scripts/evaluate_insurance_conversation.py` | Separate 32-dialogue live conversation metrics, no style judge |
 | `docs/STAGE3_2_MANAGER_VALIDATION.md` | Stage 3.2 phone, scope, overlay, handoff, eval/browser/voice/security evidence |
+| `docs/STAGE4_FRAUD_RISK_VALIDATION.md` | Fraud/Risk architecture, live accuracy/unknowns, state preservation, browser/voice, latency and security evidence |
 | `docs/STAGE3_1_CONVERSATION_VALIDATION.md` | Stage 3.1 dialogue design, measured regressions, browser/voice/security evidence |
 | `docs/STAGE2_VALIDATION.md` | Stage 2 migration, context isolation, measured compatibility and regression results |
 
@@ -160,14 +174,15 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
 - `POST /api/message`: `{session_id, text}`; nonblank string ID up to 128 characters,
   text up to 10,000 characters, whitespace trimmed. Reuse the ID for later turns.
-  Returns `{session_id, response_text, routing, state, trace, conversation_status}`.
+  Optional `scenario_mode` selects one of the five packs; `channel=text|voice` defaults to text.
+  Returns `{session_id, response_text, routing, state, trace, conversation_status, risk?}`.
   Invalid input 422; missing key/model 503; provider failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
   Provider failures do not commit history/state/trace. Invalid structured model decisions
   become SYS_UNCLEAR with an allowlisted routing_error in trace. A source-valid already
   requested identifier may still continue the authorized active workflow; rejected new
   business selections never execute. Genuine repeated failed repairs can lead to handoff.
-  Optional `scenario_mode=insurance_manager` selects the same default; unknown packs return
+  Omitted mode continues the active pack or defaults to Insurance; unknown packs return
   422 with `unknown_scenario_pack` without an LLM call. Trace adds pack/mode/lifecycle fields.
 - `GET /dev`: standalone debug form, enabled only with `ENABLE_DEV_STAND=true` (otherwise
   404). Reuses editable session ID, shows reply/status/routing/state/trace and browser/backend
@@ -266,7 +281,7 @@ This affects replies only, not scenario selection or the recorded Router languag
 
 ## Configuration and commands
 
-Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Router fallback), ROUTER_TIMEOUT_SECONDS (45),
+Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Router fallback), ROUTER_TIMEOUT_SECONDS (45), RISK_TIMEOUT_SECONDS (8), SECURITY_POLICY_PATH,
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
@@ -317,7 +332,7 @@ persistence; agri-rag-vision is irrelevant to current requirements.
 Integrated `feature/agent-core-router-eval` with `origin/integration/voice-runtime` (0261acc),
 which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
 `origin/transcribtion` (138d5fb), without modifying teammate branches. Transcript language
-and STT timing stay on the runtime side; only session_id/text cross the Core API boundary.
+and STT timing stay on the runtime side; voice turns add channel=voice to session_id/text.
 `/dev` remains an optional separate text debugger, not the full voice stand.
 
 Next: resolve measured routing errors, improve complete RU/KK business wording and actual

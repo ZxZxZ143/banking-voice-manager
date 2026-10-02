@@ -3,11 +3,12 @@
 The frontend already owns the session ID, conversation loop, text fallback, browser TTS,
 and trace display. The integrated MVP connects these two boundaries in real HTTP mode.
 
-Stage 3 keeps voice pack-agnostic and adds two registered packs: `insurance_manager`
-and `product_promoter`. Omitted `scenario_mode` defaults to Insurance for a new session;
+Stage 4 keeps voice pack-agnostic with five packs: `insurance_manager`, `product_promoter`
+(deposit), `card_promoter`, `loan_promoter` and `fraud_security`. Omitted `scenario_mode` defaults to Insurance for a new session;
 later turns continue the active pack. Explicit mode switches in the shared locked core.
-The six response fields remain; `state`/`routing` are typed per pack, or a minimal platform
-confirmation. Insurance retains its flat state and `response_language`. Product exposes
+The six base response fields remain; `risk` is optional/additive. `state`/`routing` are typed
+per pack or a security-guidance projection; production uses manual selection only.
+Insurance retains its flat state and `response_language`. Product exposes
 `sales_lead`, shown `products` and complete `product_conditions`. The frontend must not
 derive or rewrite business conditions.
 
@@ -18,9 +19,11 @@ while listening does the same immediately. Its branded assistant opener plays be
 listening, without inserting an empty customer message. Insurance selection applies to the
 next normal message. Optional `AgentClient.startScenario` keeps fixture clients compatible.
 
-An out-of-domain turn can return `awaiting_confirmation`; the next yes/no goes through
-the ordinary message path. No switches preserve the current private context. Yes processes
-the original question in the target. UI/STT/TTS never select a pack semantically.
+An out-of-domain turn stays with its selected assistant. No confirmation or speech forwards
+it to another pack. Security advice similarly retains the business state/result and active
+assistant. Operator/Fraud selection is explicit through the UI/API; it applies to the next
+request, while all packs selected before Start receive their zero-model opener.
+UI/STT/TTS never select a pack semantically.
 Trace adds `pack_switch`, product category, shown/selected products, lead status and next
 action; absent legacy fields still render. See `ARCHITECTURE.md` for isolation and rollback.
 
@@ -39,7 +42,8 @@ await runtime.handleTranscript({ text: 'Сәлеметсіз бе', language: 'k
 
 `language` may be `ru`, `kk`, or `mixed`, and `stt_ms` is optional. The runtime passes the
 language as a fallback; TTS first uses Agent Core `state.response_language`, then routing
-response_language. Browser TTS uses `ru-RU` for `mixed` or an absent hint. The current STT
+response_language. Security guard replies use routing first, preserving the business-state
+language separately. Browser TTS uses `ru-RU` for `mixed` or an absent hint. The current STT
 final event normally has `language: null`, so the bridge omits
 the hint. Its `stt_after_commit_ms` becomes `stt_ms` when valid; this excludes endpointing
 silence and connection setup. Partials, empty results and errors never create user turns.
@@ -71,7 +75,34 @@ Valid statuses: `active`, `awaiting_user`, `awaiting_confirmation`, `handoff`, `
 `routing`, `state`, `trace`, and extra fields are optional; the UI handles partial data.
 Agent Core owns all routing and business decisions. The backend serves this endpoint;
 HTTP mode shows real failures rather than switching to mock replies. The frontend timeout
-is 60 seconds, above the 45-second per-call and 55-second conditional-selection deadlines.
+is 60 seconds. Risk candidates add at most the configured Risk deadline (eight seconds by
+default); normal business limits remain unchanged. No selector model is called.
+
+## Stage 4 risk and case views
+
+Risk candidates can receive a source safety cue through `/api/security/precaution` while
+the authoritative message is pending. The cue does not append a turn or select a pack.
+Browser `Safety first audio` timing measures onset from the user turn; Risk precheck/agent
+timings describe the backend call. Already-spoken source text is removed only from the
+remaining TTS audio, leaving the canonical response/history intact.
+
+Voice HTTP turns include `channel=voice`; ordinary text retains the existing request shape.
+The runtime masks volunteered authentication values before history/API calls. Partials
+remain diagnostic-only and their visible text is masked. Authentication collection is
+prohibited; ordinary Insurance phone/IIN identification still works.
+
+`risk` includes `analysis_status`, nullable `risk_relevant`, `level`, `signals`,
+`recommended_action`, safe enum-derived `reason` and policy `guidance_shown`. Absent risk
+means skipped analysis; unavailable analysis must never be displayed as confirmed low
+risk. `routing.kind=security_guidance` does not change `trace.scenario_pack_id` or the
+retained `state.sales_lead`/Insurance state. The separate Risk panel allowlists levels,
+signals and actions; it never calculates a score or reads arbitrary model fields.
+
+`fraud_security` is consultative, not a sales campaign. Its `state.fraud_case` contains
+`case_type`, `case_status`, stable facts, safe transaction kind, risk and guidance history,
+plus existing status/completed/handoff fields. `FraudCasePanel` only renders this pack's
+result. Manual selection keeps session/history but isolated business contexts.
+Risk precheck/agent durations are optional `trace.latency_ms` fields.
 
 ## Lifecycle and timing
 

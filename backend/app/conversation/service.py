@@ -12,6 +12,10 @@ from app.packs.contracts import (
 )
 from app.packs.lifecycle import ScenarioLifecycle
 from app.packs.registry import ScenarioRegistry
+from app.risk.guard import guidance_turn
+from app.risk.models import RiskAssessment, RiskContext
+from app.risk.privacy import redact_authentication
+from app.risk.service import RiskIntelligence, RiskRun
 from app.tracing.collector import TraceCollector
 from app.tracing.models import PackSwitch, TraceRecord
 
@@ -31,19 +35,25 @@ class MessageResult(Contract):
     state: SerializeAsAny[Contract]
     trace: TraceRecord
     conversation_status: ConversationStatus
+    risk: RiskAssessment | None = Field(default=None, exclude_if=lambda v: v is None)
     scenario_pack_id: str = Field(exclude=True)
     scenario_result: SerializeAsAny[ScenarioResult] = Field(exclude=True)
 
 
 class MessageService:
     def __init__(
-        self, registry: ScenarioRegistry, dialogs: ConversationStore, traces: TraceCollector
+        self,
+        registry: ScenarioRegistry,
+        dialogs: ConversationStore,
+        traces: TraceCollector,
+        risk: RiskIntelligence | None = None,
     ) -> None:
         self.registry = registry
         self.dialogs = dialogs
         self.traces = traces
         self.lifecycle = ScenarioLifecycle(registry)
         self.selector = None
+        self.risk = risk
 
     async def process(
         self,
@@ -52,6 +62,7 @@ class MessageService:
         scenario_mode: str | None = None,
         *,
         start_scenario: bool = False,
+        channel: str = "text",
     ) -> MessageResult:
         started = perf_counter()
         if scenario_mode is not None:
@@ -66,10 +77,30 @@ class MessageService:
             previous_pack = conversation.active_scenario_pack
             pack = self.registry.get(scenario_mode or previous_pack)
             switch_source = "explicit"
-            routed_text = text
+            routed_text = redact_authentication(text)[:10000]
+            global_context.channel = channel
             # Assistant changes require explicit API/UI selection. Never forward a turn.
             conversation.pending_switch = None
             entry = self.lifecycle.activate(conversation, pack.manifest.id, preserve_completed=True)
+            own_risk_context = getattr(entry.state, "risk_context", None)
+            if own_risk_context:
+                routed_text = redact_authentication(
+                    routed_text, own_risk_context().pending_question
+                )[:10000]
+            run = RiskRun(None, None, 0)
+            assessed_handler = getattr(pack, "handle_assessed_turn", None)
+            if self.risk and not start_scenario:
+                risk_context = (
+                    entry.state.risk_context() if assessed_handler else conversation.risk_context
+                )
+                run = await self.risk.analyze(
+                    routed_text,
+                    active_assistant=pack.manifest.id,
+                    language=global_context.language,
+                    channel=global_context.channel,
+                    context=risk_context,
+                    force=bool(assessed_handler),
+                )
             # A pack receives only its own context and a global snapshot. It cannot
             # receive the other contexts, registry, store or application Settings.
             if start_scenario:
@@ -78,6 +109,17 @@ class MessageService:
                     raise ScenarioOpeningError("This scenario does not initiate a conversation")
                 turn = await opener(
                     global_context.model_copy(deep=True), entry.state.model_copy(deep=True)
+                )
+            elif assessed_handler and self.risk:
+                turn = await assessed_handler(
+                    routed_text,
+                    global_context.model_copy(deep=True),
+                    entry.state.model_copy(deep=True),
+                    run,
+                )
+            elif run.assessment and run.assessment.guidance_shown:
+                turn = await guidance_turn(
+                    pack, global_context, entry, run, routed_text, self.risk.policy
                 )
             else:
                 turn = await pack.handle_turn(
@@ -91,7 +133,23 @@ class MessageService:
                 raise ValueError("Scenario returned an invalid result schema")
             entry.state = turn.context.model_copy(deep=True)
             entry.result = turn.result.model_copy(deep=True)
-            if entry.lifecycle == "completed" and not turn.complete_pack:
+            entry.public_state = turn.public_state.model_copy(deep=True)
+            if self.risk:
+                if assessed_handler:
+                    conversation.risk_context = turn.context.risk_context()
+                else:
+                    # Business replies cannot inherit a pending specialist question.
+                    conversation.risk_context = RiskContext(
+                        previous_signals=run.assessment.signals
+                        if run.assessment and run.assessment.risk_relevant
+                        else [],
+                        response_language=getattr(turn.routing, "response_language", "ru"),
+                    )
+            if (
+                entry.lifecycle == "completed"
+                and not turn.complete_pack
+                and getattr(turn.routing, "kind", None) != "security_guidance"
+            ):
                 entry.lifecycle = "active"
             global_context.turn_number += 1
             global_context.language = turn.language
@@ -108,7 +166,11 @@ class MessageService:
             trace.interaction_mode = pack.manifest.interaction_mode.value
             trace.context_lifecycle = entry.lifecycle
             trace.scenario_mode = pack.manifest.id
-            trace.transcript = text
+            trace.transcript = routed_text
+            trace.risk = run.assessment
+            if self.risk and not start_scenario:
+                trace.latency_ms.risk_precheck = run.precheck_ms
+                trace.latency_ms.risk_agent = run.agent_ms
             redact_trace = getattr(pack, "redact_trace", None)
             if redact_trace:
                 redact_trace(trace)
@@ -132,6 +194,7 @@ class MessageService:
                 state=turn.public_state,
                 trace=trace,
                 conversation_status=turn.result.status,
+                risk=run.assessment,
                 scenario_pack_id=pack.manifest.id,
                 scenario_result=turn.result,
             )

@@ -16,6 +16,7 @@
     "test:integration": "node --experimental-transform-types --test tests/integration.test.mjs",
     "test:voice-bridge": "node --experimental-transform-types --test tests/voiceBridge.test.mjs",
     "test:packs": "node --experimental-transform-types --test tests/packs.test.mjs",
+    "test:security": "node --experimental-transform-types --test tests/security.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -3,6 +3,7 @@ import type { AgentMessageRequest, AgentMessageResponse, ConversationStatus, Sce
 export interface AgentClient {
   sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse>;
   startScenario?(request: {session_id: string; scenario_mode: ScenarioPackId}): Promise<AgentMessageResponse>;
+  securityPrecaution?(request: {text: string; response_language: 'ru' | 'kk'}): Promise<{response_text: string; response_language: 'ru' | 'kk'}>;
 }
 
 const statuses: ConversationStatus[] = [
@@ -33,16 +34,25 @@ export class HttpAgentClient implements AgentClient {
   ) {}
 
   async sendMessage(request: AgentMessageRequest): Promise<AgentMessageResponse> {
-    return this.post('/api/message', request);
+    return parseResponse(await this.postJson('/api/message', request));
   }
 
   async startScenario(request: {session_id: string; scenario_mode: ScenarioPackId}): Promise<AgentMessageResponse> {
-    return this.post('/api/conversation/start', request);
+    return parseResponse(await this.postJson('/api/conversation/start', request));
   }
 
-  private async post(path: string, request: unknown): Promise<AgentMessageResponse> {
+  async securityPrecaution(request: {text: string; response_language: 'ru' | 'kk'}): Promise<{response_text: string; response_language: 'ru' | 'kk'}> {
+    const value = await this.postJson('/api/security/precaution', request, 1000);
+    if (!isRecord(value) || typeof value.response_text !== 'string'
+      || (value.response_language !== 'ru' && value.response_language !== 'kk')) {
+      throw new Error('Malformed security precaution response.');
+    }
+    return {response_text: value.response_text, response_language: value.response_language};
+  }
+
+  private async postJson(path: string, request: unknown, timeoutMs = this.timeoutMs): Promise<unknown> {
     let response: Response;
-    const signal = AbortSignal.timeout(this.timeoutMs);
+    const signal = AbortSignal.timeout(timeoutMs);
     try {
       response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
         method: 'POST',
@@ -73,7 +83,7 @@ export class HttpAgentClient implements AgentClient {
           : response.statusText || 'Unknown backend error';
       throw new Error(`Agent API HTTP ${response.status}: ${detail}`);
     }
-    return parseResponse(body);
+    return body;
   }
 }
 

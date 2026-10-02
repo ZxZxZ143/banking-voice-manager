@@ -5,6 +5,7 @@ import type { TraceViewModel } from '../trace/traceViewModel';
 import { VoiceControls } from '../voice/VoiceControls';
 import { createVoiceInputController, type VoiceControlsHandle } from '../voice/voiceRuntimeBridge';
 import { SalesLeadPanel } from './SalesLeadPanel';
+import { FraudCasePanel } from '../security/SecurityPanels';
 import type { ScenarioPackId } from '../../types/agent';
 import { isSalesPack, scenarioPackNames } from '../../types/agent';
 
@@ -28,6 +29,8 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
   const [text, setText] = useState('');
   const voiceControls = useRef<VoiceControlsHandle | null>(null);
   const ready = snapshot.runtimeStatus === 'listening';
+  const state = snapshot.latestState;
+  const securityQuestion = typeof state === 'object' && state !== null && 'pending_question' in state ? state.pending_question : null;
   const locallyStopped = snapshot.runtimeStatus === 'ended'
     && snapshot.conversationStatus !== 'ended' && snapshot.conversationStatus !== 'handoff';
 
@@ -52,6 +55,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
         disabled={['processing', 'speaking', 'handoff', 'ended'].includes(snapshot.runtimeStatus)}
         onChange={(event) => runtime.selectScenarioPack(event.target.value as ScenarioPackId)}>
         <option value="insurance_manager">Insurance Manager</option>
+        <option value="fraud_security">Fraud & Security</option>
         {(['product_promoter', 'card_promoter', 'loan_promoter'] as const).map(pack => (
           <option key={pack} value={pack} disabled={isSalesPack(snapshot.activePack)
             && snapshot.sessionId !== null && snapshot.activePack !== pack}>
@@ -95,7 +99,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
           {snapshot.lastResponse?.response_text && <p>{snapshot.lastResponse.response_text}</p>}
         </div>
       )}
-      {snapshot.conversationStatus === 'awaiting_user' && (
+      {snapshot.conversationStatus === 'awaiting_user' && view.conversationAct !== 'security_guidance' && (
         <div className="conversation-notice">
           <strong>{view.clarification ? 'Требуется уточнение' : 'Ожидаем ответ клиента'}</strong>
           {(view.clarification ?? snapshot.lastResponse?.response_text) && (
@@ -114,6 +118,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
       )}
       {snapshot.error && <p className="error" role="alert">{snapshot.error}</p>}
       {isSalesPack(snapshot.activePack) && <SalesLeadPanel state={snapshot.latestState} />}
+      {snapshot.activePack === 'fraud_security' && <FraudCasePanel state={snapshot.latestState} />}
       <div className="history" aria-label="История разговора" aria-live="polite">
         {snapshot.messages.length === 0 ? <p className="empty-state">История пуста.</p> : (
           <ol className="message-list">{snapshot.messages.map((message) => (
@@ -132,6 +137,7 @@ export function ConversationPanel({ runtime, snapshot, view }: Props) {
       </form>
       <p className="muted debug-id">session_id: {snapshot.sessionId ?? 'создаётся при старте'}</p>
       <VoiceControls ref={voiceControls} sessionId={snapshot.sessionId ?? ''} enabled={ready && snapshot.voiceInputEnabled}
+        securityQuestion={securityQuestion}
         onTranscript={(transcript) => { void runtime.handleTranscript(transcript); }} />
     </section>
   );

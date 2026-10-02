@@ -1,8 +1,8 @@
 # Banking Voice Platform
 
-Modular conversational platform for Russian, Kazakh and mixed speech. Insurance Manager and three outbound sales campaigns share sessions, streaming transcription, browser speech synthesis and supervisor traces. Each registered assistant owns its isolated business context. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
+Modular conversational platform for Russian, Kazakh and mixed speech. Insurance Manager, three outbound sales campaigns and Fraud & Security share sessions, streaming transcription, browser speech synthesis and supervisor traces. Each assistant owns its isolated business context. Shared Risk Intelligence adds advisory safety guidance without switching assistants. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
 
-Insurance uses the supplied **fictional Saqta Insurance** snapshot. The outbound bots use eight synthetic **Merei Demo Bank** products: three deposits, three debit/payment cards and two loans. Both catalogs have reference date **2026-10-01**. These are demonstration conditions and records. Fraud & Security and a full Loan Consultant remain unimplemented; the loan sales campaign only explains catalog terms and records interest.
+Insurance uses the supplied **fictional Saqta Insurance** snapshot. The outbound bots use eight synthetic **Merei Demo Bank** products: three deposits, three debit/payment cards and two loans. Both catalogs have reference date **2026-10-01**. Security guidance is a synthetic demo policy dated **2026-10-02**. A full Loan Consultant remains unimplemented; the loan sales campaign only explains catalog terms and records interest.
 
 `ScenarioRegistry` selects the default Insurance Manager for a new session; later turns
 continue the active pack. The UI selector opens Product immediately during listening and applies Insurance on the next request, preserving
@@ -13,6 +13,16 @@ retains the current insurance goal. Suspended packs resume their own context and
 See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
+
+- Manually selected `fraud_security`: brief RU/KK security guidance, safe yes/no incident
+  questions and `FraudCaseResult` for human review. It never asks for OTP/PIN/CVV/password,
+  confirms fraud, blocks accounts or changes transactions.
+- Shared Risk Intelligence: a deterministic candidate gate skips the model on ordinary
+  turns. A single bounded structured call examines a masked utterance and security-only
+  context. A detected concern produces source-based advice while preserving the selected
+  sales/Insurance state and result. The UI shows Risk Intelligence separately.
+  Model failures are visible as unavailable assessment with precautionary advice where
+  applicable. See [Stage 4 validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md).
 
 - Product starts with a branded Merei Demo Bank greeting before listening. Currency and
   amounts are understood and spoken naturally: «50 тысяч тенге», «100 долларов США».
@@ -110,6 +120,7 @@ The UI supervisor panel shows that summary. No policy, claim, callback or SMS is
 | `DEMO_TEST_PHONE` | Optional personal phone for a runtime-only fictional Insurance profile; keep in ignored `.env` |
 | `ROUTER_TEMPERATURE` | Optional model setting; example uses `0` |
 | `ROUTER_TIMEOUT_SECONDS` | 45 seconds; no automatic routing retry |
+| `RISK_TIMEOUT_SECONDS` | 8 seconds by default; one tool-free call, no retry |
 | `ROUTER_MAX_OUTPUT_TOKENS` | 2500 |
 | `ROUTER_ACCEPT_THRESHOLD` / `ROUTER_LOW_THRESHOLD` | `0.75` / `0.45` |
 | `ROUTER_HANDOFF_AFTER` / `ROUTER_MAX_UNCLEAR_TURNS` | Two very low-confidence turns / three unresolved clarifications |
@@ -117,6 +128,7 @@ The UI supervisor panel shows that summary. No policy, claim, callback or SMS is
 | `FRONTEND_ORIGIN` | `http://localhost:5173`; voice also accepts the loopback frontend origin |
 | `STARTER_KIT_PATH` | Native `data/starter_kit`; Docker `/app/data/starter_kit` |
 | `PRODUCT_CATALOG_PATH` | Native `data/product_promoter/catalog.json`; Docker `/app/data/product_promoter/catalog.json` |
+| `SECURITY_POLICY_PATH` | Native `data/security/policy.json`; Docker `/app/data/security/policy.json` |
 | `ENABLE_DEV_STAND` | Optional `/dev` text debugger, off by default |
 
 Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `frontend/.env.example` uses `VITE_API_BASE_URL` and `VITE_USE_MOCK_AGENT`. Mock replies are explicitly labelled and available only in Vite development mode; production Docker uses the real backend.
@@ -126,14 +138,14 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 `GET /health` confirms startup and loaded dataset counts; it does not test OpenAI availability.
 
 `POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
-`scenario_mode=insurance_manager|product_promoter|card_promoter|loan_promoter`. Reuse the ID across turns.
+`scenario_mode=insurance_manager|product_promoter|card_promoter|loan_promoter|fraud_security`. Reuse the ID across turns. Optional `channel=text|voice` defaults to text.
 Normal Product turns call their agent once. Normal Insurance turns call Router and Composer.
 Automatic natural switching is disabled. Only explicit `scenario_mode` or the UI selector changes the active assistant; the original question is never forwarded.
 Policy status is brief: «Сейчас ваш полис действует». An explicit end-date question returns
 the recorded date in ordinary words, without a policy number or a generic follow-up offer.
 
 `POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Insurance
-or an assigned sales campaign with zero model calls and no fabricated customer turn. TTS finishes before listening.
+or an assigned sales campaign or Fraud & Security with zero model calls and no fabricated customer turn. TTS finishes before listening.
 Before an outbound call, the caller's system assigns `product_promoter` (deposit),
 `card_promoter` (card) or `loan_promoter` (loan). The local demo offers the same pre-call
 operator setting. Customer speech cannot choose another campaign. Target scoring and
@@ -142,13 +154,20 @@ The bot offers its product first, explains conditions/opening and adapts to expl
 One soft refusal receives one follow-up; a second refusal ends the call. An explicit request
 to stop sales/calls ends it immediately. See [outbound sales validation](docs/OUTBOUND_SALES_VALIDATION.md).
 
-Unregistered packs return 422 before any model call. All responses retain six top-level fields:
+Unregistered packs return 422 before any model call. All responses retain the six base fields:
 `session_id`, `response_text`, `routing`, `state`, `trace`, `conversation_status`. Insurance
 adds conversation metadata and a Router conversation signal to its existing state/schema.
 Public Insurance identifiers, source references and transcripts are masked; actual values
 remain in the pack's private business state. Product state exposes `sales_lead` and the
 actually displayed catalog records; legacy platform wire variants remain for compatibility and are not emitted by manual-only switching.
-OpenAPI declares these three typed variants. The latest InsuranceResult and SalesLeadResult
+An optional `risk` object is additive; an omitted field means no analysis was needed.
+`POST /api/security/precaution` returns one source-based safety sentence with zero model
+calls and no session mutation. The frontend uses it only on security candidates and
+speaks it while the single authoritative `/api/message` request runs. It creates no
+additional user/assistant turn; repeated source text is not spoken twice.
+Security guidance turns use `routing.kind=security_guidance` and the same safe business
+state projection. Fraud returns its own `fraud_case`. OpenAPI declares these variants.
+The latest InsuranceResult, SalesLeadResult and FraudCaseResult
 remain in their own internal entries. Trace includes pack, mode, lifecycle and safe switch/product metadata.
 
 Voice WebSocket: `ws://127.0.0.1:5173/api/v1/voice`. Start with a UUID `session_id`, 24 kHz mono PCM16, then send binary frames. Only `utterance.final` reaches Agent Core; partial text remains in voice diagnostics. See [the streaming protocol](docs/VOICE_STREAMING_CONTRACT.md).
@@ -189,6 +208,8 @@ Stop the native services before starting Docker on the same ports.
 ./.venv/Scripts/python.exe -X utf8 scripts/stage3_smoke.py --output work/new-stage3-e2e.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_product_promoter.py --output work/evals/new-product-run.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --output work/evals/new-dialogue-run.json
+./.venv/Scripts/python.exe -X utf8 scripts/evaluate_fraud_risk.py --output work/evals/new-fraud-risk.json
+./.venv/Scripts/python.exe -X utf8 scripts/stage4_risk_smoke.py --output work/new-stage4-state.json
 ./.venv/Scripts/python.exe -X utf8 scripts/stage3_1_voice_smoke.py --audio-directory work/voice-stage31 --output work/new-stage31-voice.json
 ```
 
@@ -204,6 +225,10 @@ npm run build
 node --experimental-transform-types --test tests/*.test.mjs
 ```
 
+Stage 4 results, measured timeouts, advisory limitations and the presenter sequence are in
+[Fraud/Risk validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md). For saved early evaluation
+artifacts, `evaluate_fraud_risk.py --rescore INPUT --output NEW_OUTPUT` recomputes unavailable
+assessments as unknown without making model calls. New runs apply that rule directly.
 Stage 3.2 results are in [Manager validation](docs/STAGE3_2_MANAGER_VALIDATION.md).
 Stage 3.1 conversation results and limitations are in
 [Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md). Earlier evidence is in
