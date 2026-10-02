@@ -123,8 +123,11 @@ same Agent response. Signed Vonage/Twilio transports are implemented. The backen
 provides shared web/phone canonical ingestion, retained session summaries, Journey,
 Agent-only risk aggregation, count-based anomalies and authenticated Analytics API; see
 [DATA_INTELLIGENCE.md](DATA_INTELLIGENCE.md) for contracts, limits and metric semantics.
-Persistent events and dashboard UI remain deferred. All new Veyra frontend UI must use shadcn/ui
-as its primary component/design system; this feature does not redesign the frontend.
+Persistent events remain deferred. The Veyra frontend now uses shadcn/ui + Tailwind for
+seven supervisor views and a retained Conversation Demo. Browser analytics requests cross
+a loopback Vite server proxy that injects the server-only supervisor token; production
+requires an authenticated same-origin BFF. See [FINANCE_DASHBOARD.md](FINANCE_DASHBOARD.md)
+for polling, safety boundaries, configuration and limits. Phone/Agent flows are unchanged.
 
 | Workstream | Primary files | Shared boundary to coordinate |
 |---|---|---|

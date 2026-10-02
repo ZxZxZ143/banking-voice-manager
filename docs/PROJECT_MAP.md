@@ -23,7 +23,12 @@ Business specification: `data/starter_kit/README.ru.md`.
   `/api/message` and both phone gateways; typed retained-session summaries, event-derived
   journeys, deterministic rolling count anomalies, Agent-only risk aggregation and separate
   latency metrics. Seven opt-in supervisor-token analytics polling routes; explicit DEMO
-  fixtures. No dashboard/UI, financial routing or risk analyzer introduced.
+  fixtures. No financial routing or risk analyzer introduced.
+- **Implemented Finance Dashboard:** shadcn/Tailwind supervisor shell with Overview, Live Calls,
+  Sessions, Risk & Fraud, Anomalies, Journeys and the preserved Conversation Demo. Typed
+  cancellable analytics client; loopback Vite server-only bearer proxy, explicit DEMO/mixed
+  indicators, unknown-data states and 3-second phone polling. Production operator auth/BFF
+  remains deferred; local setup and limits: `docs/FINANCE_DASHBOARD.md`.
 - **Implemented backend phone foundation:** active-call registry (one call/one Agent UUID),
   half-duplex PhoneRuntime using the same MessageService, shared streaming STT/endpointing,
   PCM normalization seam, existing backend TTS protocol, server events/store and offline bench.
@@ -71,7 +76,10 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/analytics/` | Session summaries, journey, risk/latency aggregation, rolling count anomalies and opt-in DEMO fixtures |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
-| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
+| `frontend/src/main.tsx`, `App.tsx` | Veyra dashboard shell, live health and retained Conversation Demo |
+| `frontend/src/analytics/`, `components/dashboard/` | Typed analytics reads, polling, seven supervisor views and session detail |
+| `frontend/src/components/ui/`, `components.json` | Official shadcn primitives and Tailwind configuration |
+| `frontend/server/analyticsProxy.ts` | Loopback read-only analytics proxy with server-only token injection |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
 | `frontend/src/channels/` | Web/phone ChannelContext; TS telephony contracts are references only, phone execution is backend-owned |
 | `frontend/src/events/` | ConversationEvent factory, EventStore contract and bounded in-memory implementation |
@@ -80,7 +88,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/src/components/voice/VoiceControls.tsx`, `voiceRuntimeBridge.ts` | Streaming mic/file capture UI and final-transcript bridge to runtime |
 | `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
-| `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
+| `frontend/vite.config.ts` | Tailwind/alias; /health and /api proxies plus server-only /analytics-api proxy |
+| `docs/FINANCE_DASHBOARD.md` | Dashboard startup, local/production auth boundaries, screens and checks |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
 | `docs/DATA_INTELLIGENCE.md` | Canonical ingestion, supervisor API/schema/auth, thresholds, metric semantics and limits |
@@ -350,7 +359,10 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/message -ContentTy
 
 Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run dev`.
 Keep `VITE_USE_MOCK_AGENT=false` for the full live stand; true is for isolated dev fixtures only.
-Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
+Dashboard server settings: `ANALYTICS_ENABLED`, `ANALYTICS_API_TOKEN`, optional
+`ANALYTICS_DEMO_ENABLED` and loopback `ANALYTICS_PROXY_TARGET`; read from ignored root .env.
+Never use a VITE token. See `docs/FINANCE_DASHBOARD.md` for production BFF requirements.
+Frontend checks: `npm test`, `npm run format:dashboard`, `npm run typecheck`, `npm run build`, `npm run test:runtime`,
 `npm run test:tts`, `npm run test:trace`, `npm run test:integration`,
 `npm run test:voice-bridge`, `npm run test:events`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
