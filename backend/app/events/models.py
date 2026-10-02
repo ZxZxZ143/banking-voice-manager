@@ -2,10 +2,11 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from app.core.channels import Channel
 from app.dialog.models import ConversationStatus
+from app.events.normalize import instant
 
 EventType = Literal[
     "session.started",
@@ -42,3 +43,9 @@ class ConversationEvent(BaseModel):
     trace: JsonValue | None = None
     latency: JsonValue | None = None
     metadata: dict[str, JsonValue] | None = None
+
+    @field_validator("timestamp")
+    @classmethod
+    def valid_timestamp(cls, value: str) -> str:
+        instant(value)
+        return value

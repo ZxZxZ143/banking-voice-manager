@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     backend_tts_model: str | None = None
     backend_tts_voice: str | None = None
     phone_endpoint_silence_ms: int = Field(default=1200, ge=800, le=5000)
+    analytics_enabled: bool = False
+    analytics_api_token: SecretStr | None = None
+    analytics_demo_enabled: bool = False
+    analytics_max_events: int = Field(default=5000, ge=100, le=100000)
+    analytics_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    analytics_baseline_windows: int = Field(default=6, ge=1, le=168)
+    analytics_min_volume: int = Field(default=5, ge=1, le=10000)
+    analytics_anomaly_multiplier: float = Field(default=3, ge=2, le=100, allow_inf_nan=False)
     vonage_enabled: bool = False
     vonage_application_id: str | None = None
     vonage_private_key_path: Path | None = Field(default=None, repr=False)

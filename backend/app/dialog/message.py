@@ -1,6 +1,8 @@
 import re
 from time import perf_counter
 
+from pydantic import JsonValue, model_serializer
+
 from app.agent.errors import RouterOutputError
 from app.agent.router import Router
 from app.agent.schemas import RouterDecision
@@ -73,6 +75,14 @@ class MessageResult(Contract):
     state: DialogState
     trace: TraceRecord
     conversation_status: ConversationStatus
+    risk: JsonValue | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_optional_risk(self, handler):
+        data = handler(self)
+        if self.risk is None:
+            data.pop("risk", None)
+        return data
 
 
 class MessageService:
