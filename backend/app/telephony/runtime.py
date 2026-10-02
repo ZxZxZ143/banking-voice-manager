@@ -26,12 +26,14 @@ from app.telephony.base import (
 from app.telephony.sessions import ActiveCallRegistry, PhoneSession, PhoneStatus
 
 logger = logging.getLogger(__name__)
+AUDIO_QUEUE_WAIT_SECONDS = 45  # Bounded VAD + upstream connect/configuration startup allowance.
 
 
 @dataclass
 class _Capture:
     queue: asyncio.Queue[StreamInput] = field(default_factory=lambda: asyncio.Queue(maxsize=16))
     accepting: bool = True
+    backpressure_logged: bool = False
 
 
 @dataclass
@@ -114,7 +116,9 @@ class PhoneRuntime:
         else:
             raise ValueError("Unknown telephony event")
 
-    async def feed_audio(self, call_id: str, audio: ProviderAudio) -> bool:
+    async def feed_audio(
+        self, call_id: str, audio: ProviderAudio, *, wait_for_capacity: bool = False
+    ) -> bool:
         call = self._calls.get(call_id)
         if call is None or call.session.status not in ("active", "transcribing"):
             # Half duplex: discard caller/echo frames while Agent, TTS or playback is busy.
@@ -127,9 +131,40 @@ class PhoneRuntime:
                 task = asyncio.create_task(self._capture(call, call.capture))
                 call.capture_tasks.add(task)
                 task.add_done_callback(call.capture_tasks.discard)
-            call.capture.queue.put_nowait(StreamInput("audio", pcm))
+            capture = call.capture
+            if wait_for_capacity:
+                # Vonage opts in: its 20ms packets arrive during VAD/upstream startup.
+                # Keep the existing bounded queue and let the socket apply backpressure.
+                if capture.queue.full() and not capture.backpressure_logged:
+                    capture.backpressure_logged = True
+                    logger.info(
+                        "phone audio_backpressure call_id=%s queued_frames=%s "
+                        "message=waiting_for_stt_capacity",
+                        call_id,
+                        capture.queue.qsize(),
+                    )
+                async with asyncio.timeout(AUDIO_QUEUE_WAIT_SECONDS):
+                    while capture.queue.full():
+                        if not self._current(call) or not capture.accepting:
+                            return False
+                        await asyncio.sleep(0.01)
+                if (
+                    not self._current(call)
+                    or call.capture is not capture
+                    or not capture.accepting
+                    or call.session.status not in ("active", "transcribing")
+                ):
+                    return False
+            capture.queue.put_nowait(StreamInput("audio", pcm))
             return True
-        except Exception:
+        except Exception as error:
+            if call.session.provider_metadata.get("provider") == "vonage":
+                logger.warning(
+                    "phone audio_input_failed call_id=%s exception_type=%s "
+                    "message=audio_admission_failed",
+                    call_id,
+                    type(error).__name__,
+                )
             await self._fail_call(call_id, "audio_input_failed")
             return False
 
@@ -144,9 +179,16 @@ class PhoneRuntime:
             await self._fail_call(call_id, "audio_input_failed")
 
     async def _capture(self, call: _Call, capture: _Capture) -> None:
+        vonage = call.session.provider_metadata.get("provider") == "vonage"
+        activity_logged = False
+
         async def emit(event: dict[str, Any]) -> None:
+            nonlocal activity_logged
             if not self._current(call) or call.capture is not capture or not capture.accepting:
                 return
+            if vonage and event.get("type") == "activity" and not activity_logged:
+                activity_logged = True
+                logger.info("phone stt_activity call_id=%s", call.session.call_id)
             if event.get("type") in ("utterance.final", "empty"):
                 capture.accepting = False
             if event.get("type") == "utterance.final":
@@ -158,12 +200,21 @@ class PhoneRuntime:
                 raise RuntimeError("Streaming STT failed")
 
         try:
+            if vonage:
+                logger.info("phone stt_stream_started call_id=%s", call.session.call_id)
             async with asyncio.timeout(150):
                 await self.stt.run(capture.queue.get, emit)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             if self._current(call) and call.capture is capture:
+                if vonage:
+                    logger.warning(
+                        "phone stt_failed call_id=%s exception_type=%s "
+                        "message=streaming_stt_failed",
+                        call.session.call_id,
+                        type(error).__name__,
+                    )
                 await self._fail_call(call.session.call_id, "stt_failed")
         finally:
             capture.accepting = False
@@ -302,8 +353,14 @@ class PhoneRuntime:
                     call.session.status = "active"
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             if self._current(call):
+                if call.session.provider_metadata.get("provider") == "vonage":
+                    logger.warning(
+                        "phone turn_failed call_id=%s exception_type=%s message=phone_turn_failed",
+                        call.session.call_id,
+                        type(error).__name__,
+                    )
                 await self._fail_call(call.session.call_id, "phone_turn_failed")
 
     async def _fail_call(self, call_id: str, code: str) -> None:

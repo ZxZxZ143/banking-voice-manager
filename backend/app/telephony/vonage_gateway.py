@@ -8,6 +8,7 @@ from time import monotonic, time
 
 import jwt
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import Settings
 from app.speech.stt.streaming_provider import OpenAIStreamingSTT
@@ -140,32 +141,70 @@ class VonageGateway:
 
     async def serve(self, socket: WebSocket):
         stream = None
+        session = None
         failed = False
+        audio_frames = 0
+        close_code = None
+        close_reason = "receive_loop_ended"
+        phase = "receive"
         try:
             while True:
+                if stream and stream.closed:
+                    close_reason = "provider_closed"
+                    break
+                phase = "receive"
                 async with asyncio.timeout(300 if stream else 10):
                     packet = await socket.receive()
                 if packet["type"] == "websocket.disconnect":
+                    close_code = packet.get("code", 1005)
+                    # Peer reason is untrusted and may contain credentials/transcripts.
+                    close_reason = "peer_disconnect"
                     break
+                if packet["type"] != "websocket.receive":
+                    raise ValueError("Unexpected WebSocket packet type")
                 audio = packet.get("bytes")
                 if audio is not None:
+                    phase = "audio_validation"
                     if stream is None or not audio or len(audio) % 2 or len(audio) > 3200:
                         raise ValueError("Invalid binary audio")
-                    session = self.runtime.registry.get(stream.call_id)
-                    if session is None:
+                    audio_frames += 1
+                    if audio_frames == 1:
+                        logger.info(
+                            "vonage first_binary_audio call_uuid=%s frame_bytes=%s audio_frames=1",
+                            stream.call_id,
+                            len(audio),
+                        )
+                    if self.runtime.registry.get(stream.call_id) is None:
+                        close_reason = "runtime_closed"
                         break
                     if session.status not in ("active", "transcribing"):
                         stream.decoder = None
                         continue
                     if stream.decoder is None:
                         stream.decoder = L16Input()
+                    phase = "audio_decode"
                     for pcm in stream.decoder.decode(audio):
-                        await self.runtime.feed_audio(stream.call_id, ProviderAudio(pcm))
+                        phase = "audio_feed"
+                        await self.runtime.feed_audio(
+                            stream.call_id, ProviderAudio(pcm), wait_for_capacity=True
+                        )
+                        if self.runtime.registry.get(stream.call_id) is None:
+                            close_reason = "runtime_closed"
+                            return
                     continue
+                phase = "control_validation"
                 raw = packet.get("text")
                 if not isinstance(raw, str) or len(raw.encode()) > 8192:
                     raise ValueError("Invalid control message")
                 control = control_adapter.validate_json(raw)
+                logger.info(
+                    "vonage control event=%s call_uuid=%s",
+                    control.event,
+                    control.call_uuid
+                    if isinstance(control, Connected)
+                    else (stream.call_id if stream else None),
+                )
+                phase = "control_dispatch"
                 if isinstance(control, Connected):
                     if stream is not None or self.pending.pop(control.call_uuid, 0) <= monotonic():
                         raise ValueError("Unadmitted or duplicate call connection")
@@ -182,10 +221,12 @@ class VonageGateway:
                         )
                     )
                     logger.info(
-                        "vonage started call_uuid=%s session_id=%s",
+                        "vonage started call_uuid=%s session_id=%s content_type=%s",
                         stream.call_id,
                         session.session_id,
+                        control.content_type,
                     )
+                    continue  # Connected is initialization; keep receiving binary/control frames.
                 elif stream is None:
                     raise ValueError("Connection must precede controls")
                 elif isinstance(control, Notify):
@@ -194,13 +235,22 @@ class VonageGateway:
                     logger.info("vonage buffer_cleared call_uuid=%s", stream.call_id)
                 elif isinstance(control, Dtmf):
                     logger.info("vonage dtmf_ignored call_uuid=%s", stream.call_id)
+        except WebSocketDisconnect as error:
+            close_code = error.code
+            close_reason = "peer_disconnect"
         except asyncio.CancelledError:
+            close_reason = "cancelled"
             raise
-        except Exception:
+        except Exception as error:
             failed = True
+            close_code = 1008
+            close_reason = "protocol_or_transport_error"
             logger.warning(
-                "vonage protocol_or_transport_error call_uuid=%s",
+                "vonage protocol_or_transport_error call_uuid=%s phase=%s exception_type=%s "
+                "message=websocket_receive_processing_failed",
                 stream.call_id if stream else None,
+                phase,
+                type(error).__name__,
             )
             try:
                 await socket.close(code=1008)
@@ -209,19 +259,36 @@ class VonageGateway:
         finally:
             if stream:
                 self.closed.add(stream.call_id)
-                if failed:
-                    await self.runtime.handle_event(
-                        ProviderError(stream.call_id, "vonage_protocol_error")
+                if session and session.error_code:
+                    close_reason = session.error_code
+                try:
+                    if failed:
+                        await self.runtime.handle_event(
+                            ProviderError(stream.call_id, "vonage_protocol_error")
+                        )
+                    else:
+                        await self.runtime.end_call(stream.call_id, cancel=True, hangup=False)
+                except Exception as error:
+                    logger.warning(
+                        "vonage cleanup_error call_uuid=%s exception_type=%s "
+                        "message=runtime_cleanup_failed",
+                        stream.call_id,
+                        type(error).__name__,
                     )
-                else:
-                    await self.runtime.end_call(stream.call_id, cancel=True, hangup=False)
                 await self.provider.close(stream.call_id)
-                logger.info("vonage closed call_uuid=%s", stream.call_id)
             elif not failed:
+                close_code = close_code or 1000
                 try:
                     await socket.close(code=1000)
                 except Exception:
                     pass
+            logger.info(
+                "vonage closed call_uuid=%s audio_frames=%s close_code=%s close_reason=%s",
+                stream.call_id if stream else None,
+                audio_frames,
+                close_code if close_code is not None else 1000,
+                close_reason,
+            )
 
     async def shutdown(self):
         self.pending.clear()

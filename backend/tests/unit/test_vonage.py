@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import struct
+import threading
 import time
 import wave
 from uuid import uuid4
@@ -417,6 +418,126 @@ def test_signed_http_answer_events_ws_and_tampering():
         assert CALL in gateway.closed
 
 
+def test_signed_fastapi_websocket_text_controls_binary_stt_and_outbound_l16(caplog):
+    delivered = threading.Event()
+
+    class ThreeFrameSTT(ScriptedPhoneSTT):
+        async def run(self, receive, emit):
+            for _ in range(3):
+                packet = await receive()
+                assert packet.kind == "audio"
+                self.frames.append(packet.audio)
+                await emit({"type": "activity"})
+            await emit({"type": "utterance.final", "text": self.text, "language": "ru"})
+            delivered.set()
+
+    stt = ThreeFrameSTT()
+    gateway = make_gateway(stt=stt)
+    body = json.dumps({"uuid": CALL, "from": FROM, "to": TO}).encode()
+    with (
+        caplog.at_level(logging.INFO),
+        TestClient(create_app(config(), vonage_override=gateway)) as client,
+    ):
+        response = client.post(
+            ANSWER_PATH,
+            content=body,
+            headers={"Content-Type": "application/json", "Authorization": token(body)},
+        )
+        assert response.status_code == 200
+        assert len(response.json()) == 1 and set(response.json()[0]) == {"action", "endpoint"}
+        with client.websocket_connect(MEDIA_PATH, headers={"Authorization": token()}) as ws:
+            ws.send_text(json.dumps(connected()))
+            ws.send_bytes(bytes(640))
+            ws.send_json({"event": "websocket:cleared"})
+            ws.send_bytes(bytes(640))
+            ws.send_json({"event": "websocket:dtmf", "digit": "5", "duration": 100})
+            ws.send_bytes(bytes(640))
+            assert delivered.wait(2)
+            for _ in range(5):  # Fixture TTS is 100ms = five raw 20ms frames.
+                assert len(ws.receive_bytes()) == 640
+            notify = ws.receive_json()
+            assert notify["action"] == "notify"
+            ws.send_json({"event": "websocket:notify", "payload": notify["payload"]})
+    assert len(stt.frames) == 3 and all(len(frame) > 640 for frame in stt.frames)
+    assert gateway.runtime.registry.get(CALL) is None and not gateway.provider.streams
+    assert "vonage websocket_accepted" in caplog.text
+    assert "vonage control event=websocket:connected" in caplog.text
+    assert "vonage first_binary_audio" in caplog.text
+    assert "phone stt_stream_started" in caplog.text
+    assert caplog.text.count("phone stt_activity") == 1
+    assert "phone stt_final" in caplog.text and "phone agent_response" in caplog.text
+    assert "phone tts_ready" in caplog.text
+    assert SIGNATURE_SECRET not in caplog.text and stt.text not in caplog.text
+    assert "Bearer" not in caplog.text
+
+
+@pytest.mark.parametrize("failure", ["malformed_control", "receive_exception", "stt_exception"])
+def test_websocket_failure_logs_safe_class_phase_reason_and_cleans_up(failure, caplog):
+    marker = "DO_NOT_LOG_CREDENTIAL_OR_TRANSCRIPT"
+
+    async def run():
+        class RaisingSocket(Socket):
+            async def receive(self):
+                packet = await super().receive()
+                if packet.get("text") == "raise":
+                    raise RuntimeError(marker)
+                return packet
+
+        class RaisingSTT(ScriptedPhoneSTT):
+            async def run(self, receive, emit):
+                raise RuntimeError(marker)
+
+        gateway = make_gateway(stt=RaisingSTT() if failure == "stt_exception" else None)
+        socket = RaisingSocket()
+        task = await open_stream(gateway, socket)
+        session = gateway.runtime.registry.get(CALL)
+        if failure == "malformed_control":
+            socket.input.put_nowait('{"secret":"' + marker + '"')  # Invalid JSON.
+        elif failure == "receive_exception":
+            socket.input.put_nowait("raise")
+        else:
+            socket.input.put_nowait(bytes(640))
+        await asyncio.wait_for(task, 2)
+        assert session.status == "error"
+        assert gateway.runtime.registry.get(CALL) is None and not gateway.provider.streams
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(run())
+    assert marker not in caplog.text
+    if failure == "stt_exception":
+        assert "phone stt_failed" in caplog.text and "exception_type=RuntimeError" in caplog.text
+        assert "message=streaming_stt_failed" in caplog.text
+        assert "close_reason=stt_failed" in caplog.text
+    else:
+        expected = "ValidationError" if failure == "malformed_control" else "RuntimeError"
+        phase = "control_validation" if failure == "malformed_control" else "receive"
+        assert f"phase={phase} exception_type={expected}" in caplog.text
+        assert "message=websocket_receive_processing_failed" in caplog.text
+        assert "close_code=1008" in caplog.text
+
+
+def test_peer_disconnect_code_logged_without_untrusted_reason(caplog):
+    async def run():
+        class DisconnectSocket(Socket):
+            async def receive(self):
+                packet = await super().receive()
+                if packet["type"] == "websocket.disconnect":
+                    packet.update(code=1001, reason="DO_NOT_LOG_PEER_REASON")
+                return packet
+
+        gateway, socket = make_gateway(), DisconnectSocket()
+        task = await open_stream(gateway, socket)
+        socket.input.put_nowait(bytes(640))
+        socket.input.put_nowait(None)
+        await task
+        assert not gateway.provider.streams and gateway.runtime.registry.get(CALL) is None
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(run())
+    assert "audio_frames=1 close_code=1001 close_reason=peer_disconnect" in caplog.text
+    assert "DO_NOT_LOG_PEER_REASON" not in caplog.text
+
+
 @pytest.mark.parametrize("payload", [b"", b"\0", bytes(3202)])
 def test_bad_l16_size(payload):
     with pytest.raises(ValueError):
@@ -468,6 +589,116 @@ def test_bad_stream_isolated_and_cleanup(bad):
         assert not gateway.provider.streams
 
     asyncio.run(run())
+
+
+def test_initial_text_and_interleaved_controls_keep_multiple_audio_frames_open():
+    async def run():
+        stt = ScriptedPhoneSTT()
+        gateway, socket = make_gateway(stt=stt), Socket()
+        task = await open_stream(gateway, socket)
+        session = gateway.runtime.registry.get(CALL)
+        try:
+            assert not task.done() and socket.closed is None  # TEXT initialization stays open.
+            for index, control in enumerate(
+                [
+                    {"event": "websocket:cleared"},
+                    {"event": "websocket:dtmf", "digit": "5", "duration": 100},
+                    {"event": "websocket:notify", "payload": {"reply_id": "stale"}},
+                ]
+            ):
+                socket.input.put_nowait(bytes(640))
+                socket.input.put_nowait(control)
+                await until(lambda: len(stt.frames) == index + 1)
+                assert not task.done() and socket.closed is None
+            assert session.status == "transcribing"
+            assert all(len(frame) > 640 for frame in stt.frames)  # Actual 16k → 24k conversion.
+        finally:
+            socket.input.put_nowait(None)
+            await task
+        assert session.status == "cancelled"
+        assert not gateway.provider.streams and gateway.runtime.registry.get(CALL) is None
+
+    asyncio.run(run())
+
+
+def test_delayed_stt_startup_does_not_disconnect_after_sixteen_audio_frames():
+    async def run():
+        entered, release, seventeenth = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+        class StartingSTT(ScriptedPhoneSTT):
+            async def run(self, receive, emit):
+                entered.set()
+                await release.wait()  # Deterministic VAD/upstream setup, before queue consumption.
+                await super().run(receive, emit)
+
+        class CountingSocket(Socket):
+            received_audio = 0
+
+            async def receive(self):
+                packet = await super().receive()
+                if packet.get("bytes") is not None:
+                    self.received_audio += 1
+                    if self.received_audio == 17:
+                        seventeenth.set()
+                return packet
+
+        stt = StartingSTT()
+        gateway, socket = make_gateway(stt=stt), CountingSocket()
+        task = await open_stream(gateway, socket)
+        session = gateway.runtime.registry.get(CALL)
+        try:
+            socket.input.put_nowait(bytes(640))
+            await asyncio.wait_for(entered.wait(), 2)
+            for _ in range(20):
+                socket.input.put_nowait(bytes(640))
+            await asyncio.wait_for(seventeenth.wait(), 2)
+            await asyncio.sleep(0)  # Allow an old QueueFull failure/cleanup to run.
+            assert gateway.runtime.registry.get(CALL) is session
+            assert session.status == "transcribing" and not task.done()
+            release.set()
+            await until(lambda: len(stt.frames) == 21)
+            assert not task.done() and socket.closed is None
+        finally:
+            release.set()
+            socket.input.put_nowait(None)
+            await task
+        assert not gateway.provider.streams and gateway.runtime.registry.get(CALL) is None
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("termination", ["deadline", "completed_event"])
+def test_backpressure_is_bounded_and_terminal_cleanup_interrupts_wait(
+    termination, monkeypatch, caplog
+):
+    if termination == "deadline":
+        monkeypatch.setattr("app.telephony.runtime.AUDIO_QUEUE_WAIT_SECONDS", 0.02)
+
+    async def run():
+        class BlockedSTT(ScriptedPhoneSTT):
+            async def run(self, receive, emit):
+                await asyncio.Event().wait()
+
+        gateway, socket = make_gateway(stt=BlockedSTT()), Socket()
+        task = await open_stream(gateway, socket)
+        session = gateway.runtime.registry.get(CALL)
+        for _ in range(20):
+            socket.input.put_nowait(bytes(640))
+        await until(lambda: "phone audio_backpressure" in caplog.text)
+        if termination == "completed_event":
+            await gateway.event(CallEvent(uuid=CALL, status="completed"))
+        await asyncio.wait_for(task, 2)
+        assert gateway.runtime.registry.get(CALL) is None and not gateway.provider.streams
+        if termination == "deadline":
+            assert session.status == "error" and session.error_code == "audio_input_failed"
+        else:
+            assert session.status == "ended" and session.error_code is None
+
+    with caplog.at_level(logging.INFO):
+        asyncio.run(run())
+    if termination == "deadline":
+        assert "exception_type=TimeoutError message=audio_admission_failed" in caplog.text
+        assert "close_reason=audio_input_failed" in caplog.text
 
 
 @pytest.mark.parametrize("status", ["awaiting_user", "ended", "handoff"])

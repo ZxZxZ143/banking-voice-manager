@@ -1,11 +1,14 @@
 """Signed Vonage answer/events and WebSocket; deliberately no public dialing endpoint."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Request, Response, WebSocket
 
 from app.telephony.providers.vonage_messages import Answer, CallEvent
 from app.telephony.vonage_calls import ANSWER_PATH, EVENTS_PATH, MEDIA_PATH
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 async def signed_body(request: Request):
@@ -58,4 +61,5 @@ async def media(socket: WebSocket):
         await socket.close(code=1008)
         return
     await socket.accept()
+    logger.info("vonage websocket_accepted")
     await gateway.serve(socket)

@@ -27,8 +27,8 @@ Business specification: `data/starter_kit/README.ru.md`.
   clear, lifecycle cleanup, real shared STT / MessageService / backend OpenAI TTS composition.
   Opt-in via TWILIO_ENABLED; absent settings fail visibly without mock fallback.
   Persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
-- **Implemented Vonage outbound trial adapter (live unverified):** explicit one-call CLI
-  with application JWT, trial FROM 123456789 and configured verified signup TO; signed answer /
+- **Implemented Vonage outbound trial adapter (PSTN/WS user-confirmed; live speech unverified):** explicit one-call CLI
+  with application JWT, account-working FROM 12345678901 and configured verified signup TO; signed answer /
   event callbacks and WS, L16 16k ↔ PCM24k/real TTS conversion, native notify/clear playback,
   shared PhoneRuntime/STT/MessageService/events. No rented number required. Twilio retained;
   gateways independently opt in through VONAGE_ENABLED / TWILIO_ENABLED. No public dial API.
@@ -208,13 +208,18 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
 - `api/routes/vonage.py`, `telephony/vonage_gateway.py`: signed POST answer/events and WS
   /api/v1/telephony/vonage/{answer,events,media}; trial FROM/TO validation, short-lived UUID
   admission, native signed webhook JWT on WS, session/call isolation and terminal cleanup.
+  Mixed TEXT controls/binary L16 remain open after connected; safe lifecycle/exception logs
+  expose control type, first audio, STT activity, frame totals and close code/reason.
+  Vonage opts into bounded audio-admission backpressure during STT startup (16-frame queue,
+  45s blocked-admission bound); generic/Twilio defaults stay unchanged. Reproduction/logs:
+  `docs/VONAGE_WEBSOCKET_INVESTIGATION.md`. Full live speech retest remains required.
 - `telephony/vonage_calls.py`, `scripts/start_vonage_call.py`: one CLI call to configured
   verified signup destination via official Voice-only SDK/application ID + RSA key JWT;
   no API secret required for dialing, 10s timeout and one SDK attempt, no public dialer.
   Typed phone endpoints are checked with the SDK's aliased serialization before submission;
   CLI logs configuration flags/types only. Offline tests intercept the final prepared HTTP body.
-  `docs/VONAGE_CALLER_ID_INVESTIGATION.md` records correct runtime/stored FROM despite the
-  reported Dashboard CLI block; exact provider policy and live success remain unverified.
+  `docs/VONAGE_CALLER_ID_INVESTIGATION.md` records the historical CLI investigation;
+  user now confirms PSTN rings/answers and signed WS connects with FROM 12345678901.
 - `telephony/providers/vonage*.py`, `speech/conversion.py`: actual L16 little-endian mono16k
   input resampling to24k, shared MP3/WAV decoding for both providers, Vonage 20ms binary output
   and native notify/clear. 16k chosen from NCCO reference; live24k support not assumed.
@@ -334,11 +339,11 @@ and STT timing stay on the runtime side; only session_id/text cross the Core API
 `/dev` remains an optional separate text debugger, not the full voice stand.
 
 Phone next: configure Vonage application/key, signed callback secret, verified signup TO,
-trial FROM123456789, HTTPS/WSS tunnel and existing OpenAI/TTS settings; follow outbound
+account-working FROM12345678901, HTTPS/WSS tunnel and existing OpenAI/TTS settings; follow outbound
 trial checklist in `docs/PHONE_RUNTIME.md` and run `python scripts/start_vonage_call.py`.
-Live Vonage success remains unverified; root .env is now configured. Existing call lookups
-retain the configured FROM/TO despite the reported Dashboard CLI block. No number
-purchase is required. Twilio remains available. Verified: 462 backend/37 frontend tests,
+Vonage PSTN answer/WS upgrade are user-confirmed; repeat the live call to verify speech
+after the STT startup backpressure fix. Root .env retains working FROM12345678901. No number
+purchase is required. Twilio remains available. Verified: 471 backend/37 frontend tests,
 all three phone smokes, typecheck/build/lint/format.
 Offline: generic, Twilio and Vonage smoke scripts. Actual transfer/shared event API deferred.
 
