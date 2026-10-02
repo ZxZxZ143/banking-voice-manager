@@ -5,6 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.router import Router
+from app.analytics.demo import seed_demo
+from app.analytics.service import AnalyticsService
+from app.api.routes.analytics import router as analytics_router
 from app.api.routes.dev import router as dev_router
 from app.api.routes.health import router as health_router
 from app.api.routes.message import router as message_router
@@ -15,6 +18,7 @@ from app.api.websocket.voice import router as voice_router
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.services import build_services
+from app.events.store import InMemoryEventStore
 from app.telephony.twilio_gateway import TwilioGateway, build_twilio_gateway
 from app.telephony.vonage_gateway import VonageGateway, build_vonage_gateway
 
@@ -31,12 +35,19 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.services = build_services(config, router_override=router_override)
+        application.state.event_store = InMemoryEventStore(config.analytics_max_events)
+        application.state.analytics = AnalyticsService(application.state.event_store, config)
+        if config.analytics_demo_enabled:
+            seed_demo(application.state.event_store)
         application.state.twilio_gateway = twilio_override or build_twilio_gateway(
             config, application.state.services.messages
         )
         application.state.vonage_gateway = vonage_override or build_vonage_gateway(
             config, application.state.services.messages
         )
+        for gateway in (application.state.twilio_gateway, application.state.vonage_gateway):
+            if gateway:
+                gateway.runtime.event_store = application.state.event_store
         try:
             yield
         finally:
@@ -52,12 +63,13 @@ def create_app(
         CORSMiddleware,
         allow_origins=[config.frontend_origin],
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Authorization"],
     )
     application.include_router(health_router)
     if config.enable_dev_stand:
         application.include_router(dev_router)
     application.include_router(message_router)
+    application.include_router(analytics_router)
     application.include_router(turns_router)
     application.include_router(voice_router)
     application.include_router(twilio_router)

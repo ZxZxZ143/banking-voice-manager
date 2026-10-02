@@ -347,6 +347,7 @@ class PhoneRuntime:
             text=text,
             language=language if language in ("ru", "kk", "mixed") else None,
             latency={"stt": latency} if isinstance(latency, (int, float)) else None,
+            metadata={"turn": timing.turn},
         )
         task = asyncio.create_task(self._turn(call, text, timing))
         call.turn_task = task
@@ -406,6 +407,7 @@ class PhoneRuntime:
                     (agent_done - agent_started) * 1000,
                 )
                 call.session.conversation_status = response.conversation_status
+                response_event_id = None
                 try:
                     for event in response_events(
                         call.session.session_id, "phone", response.model_dump(mode="json")
@@ -416,10 +418,16 @@ class PhoneRuntime:
                                     "metadata": {
                                         **call.session.provider_metadata,
                                         "call_id": call.session.call_id,
+                                        "turn": timing.turn,
                                     }
                                 }
                             )
                         )
+                        if event.event_type == "agent.response":
+                            response_event_id = event.id
+                            self.event_store.update_latency(
+                                event.id, {"agent_ms": (agent_done - agent_started) * 1000}
+                            )
                 except Exception:
                     logger.warning("Phone response event recording failed")
                 call.session.status = "speaking"
@@ -438,6 +446,13 @@ class PhoneRuntime:
                 if not self._current(call):
                     return
                 tts_ready = perf_counter()
+                if response_event_id:
+                    try:
+                        self.event_store.update_latency(
+                            response_event_id, {"tts_ms": (tts_ready - tts_started) * 1000}
+                        )
+                    except Exception:
+                        logger.warning("Phone latency event recording failed")
                 self._latency(
                     call,
                     "tts_ready",
@@ -463,6 +478,30 @@ class PhoneRuntime:
                 )
                 await self.provider.send_audio(call.session.call_id, speech)
                 playback_complete = perf_counter()
+                # Expose already-measured timing values; no new waits or phone behavior.
+                if response_event_id:
+                    timings = {
+                        "agent_ms": (agent_done - agent_started) * 1000,
+                        "tts_ms": (tts_ready - tts_started) * 1000,
+                        "final_to_playback_complete_ms": (playback_complete - started) * 1000,
+                    }
+                    if timing.endpoint_at is not None:
+                        timings["stt_final_ms"] = (started - timing.endpoint_at) * 1000
+                    if timing.speech_end_at is not None:
+                        timings["speech_end_to_playback_submit_ms"] = (
+                            playback_started - timing.speech_end_at
+                        ) * 1000
+                        timings["speech_end_to_playback_complete_ms"] = (
+                            playback_complete - timing.speech_end_at
+                        ) * 1000
+                        if timing.endpoint_at is not None:
+                            timings["endpointing_ms"] = (
+                                timing.endpoint_at - timing.speech_end_at
+                            ) * 1000
+                    try:
+                        self.event_store.update_latency(response_event_id, timings)
+                    except Exception:
+                        logger.warning("Phone latency event recording failed")
                 self._latency(
                     call,
                     "playback_complete",
