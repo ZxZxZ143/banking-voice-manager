@@ -39,6 +39,11 @@ export function TracePanel({ view }: { view: TraceViewModel }) {
             {view.selectedProduct && <p><span className="field-label">Выбран продукт</span><strong>{view.selectedProduct}</strong></p>}
             {view.leadStatus && <p><span className="field-label">Результат</span><strong>{view.leadStatus}</strong></p>}
             {view.nextAction && <p><span className="field-label">Следующий шаг</span><strong>{view.nextAction}</strong></p>}
+            {view.conversationAct && <p><span className="field-label">Действие диалога</span><strong>{view.conversationAct}</strong></p>}
+            {view.expectedSlot && <p><span className="field-label">Ожидаемые данные</span><strong>{view.expectedSlot}</strong></p>}
+            {view.conversationPhase && <p><span className="field-label">Фаза</span><strong>{view.conversationPhase}</strong></p>}
+            {view.repairAttempts !== null && <p><span className="field-label">Попытки уточнения</span><strong>{view.repairAttempts}</strong></p>}
+            {view.composerError && <p><span className="field-label">Резервный ответ</span><strong>{view.composerError}</strong></p>}
             {view.conversationStatus && <p><span className="field-label">Диалог</span><strong>{view.conversationStatus}</strong></p>}
           </div>
           {view.transcript && <section className="trace-section"><h3>Транскрипт</h3><p>{view.transcript}</p></section>}

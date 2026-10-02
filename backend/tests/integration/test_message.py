@@ -157,7 +157,7 @@ def test_message_continuation_preserves_pending_slots_and_history():
         assert state["active_scenario"] == "SC27"
         assert state["pending_scenarios"] == ["SC04"]
         assert state["scenario_stack"] == []
-        assert state["slots"] == {"phone": "+77010000000", "policy_number": "SQ-OGPO-123456"}
+        assert state["slots"] == {"phone": "[получено]", "policy_number": "[получено]"}
         assert len(state["history"]) == 4
         assert state["history"][:2] == first.json()["state"]["history"]
         previous = router.calls[1][1]
@@ -223,7 +223,8 @@ def test_message_ambiguity_preserves_active_context_and_does_not_accept_uncertai
         body = response.json()
         assert body["conversation_status"] == "awaiting_user"
         assert body["state"]["active_scenario"] == "SC27"
-        assert body["state"]["slots"] == {"phone": "+77010000000"}
+        assert body["state"]["slots"] == {"phone": "[получено]"}
+        assert router.calls[-1][1].slots == {"phone": "+77010000000"}
         assert body["state"]["unclear_count"] == 1
         assert body["trace"]["clarification"]
         assert body["routing"]["alternatives"][0]["scenario_id"] == "SC19"
@@ -346,7 +347,8 @@ def test_message_failed_router_does_not_commit_mutations_or_expose_provider_erro
         )
         assert retry.status_code == 200
         assert retry.json()["state"]["turn_number"] == 2
-        assert retry.json()["state"]["slots"] == {"phone": "+77010000000"}
+        assert retry.json()["state"]["slots"] == {"phone": "[получено]"}
+        assert router.calls[-1][1].slots == {"phone": "+77010000000"}
         assert len(client.app.state.services.traces.get("recover")) == 2
 
 

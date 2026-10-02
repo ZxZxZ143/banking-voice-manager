@@ -150,8 +150,7 @@ export class ConversationRuntime {
       error: null,
     });
     try {
-      if ((this.snapshot.requestedPack ?? this.snapshot.activePack) === 'product_promoter'
-        && this.agentClient.startScenario) await this.processTranscript({ text: '' }, true);
+      if (this.agentClient.startScenario) await this.processTranscript({ text: '' }, true);
       else await this.runVoiceOperation('startListening');
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);

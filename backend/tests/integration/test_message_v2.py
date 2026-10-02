@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.data.loaders import load_starter_kit
 from app.dialog.models import DialogState
 from app.main import create_app
+from app.packs.insurance_manager.privacy import redact_text
 
 
 def settings(**overrides) -> Settings:
@@ -84,7 +85,7 @@ def assert_trace(body: dict, *, completed: str | None, actions: list[str], sourc
     trace = body["trace"]
     assert trace["completed_scenario"] == completed
     assert trace["actions"] == actions
-    assert trace["source_keys"] == sources
+    assert trace["source_keys"] == [redact_text(key) for key in sources]
     assert trace["policy_outcome"] in {"accept", "continue"}
     for component in ("router", "policy", "response", "total"):
         assert trace["latency_ms"][component] >= 0
@@ -322,7 +323,7 @@ def test_clarification_preserves_context_rejects_uncertain_slots_then_accepts_co
         assert unclear["response_text"] == question
         assert unclear["state"]["clarification_options"] == ["SC19", "SC17"]
         assert unclear["state"]["active_scenario"] == "SC27"
-        assert unclear["state"]["slots"] == {"phone": "+77010000001"}
+        assert unclear["state"]["slots"] == {"phone": "[получено]"}
         assert unclear["state"]["unclear_count"] == 1
         assert unclear["trace"]["clarification"] is True
         assert unclear["trace"]["policy_outcome"] == "clarify"
@@ -336,7 +337,8 @@ def test_clarification_preserves_context_rejects_uncertain_slots_then_accepts_co
         assert corrected["state"]["scenario_stack"] == ["SC27"]
         assert corrected["state"]["clarification_options"] == []
         assert corrected["state"]["unclear_count"] == 0
-        assert corrected["state"]["slots"] == {"phone": "+77010000001"}
+        assert corrected["state"]["slots"] == {"phone": "[получено]"}
+        assert router.previous_states[2].slots == {"phone": "+77010000001"}
         assert corrected["conversation_status"] == "awaiting_user"
         assert corrected["trace"]["policy_outcome"] == "accept"
 

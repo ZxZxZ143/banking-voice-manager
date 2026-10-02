@@ -49,7 +49,9 @@ class ScenarioStartRequest(Contract):
         return value
 
 
-@router.post("/conversation/start", response_model=ProductMessageResponse)
+@router.post(
+    "/conversation/start", response_model=InsuranceMessageResponse | ProductMessageResponse
+)
 async def start_scenario(payload: ScenarioStartRequest, request: Request):
     return await _process(
         request, payload.session_id, "", payload.scenario_mode, start_scenario=True

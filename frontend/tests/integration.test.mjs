@@ -21,6 +21,15 @@ test('final STT events use the HTTP contract and reply language, keeping one ses
       state: { response_language: 'kk' } },
   ];
   globalThis.fetch = async (url, options) => {
+    if (url === 'http://agent.example/api/conversation/start') {
+      const body = JSON.parse(options.body);
+      assert.equal(body.scenario_mode, 'insurance_manager');
+      assert.equal(Object.hasOwn(body, 'text'), false);
+      return new Response(JSON.stringify({response_text: 'Здравствуйте! Saqta Insurance.',
+        conversation_status: 'active', state: {response_language: 'ru'}}), {
+        headers: {'Content-Type': 'application/json'},
+      });
+    }
     assert.equal(url, 'http://agent.example/api/message');
     const body = JSON.parse(options.body);
     assert.deepEqual(Object.keys(body).sort(), ['session_id', 'text']);
@@ -50,7 +59,7 @@ test('final STT events use the HTTP contract and reply language, keeping one ses
     assert.equal(requests.length, 3);
     assert.equal(voiceSessions.length, 3);
     assert.equal(new Set([...voiceSessions, ...requests.map((request) => request.session_id)]).size, 1);
-    assert.deepEqual(spoken.map((item) => item.language), ['kk', 'ru', 'kk']);
+    assert.deepEqual(spoken.map((item) => item.language), ['ru', 'kk', 'ru', 'kk']);
     await runtime.handleTranscript({ text: 'late transcript' });
     assert.equal(requests.length, 3);
   } finally {

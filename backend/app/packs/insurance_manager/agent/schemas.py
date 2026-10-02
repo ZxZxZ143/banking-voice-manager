@@ -20,6 +20,7 @@ class RouterDecision(Contract):
     alternatives: list[ScenarioScore] = Field(default_factory=list)
     slots: Slots = Field(default_factory=dict)
     is_continuation: bool = False
+    conversation_signal: Literal["none", "greeting", "answer", "partial_answer"] = "none"
 
     @model_validator(mode="after")
     def validate_segments(self) -> "RouterDecision":
@@ -40,7 +41,7 @@ class ExtractedSlot(Contract):
     """Closed SDK schema: named values instead of an open JSON object."""
 
     name: str
-    value: str | int | float | bool | list[str] | None
+    value: str | int | float | bool | list[str]
 
 
 class RouterAgentOutput(Contract):
@@ -54,6 +55,7 @@ class RouterAgentOutput(Contract):
     alternatives: list[ScenarioScore] = Field(max_length=2)
     slots: list[ExtractedSlot]
     is_continuation: bool
+    conversation_signal: Literal["none", "greeting", "answer", "partial_answer"] = "none"
 
     def to_decision(self) -> RouterDecision:
         names = [slot.name for slot in self.slots]
@@ -68,4 +70,5 @@ class RouterAgentOutput(Contract):
             alternatives=self.alternatives,
             slots={slot.name: slot.value for slot in self.slots},
             is_continuation=self.is_continuation,
+            conversation_signal=self.conversation_signal,
         )

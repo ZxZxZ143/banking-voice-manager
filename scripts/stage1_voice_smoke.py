@@ -11,7 +11,7 @@ from uuid import uuid4
 from websockets.asyncio.client import connect
 
 
-async def transcribe(base, session, audio):
+async def transcribe(base, session, audio, *, pause_ms=500):
     with wave.open(str(audio), "rb") as wav:
         assert (wav.getframerate(), wav.getnchannels(), wav.getsampwidth()) == (
             24000,
@@ -33,7 +33,7 @@ async def transcribe(base, session, audio):
                     "session_id": session,
                     "sample_rate": 24000,
                     "channels": 1,
-                    "pause_ms": 500,
+                    "pause_ms": pause_ms,
                 }
             )
         )

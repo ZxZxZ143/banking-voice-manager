@@ -134,8 +134,8 @@ test('proactive pack speaks a backend opener before listening and never fabricat
 test('switching into proactive pack while listening starts the backend conversation immediately', async () => {
   let opened = 0;
   const runtime = new ConversationRuntime({
-    startScenario: async () => { opened++; return { response_text: 'Приветствие банка', conversation_status: 'active',
-      trace: { scenario_pack_id: 'product_promoter' } }; },
+    startScenario: async request => { opened++; return { response_text: 'Приветствие', conversation_status: 'active',
+      trace: { scenario_pack_id: request.scenario_mode } }; },
     sendMessage: async () => { throw new Error('No customer request expected'); },
   }, tts);
   await runtime.setVoiceInputEnabled(false);
@@ -143,9 +143,26 @@ test('switching into proactive pack while listening starts the backend conversat
   const id = runtime.getSnapshot().sessionId;
   runtime.selectScenarioPack('product_promoter');
   await new Promise(r => setImmediate(r));
-  assert.equal(opened, 1);
+  assert.equal(opened, 2);
   assert.equal(runtime.getSnapshot().activePack, 'product_promoter');
   assert.equal(runtime.getSnapshot().sessionId, id);
   assert.equal(runtime.getSnapshot().messages[0].role, 'assistant');
+  runtime.dispose();
+});
+
+test('insurance starts with an assistant-only opener and TTS finishes before capture', async () => {
+  const events = [];
+  const runtime = new ConversationRuntime({
+    startScenario: async request => { events.push(['open', request]); return {
+      response_text: 'Здравствуйте! Saqta Insurance. Чем могу помочь?',
+      conversation_status: 'active', trace: { scenario_pack_id: 'insurance_manager' },
+    }; },
+    sendMessage: async () => { throw new Error('No fabricated customer turn'); },
+  }, { speak: async () => { events.push(['tts']); return {}; }, stop() {} });
+  runtime.attachVoiceInput({ startListening() { events.push(['listen']); }, stopListening() {} });
+  await runtime.startConversation();
+  assert.deepEqual(events.map(e => e[0]), ['open', 'tts', 'listen']);
+  assert.equal(events[0][1].scenario_mode, 'insurance_manager');
+  assert.deepEqual(runtime.getSnapshot().messages.map(m => m.role), ['assistant']);
   runtime.dispose();
 });

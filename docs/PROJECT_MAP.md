@@ -10,13 +10,22 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 3.1:** Insurance now separates Router, Decision Policy, grounded facts and a
+  pack-local LLM Composer. Both packs have assistant-only openers. Insurance tracks the
+  previous question/expected answer, resets repair counters on progress, normalizes requested
+  numeric/spoken identifiers and masks public identifiers. Separate 32-dialogue evaluation
+  and measured evidence: `STAGE3_1_CONVERSATION_VALIDATION.md`. Stage 4 is not started.
+  Literal trip duration survives date collection; only an explicit start allows the server
+  to derive an inclusive end. Sensitive ID/contact fields are masked in public results.
+
 - **Stage 3:** two production packs, conditional public-manifest selector with confirmation,
   isolated suspend/resume and rollback, six synthetic banking products, grounded discovery,
   comparisons, objections, refusal and SalesLeadResult. Product starts the conversation with
   a branded greeting and uses human currency speech. UI selection, lead/conditions and switch
   traces share the existing runtime/session. Evidence is in `STAGE3_VALIDATION.md`.
 
-- **Implemented:** `POST /api/message`, one selected-pack SDK call per normal turn,
+- **Implemented:** `POST /api/message`, Router + Composer for normal Insurance turns and
+  one SDK call for Product turns,
   strict ID/slot validation, RU/KK/mixed routing contract, single/multi-intent prompt,
   continuation/topic switching, bounded in-memory sessions/traces, confidence policy,
   targeted clarification, source-based quotes, assisted catalog workflows, evaluation CLI and a
@@ -50,7 +59,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/packs/product_promoter/` | Product decision/state/result, deterministic catalog matching and human speech |
 | `backend/app/packs/selector.py`, `structured_agent.py` | Conditional public-manifest selection and bounded SDK transport |
 | `backend/app/packs/insurance_manager/` | Production pack, InsuranceResult, local state, insurance processor and public wire projection |
-| `backend/app/packs/insurance_manager/agent/` | Unchanged one-call SDK Router, prompt and structured insurance output |
+| `backend/app/packs/insurance_manager/agent/` | One-call SDK Router, structured routing plus conversational progress signal |
+| `backend/app/packs/insurance_manager/composer.py` | Natural acknowledgement/question, strict output, immutable facts and safe fallback |
+| `backend/app/packs/insurance_manager/expected_answers.py`, `privacy.py` | Already requested identifier normalization and presentation redaction |
 | `backend/app/packs/insurance_manager/data/`, `scenarios/`, `tools/`, `response/` | Canonical-data adapters, catalog/policy, disabled writes, read-only helpers and insurance replies |
 | `backend/app/agent/`, `dialog/`, `data/`, `scenarios/`, `tools/`, `response/` | Compatibility exports/adapters for existing consumers; insurance implementation moved into the pack |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
@@ -77,6 +88,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `docker-compose.yml`, `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf` | Health-checked local application stack and HTTP/WS proxy |
 | `docs/STAGE1_VALIDATION.md` | Current Stage 1 evidence, eval comparison and remaining limits |
 | `docs/STAGE3_VALIDATION.md` | Stage 3 product, switching, speech, live eval, Docker and security evidence |
+| `data/insurance_conversation/eval_cases.json`, `scripts/evaluate_insurance_conversation.py` | Separate 32-dialogue live conversation metrics, no style judge |
+| `docs/STAGE3_1_CONVERSATION_VALIDATION.md` | Stage 3.1 dialogue design, measured regressions, browser/voice/security evidence |
 | `docs/STAGE2_VALIDATION.md` | Stage 2 migration, context isolation, measured compatibility and regression results |
 
 Backend paths in this table are relative to `backend/app/` where abbreviated.
@@ -90,14 +103,16 @@ and SalesLeadResult remain in their respective entries. Explicit selection is re
 natural selection runs only after an out-of-domain result and requires customer confirmation.
 
 A normal request locks/snapshots the session, activates/resumes the selected pack, calls its
-structured Agent once, runs deterministic policy and commits state/result/trace together.
-Failures roll back. Product opening uses `/api/conversation/start` with zero model calls.
+Router, runs deterministic policy/business logic, then Insurance Composer phrases the next
+authorized step; Product retains its single-Agent flow. State/result/trace commit together.
+Router/provider failures roll back; Composer failures retain business progress and use a
+diagnosable safe fallback. Both openers use `/api/conversation/start` with zero model calls.
 All SDK transport is bounded: no tools/handoffs, max_turns=1, retry=0, disabled tracing/storage.
-The unchanged Insurance prompt/schema/input have a separate 104-case live regression run.
+The extended Insurance schema/prompt have a separate unchanged 104-case live regression run.
 
 The browser fetches real health through Vite. The frontend runtime creates one session ID,
 accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
-`POST /api/message` (or the assistant-only Product start request), displays the reply, awaits TTS playback, then resumes listening unless
+`POST /api/message` (or either assistant-only start request), displays the reply, awaits TTS playback, then resumes listening unless
 the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
 `onend`; `onstart` gives first-audio latency. A bounded playback watchdog rejects stalled
 speech. Successful handoff/ended states survive TTS failure. A no-audio adapter remains for tests.
@@ -127,8 +142,9 @@ Application traces expose concise reasons and measured latency, never hidden cha
   Invalid input 422; missing key/model 503; provider failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
   Provider failures do not commit history/state/trace. Invalid structured model decisions
-  become SYS_UNCLEAR with no business actions and an allowlisted routing_error in trace;
-  repeated failures follow the existing handoff policy.
+  become SYS_UNCLEAR with an allowlisted routing_error in trace. A source-valid already
+  requested identifier may still continue the authorized active workflow; rejected new
+  business selections never execute. Genuine repeated failed repairs can lead to handoff.
   Optional `scenario_mode=insurance_manager` selects the same default; unknown packs return
   422 with `unknown_scenario_pack` without an LLM call. Trace adds pack/mode/lifecycle fields.
 - `GET /dev`: standalone debug form, enabled only with `ENABLE_DEV_STAND=true` (otherwise
@@ -144,23 +160,27 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - `WS /api/v1/voice`: one-utterance PCM16 streaming STT; final event includes text,
   nullable language and `stt_after_commit_ms`. See `docs/VOICE_STREAMING_CONTRACT.md`.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
-  alternatives, slots, optional clarification_question and continuation. SDK transport uses a named-slot list for closed JSON
+  alternatives, slots, conversation_signal, optional clarification_question and continuation.
+  SDK transport uses a named-slot list with non-null values for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
   SDK selections/segments are nonempty even for system intents. Fresh routing input omits
   storage language defaults; source enum spellings normalize before strict validation.
 - `dialog/models.py`: DialogueState includes session/language/response_language/client,
   active scenario, stack, pending scenarios, slots, confirmation flag, turn number,
   unclear and consecutive-low-confidence counts, clarification_options, conversation_status,
-  scenario_mode and scenario_slots snapshots, plus bounded history.
+  scenario_mode and scenario_slots snapshots, plus bounded history and optional conversation
+  metadata (act, question, expected answer/slot, repair attempts, phase, recognized context).
   Statuses: active, awaiting_user, awaiting_confirmation, handoff, ended; confirmation is
   reserved, not emitted until a real preview/confirmation workflow exists.
 - `tracing/models.py`: transcript, scenarios, alternatives, concise reason, slots, actions,
   session/turn, clarification/handoff/status, active/pending and measured timings
-  (router/policy/response/total), source_keys, policy_outcome and completed_scenario.
+  (router/policy/business/composer/response/total), source_keys, policy_outcome, completed_scenario,
+  conversation act/phase/expected slot/repair count and allowlisted composer_error.
   Actions list only attempted read-only helpers; unmeasured stages = null. Read-only helper
   duration is included in response latency, not a separately measured tools span.
-- `PolicySettings` defaults: accept 0.75, low 0.45, handoff after two low-confidence turns
-  or three unresolved clarifications. A confident SC37 request independently triggers handoff.
+- `PolicySettings` defaults: accept 0.75, low 0.45, legacy low threshold two and unresolved
+  threshold three. Conversational policy additionally requires at least two prior distinct
+  failed repairs; valid answers/slots reset failure counters. A confident SC37 triggers handoff.
   Confident urgent requests proceed even with a weak secondary intent; only confident
   selections become active/pending, while original evidence remains in routing/history.
   Urgent requests precede normal requests; continuation preserves pending items and slots.
@@ -223,7 +243,7 @@ This affects replies only, not scenario selection or the recorded Router languag
 
 ## Configuration and commands
 
-Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, ROUTER_TIMEOUT_SECONDS (45),
+Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Router fallback), ROUTER_TIMEOUT_SECONDS (45),
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.

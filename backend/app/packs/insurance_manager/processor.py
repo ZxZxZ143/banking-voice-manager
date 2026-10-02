@@ -1,9 +1,17 @@
+import asyncio
 import re
+from datetime import date, timedelta
 from time import perf_counter
 
-from app.agent.errors import RouterOutputError
+from app.agent.errors import RouterError, RouterOutputError
 from app.packs.insurance_manager.agent.router import Router
 from app.packs.insurance_manager.agent.schemas import RouterDecision
+from app.packs.insurance_manager.composer import (
+    CompositionError,
+    composer_payload,
+    fallback_composition,
+)
+from app.packs.insurance_manager.expected_answers import expected_identifier, expected_trip_duration
 from app.packs.insurance_manager.history import append_turn
 from app.packs.insurance_manager.response.routing import RoutingReplyGenerator
 from app.packs.insurance_manager.scenarios.decision_policy import DecisionPolicy, PolicyResult
@@ -43,15 +51,22 @@ def reply_language_for_turn(text: str, decision: RouterDecision) -> str | None:
         "ещё",
     }
     if (
-        decision.language == "kk"
+        decision.language in {"kk", "mixed"}
         and not marked
-        and sum(word.casefold() in russian_markers for word in words) >= 2
+        and (
+            sum(word.casefold() in russian_markers for word in words) >= 2
+            or (len(words) <= 5 and any(word.casefold() in russian_markers for word in words))
+        )
     ):
         return "ru"
     if (
-        decision.language == "ru"
+        decision.language in {"ru", "mixed"}
         and marked
-        and ((len(words) == 1) or (marked >= 2 and marked * 2 >= len(words)))
+        and (
+            (len(words) <= 3 and marked * 2 >= len(words))
+            or (marked >= 2 and marked * 2 >= len(words))
+            or (len(words) <= 5 and not any(word.casefold() in russian_markers for word in words))
+        )
     ):
         return "kk"
     if decision.language in ("ru", "kk"):
@@ -65,10 +80,12 @@ class InsuranceTurnProcessor:
         router: Router,
         policy: DecisionPolicy,
         replies: RoutingReplyGenerator,
+        composer=None,
     ) -> None:
         self.router = router
         self.policy = policy
         self.replies = replies
+        self.composer = composer
 
     async def process(self, previous: DialogState, text: str):
         started = perf_counter()
@@ -103,9 +120,45 @@ class InsuranceTurnProcessor:
                     )
                 ],
             )
+        supplied = expected_identifier(text, previous, self.replies.slots)
+        if supplied:
+            name, value = supplied
+            decision.slots[name] = value
+            decision.conversation_signal = "answer"
+        duration = expected_trip_duration(text, previous)
+        known_duration = duration or (
+            previous.conversation.travel_duration_days if previous.conversation else None
+        )
+        if duration:
+            decision.conversation_signal = "partial_answer"
+            # A literal duration supplies no calendar dates. Reject model guesses based
+            # on today's date; the start must be supplied separately by the customer.
+            decision.slots.pop("trip_start", None)
+            decision.slots.pop("trip_end", None)
+        supplied_end = "trip_end" in decision.slots
+        if (
+            previous.active_scenario == "SC06"
+            and known_duration
+            and all(s.scenario_id in {"SC06", "SYS_UNCLEAR"} for s in decision.scenarios)
+        ):
+            known_dates = {**previous.slots, **decision.slots}
+            if known_dates.get("trip_start") and (
+                duration
+                or ("trip_start" in decision.slots and "trip_end" not in decision.slots)
+                or not known_dates.get("trip_end")
+            ):
+                # The quote counts both start and end dates: an explicit fortnight is 14 days.
+                decision.slots["trip_end"] = (
+                    date.fromisoformat(known_dates["trip_start"])
+                    + timedelta(days=known_duration - 1)
+                ).isoformat()
         # The current request language wins over a stale conversation preference.
         # Do not reuse a clarification generated in the wrong reply language.
         reply_language = reply_language_for_turn(text, decision)
+        if previous.history and re.fullmatch(r"[\d\s()+-]+|(?:SQ-[A-Za-z]+|CL)-\d+", text.strip()):
+            # Numeric identifiers have no spoken-language preference of their own.
+            reply_language = previous.response_language
+            decision.language = previous.language or previous.response_language
         if reply_language is not None and decision.response_language != reply_language:
             decision = decision.model_copy(
                 update={
@@ -121,13 +174,103 @@ class InsuranceTurnProcessor:
         except ValueError as exc:
             raise RouterOutputError() from exc
         state = self._transition(previous, decision, policy)
+        if duration and state.conversation:
+            state.conversation.travel_duration_days = duration
+        elif supplied_end and state.conversation:
+            state.conversation.travel_duration_days = None
         state = append_turn(state, DialogTurn(role="user", text=text))
         policy_ms = (perf_counter() - policy_started) * 1000
         response_started = perf_counter()
         reply = self.replies.generate_result(state, policy, decision)
+        if (
+            self.composer is not None
+            and policy.outcome == "handoff"
+            and not any(
+                s.scenario_id == "SC37" and s.confidence >= self.policy.settings.accept_threshold
+                for s in decision.scenarios
+            )
+        ):
+            reply.text = (
+                "После нескольких уточнений я не смог понять, какая помощь нужна. "
+                "Специалист сможет разобраться подробнее. "
+                if state.response_language == "ru"
+                else "Бірнеше нақтылаудан кейін қандай көмек керегін түсіне алмадым. "
+                "Маман мәселені толығырақ анықтай алады. "
+            ) + reply.text
         if reply.handoff:
             state.conversation_status = "handoff"
         response = reply.text
+        business_ms = (perf_counter() - response_started) * 1000
+        composer_ms, composer_error = None, None
+        if self.composer is not None and state.conversation is not None:
+            explicit_operator = policy.outcome == "handoff" and any(
+                s.scenario_id == "SC37" and s.confidence >= self.policy.settings.accept_threshold
+                for s in decision.scenarios
+            )
+            payload = composer_payload(previous, state, text, decision, policy, reply, self.replies)
+            if explicit_operator:
+                composed = fallback_composition(payload, reply)
+            else:
+                composer_started = perf_counter()
+                try:
+                    async with asyncio.timeout(max(0.001, 55 - (perf_counter() - started))):
+                        composed = await self.composer.compose(payload)
+                except (RouterError, ValueError, TimeoutError) as exc:
+                    if isinstance(exc, CompositionError) and exc.goal_context:
+                        # A rejected question must not erase an understood partial goal.
+                        # Only typed conversational context survives, never rejected prose.
+                        payload["conversation"]["acknowledged_information"] = exc.goal_context
+                    composer_error = (
+                        exc.code
+                        if isinstance(exc, RouterError)
+                        else "composer_timeout"
+                        if isinstance(exc, TimeoutError)
+                        else "composer_" + str(exc)
+                        if str(exc)
+                        in {
+                            "unsupported_composer_claim",
+                            "one_question_required",
+                            "terminal_composition",
+                            "unauthorized_handoff",
+                            "unexpected_collection_target",
+                            "unexpected_slot",
+                            "missing_next_question",
+                            "repeated_question",
+                        }
+                        else "composer_validation"
+                    )
+                    composed = fallback_composition(payload, reply)
+                composer_ms = (perf_counter() - composer_started) * 1000
+            response = " ".join(
+                part
+                for part in (composed.acknowledgement, payload["grounded_facts"], composed.question)
+                if part
+            )
+            meta = state.conversation
+            if set(composed.acknowledged_information) & {"existing_policy", "new_policy"}:
+                # Communicative progress is not business authorization. It only resets
+                # misunderstanding; neither scenarios nor facts are chosen here.
+                meta.repair_attempts = 0
+                state.consecutive_low_confidence = 0
+                state.unclear_count = 0
+            meta.last_assistant_act = composed.conversation_act
+            meta.last_question = composed.question
+            meta.expected_answer_type = (
+                "slot" if payload["next_slot"] else composed.expected_answer_type
+            )
+            meta.expected_slot = payload["next_slot"]
+            meta.acknowledged_information = list(
+                dict.fromkeys([*meta.acknowledged_information, *composed.acknowledged_information])
+            )[-8:]
+            meta.phase = (
+                "handoff"
+                if state.conversation_status == "handoff"
+                else "collect"
+                if payload["next_slot"]
+                else "resolve"
+                if reply.completed
+                else "discover"
+            )
         collected_data = dict(state.slots)
         completed_scenario = state.active_scenario if reply.completed else None
         if reply.completed:
@@ -153,6 +296,14 @@ class InsuranceTurnProcessor:
                 else policy.reason
             ),
             routing_error=routing_error,
+            composer_error=composer_error,
+            conversation_act=state.conversation.last_assistant_act if state.conversation else None,
+            expected_answer_type=(
+                state.conversation.expected_answer_type if state.conversation else None
+            ),
+            expected_slot=state.conversation.expected_slot if state.conversation else None,
+            conversation_phase=state.conversation.phase if state.conversation else None,
+            repair_attempts=state.conversation.repair_attempts if state.conversation else None,
             slots=decision.slots,
             actions=reply.actions,
             source_keys=reply.source_keys,
@@ -169,6 +320,8 @@ class InsuranceTurnProcessor:
                 router=router_ms,
                 policy=policy_ms,
                 response=response_ms,
+                business=business_ms,
+                composer=composer_ms,
                 total=(perf_counter() - started) * 1000,
             ),
         )
@@ -183,6 +336,18 @@ class InsuranceTurnProcessor:
             decision.language if decision.language in ("ru", "kk") else previous.response_language
         )
         state.consecutive_low_confidence = policy.consecutive_low_confidence
+        progress = bool(decision.slots and decision.is_continuation) or bool(
+            state.conversation
+            and state.conversation.expected_answer_type
+            and decision.conversation_signal in {"answer", "partial_answer"}
+        )
+        greeting = decision.conversation_signal == "greeting"
+        if state.conversation and (
+            progress or greeting or policy.outcome in {"accept", "continue"}
+        ):
+            state.conversation.repair_attempts = 0
+            state.consecutive_low_confidence = 0
+            state.unclear_count = 0
         state.awaiting_confirmation = False
         if policy.outcome == "handoff":
             if not any(
@@ -195,7 +360,10 @@ class InsuranceTurnProcessor:
             state.conversation_status = "handoff"
             return state
         if policy.outcome == "clarify":
-            state.unclear_count += 1
+            if not progress and not greeting:
+                state.unclear_count += 1
+                if state.conversation:
+                    state.conversation.repair_attempts += 1
             candidates = sorted(
                 [*decision.scenarios, *decision.alternatives],
                 key=lambda item: item.confidence,
@@ -213,6 +381,8 @@ class InsuranceTurnProcessor:
         state.unclear_count = 0
         state.clarification_options = []
         selected = policy.scenario_ids[0]
+        if state.conversation and previous.active_scenario != selected:
+            state.conversation.travel_duration_days = None
         if selected == "SYS_GOODBYE":
             state.conversation_status = "ended"
             return state

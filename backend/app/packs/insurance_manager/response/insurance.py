@@ -118,17 +118,28 @@ class InsuranceReplies:
         def text(ru, kk):
             return ru if lang == "ru" else kk
 
-        def answer(message, sources=(), actions=("kb_lookup",), completed=True, handoff=False):
+        def answer(
+            message,
+            sources=(),
+            actions=("kb_lookup",),
+            completed=True,
+            handoff=False,
+            expected_slot=None,
+        ):
             return dict(
                 text=message,
                 source_keys=list(sources),
                 actions=list(actions),
                 completed=completed,
                 handoff=handoff,
+                expected_slot=expected_slot,
             )
 
         def ask(name):
-            return answer(getattr(self.slots[name].prompt, lang), actions=(), completed=False)
+            return {
+                **answer(getattr(self.slots[name].prompt, lang), actions=(), completed=False),
+                "expected_slot": name,
+            }
 
         def transfer(message="", sources=(), actions=()):
             return answer(
@@ -393,6 +404,7 @@ class InsuranceReplies:
                     ),
                     actions=["find_client"],
                     completed=False,
+                    expected_slot="phone",
                 )
             client_id = client.data["client_id"]
             state.client_id = client_id
@@ -416,6 +428,7 @@ class InsuranceReplies:
                     ["mock_backend.payments"],
                     ["find_client", "check_payment"],
                     completed=False,
+                    expected_slot="payment_date",
                 )
             status_labels = {
                 "success": ("успешен", "сәтті"),

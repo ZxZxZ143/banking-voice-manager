@@ -126,6 +126,7 @@ class RoutingReplyResult(Contract):
     source_keys: list[str] = Field(default_factory=list)
     completed: bool = False
     handoff: bool = False
+    expected_slot: str | None = None
 
 
 class RoutingReplyGenerator:
@@ -237,7 +238,9 @@ class RoutingReplyGenerator:
         )
 
     def _ask(self, state: DialogState, name: str) -> RoutingReplyResult:
-        return RoutingReplyResult(text=getattr(self.slots[name].prompt, state.response_language))
+        return RoutingReplyResult(
+            text=getattr(self.slots[name].prompt, state.response_language), expected_slot=name
+        )
 
     @staticmethod
     def _string_slot(state: DialogState, name: str) -> str | None:
@@ -351,6 +354,7 @@ class RoutingReplyGenerator:
                     "kk": "Демонстрациялық деректерден клиент табылмады. Телефонды нақтылаңызшы.",
                 }[language],
                 actions=["find_client"],
+                expected_slot="phone",
             )
         identifier = "policy_number" if scenario_id == "SC25" else "claim_number"
         function = get_policy if scenario_id == "SC25" else get_claim
@@ -377,7 +381,7 @@ class RoutingReplyGenerator:
                     ),
                 }[language]
             )
-            return RoutingReplyResult(text=text, actions=actions)
+            return RoutingReplyResult(text=text, actions=actions, expected_slot=identifier)
         record = result.data
         prefix = {"ru": "По демонстрационным данным", "kk": "Демонстрациялық деректер бойынша"}[
             language

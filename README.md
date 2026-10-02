@@ -1,6 +1,6 @@
 # Banking Voice Platform
 
-Modular conversational platform for Russian, Kazakh and mixed speech. Two production Scenario Packs share sessions, streaming transcription, browser speech synthesis and supervisor traces: **Insurance Manager** and the proactive **Product Promoter**. Each pack uses its own bounded OpenAI Agents SDK agent and isolated business context.
+Modular conversational platform for Russian, Kazakh and mixed speech. Two production Scenario Packs share sessions, streaming transcription, browser speech synthesis and supervisor traces: **Insurance Manager** and the proactive **Product Promoter**. Each pack owns its isolated business context. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
 
 Insurance uses the supplied **fictional Saqta Insurance** snapshot. Product Promoter uses six synthetic products from **Merei Demo Bank**: three deposits and three debit/payment cards. Both catalogs have reference date **2026-10-01**. These are demonstration conditions and records, not real-bank offers. Fraud & Security and Loan Consultant are unimplemented.
 
@@ -16,6 +16,11 @@ switch request; business data never crosses packs. See [the architecture](docs/A
 - Product starts with a branded Merei Demo Bank greeting before listening. Currency and
   amounts are understood and spoken naturally: «50 тысяч тенге», «100 долларов США».
   Full conditions remain available in a separate disclosure.
+- Insurance also starts with an assistant-only Saqta Insurance greeting before listening.
+  Its Composer uses bounded history, the previous question and the authorized next step
+  to acknowledge partial answers and ask one useful follow-up. Facts are immutable server
+  blocks; only acknowledgement and question wording come from the Composer.
+  Valid requested identifiers continue the flow and reset misunderstanding counters.
 - Product consultation: one useful discovery question, explicit multi-field preferences,
   deterministic candidate matching, catalog conditions, conditional comparison, objections,
   respectful refusal and a typed `SalesLeadResult`. Interest, requested link and callback are
@@ -67,6 +72,7 @@ Stopping/recreating the backend clears its in-memory conversations and traces. `
 |---|---|
 | `OPENAI_API_KEY` | Server-only local secret; required for live routing/STT |
 | `OPENAI_ROUTER_MODEL` | Explicit structured-output model; measured with `gpt-4.1-mini` |
+| `OPENAI_RESPONSE_MODEL` | Optional Insurance Composer model; blank reuses Router model |
 | `ROUTER_TEMPERATURE` | Optional model setting; example uses `0` |
 | `ROUTER_TIMEOUT_SECONDS` | 45 seconds; no automatic routing retry |
 | `ROUTER_MAX_OUTPUT_TOKENS` | 2500 |
@@ -85,19 +91,22 @@ Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `fr
 `GET /health` confirms startup and loaded dataset counts; it does not test OpenAI availability.
 
 `POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
-`scenario_mode=insurance_manager|product_promoter`. Reuse the ID across turns. One normal
-turn calls the active pack's agent once; an out-of-domain turn may additionally call the
+`scenario_mode=insurance_manager|product_promoter`. Reuse the ID across turns.
+Normal Product turns call their agent once. Normal Insurance turns call Router and Composer;
+an out-of-domain turn may additionally call the
 platform selector. Confirming a proposed switch processes the original request in the target
 pack; rejecting it preserves the current business context without another model call.
 Terminal sessions reject further turns with 409; reset creates a new session. Invalid input
 is 422, missing model/key 503, provider outage 502 and timeout 504.
 
-`POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Product
-with zero model calls and no fabricated customer turn. Packs without an opener return 422.
+`POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Insurance
+or Product with zero model calls and no fabricated customer turn. TTS finishes before listening.
 
 Unregistered packs return 422 before any model call. All responses retain six top-level fields:
 `session_id`, `response_text`, `routing`, `state`, `trace`, `conversation_status`. Insurance
-keeps its existing flat state and Router schema. Product state exposes `sales_lead` and the
+adds conversation metadata and a Router conversation signal to its existing state/schema.
+Public Insurance identifiers, source references and transcripts are masked; actual values
+remain in the pack's private business state. Product state exposes `sales_lead` and the
 actually displayed catalog records; switch confirmations expose minimal platform state.
 OpenAPI declares these three typed variants. The latest InsuranceResult and SalesLeadResult
 remain in their own internal entries. Trace includes pack, mode, lifecycle and safe switch/product metadata.
@@ -139,9 +148,15 @@ Stop the native services before starting Docker on the same ports.
 ./.venv/Scripts/python.exe -X utf8 scripts/stage1_smoke.py
 ./.venv/Scripts/python.exe -X utf8 scripts/stage3_smoke.py --output work/new-stage3-e2e.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_product_promoter.py --output work/evals/new-product-run.json
+./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --output work/evals/new-dialogue-run.json
+./.venv/Scripts/python.exe -X utf8 scripts/stage3_1_voice_smoke.py --audio-directory work/voice-stage31 --output work/new-stage31-voice.json
 ```
 
 Live evaluation and API smoke call OpenAI. Evaluation output must be a new path; all failed calls count as wrong. In `frontend`:
+
+The voice smoke expects `voice-phone.wav`, `voice-iin.wav` and `voice-existing.wav`
+in the supplied directory: synthetic/test audio, PCM16 mono at 24 kHz. Audio evidence stays
+in ignored `work/`; it is not distributed with the repository.
 
 ```powershell
 npm run typecheck
@@ -149,7 +164,9 @@ npm run build
 node --experimental-transform-types --test tests/*.test.mjs
 ```
 
-Current evidence and limitations are in [Stage 3 validation](docs/STAGE3_VALIDATION.md),
+Stage 3.1 conversation results and limitations are in
+[Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md). Earlier evidence is in
+[Stage 3 validation](docs/STAGE3_VALIDATION.md),
 with the architecture baseline in [Stage 2 validation](docs/STAGE2_VALIDATION.md)
 and the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).
 Offline fixtures establish contract/state behavior, not model accuracy.

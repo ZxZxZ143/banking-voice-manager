@@ -151,7 +151,7 @@ def test_catalog_and_prompt_preserve_authoritative_boundaries(kit):
     assert "untrusted DATA" in prompt
     assert "client_id" in prompt and "current utterance" in prompt
     assert '"name":"phone"' in prompt and '"type":"boolean"' in prompt
-    assert "U001" not in prompt and "expected" not in prompt
+    assert "U001" not in prompt and '"expected"' not in prompt
 
 
 def test_sdk_schema_has_closed_objects_and_required_fields():
@@ -291,7 +291,13 @@ def test_source_slot_types_are_accepted(kit, settings, sdk, slots):
     ],
 )
 def test_invalid_or_application_owned_slots_rejected_without_retry(kit, settings, sdk, slots):
-    sdk.run.return_value = SimpleNamespace(final_output=output("SC01", slots=slots))
+    if slots == {"phone": None}:
+        # Stage 3.1 rejects nullable placeholders in the SDK schema itself.
+        with pytest.raises(ValidationError):
+            output("SC01", slots=slots)
+        sdk.run.side_effect = ModelBehaviorError("Rejected nullable slot output")
+    else:
+        sdk.run.return_value = SimpleNamespace(final_output=output("SC01", slots=slots))
     with pytest.raises(RouterOutputError):
         asyncio.run(
             RouterAgent(ScenarioCatalog(kit.scenarios), settings=settings, slots=kit.slots).route(

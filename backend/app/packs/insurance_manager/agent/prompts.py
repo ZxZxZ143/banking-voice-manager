@@ -79,6 +79,17 @@ confidence and reason, with a matching segment quoting the utterance. Never retu
 scenarios/segments just because there is no business request or because you ask a question.
 
 CONTEXT AND LANGUAGE
+conversation_signal describes understanding, never a business action: greeting for a
+greeting-only turn; answer/partial_answer for a meaningful full/partial answer to the
+previous question (including choosing new/existing policy, providing an identifier,
+duration or correcting information); otherwise none. Use dialog_state.conversation's
+expected answer and last question when present. A meaningful answer can remain SYS_UNCLEAR
+if the concrete business outcome is still unknown. That is progress, not failed understanding.
+Even if the last question asked for a problem, learning that the policy is existing or
+new is partial_answer: it narrows discovery. Supplied relevant insurance context is progress.
+Greeting alone is SYS_UNCLEAR with conversation_signal=greeting, not a business selection.
+When the customer repeats context already understood, acknowledge it as partial_answer
+and narrow the remaining question, rather than inventing a business scenario.
 dialog_state is the application-owned context. Its history excludes this current utterance.
 A short answer to the last assistant question, slot-only answer, or confirmation can continue
 active_scenario without inventing a new intent. Set is_continuation=true only when the turn
@@ -168,6 +179,8 @@ Unsupported life insurance is out of scope in either language.
 
 def build_router_input(text: str, state: DialogState) -> str:
     context = state.model_dump(mode="json")
+    if context.get("conversation") is None:
+        context.pop("conversation", None)
     if state.turn_number == 0 and not state.history:
         # Storage defaults are not observed user preferences. Do not anchor a fresh
         # Kazakh turn to the application's placeholder Russian language values.

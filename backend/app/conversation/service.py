@@ -163,6 +163,9 @@ class MessageService:
             trace.context_lifecycle = entry.lifecycle
             trace.scenario_mode = pack.manifest.id
             trace.transcript = text
+            redact_trace = getattr(pack, "redact_trace", None)
+            if redact_trace:
+                redact_trace(trace)
             if previous_pack is not None and previous_pack != pack.manifest.id:
                 trace.pack_switch = PackSwitch(
                     from_pack=previous_pack,

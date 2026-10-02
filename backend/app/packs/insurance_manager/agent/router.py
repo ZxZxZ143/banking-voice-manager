@@ -69,6 +69,20 @@ class RouterAgent:
             raise RouterConfigurationError()
 
         agent = build_router_agent(self.catalog, model.strip(), slots=self.slots)
+        if state.conversation is not None:
+            agent.instructions += (
+                "\nCONVERSATIONAL DISCOVERY: Choosing new versus existing is only partial "
+                "context, not a product or requested operation. Do not choose an OGPO purchase "
+                "without evidence of the vehicle product. Keep SYS_UNCLEAR + partial_answer "
+                "until the product or concrete existing-policy problem is known. "
+                "A conversational continuation without the same active business scenario "
+                "must use is_continuation=false. Never invent an outcome from context alone."
+                " Extract ALL clearly provided entities even when inflected in Kazakh, "
+                "normalizing grammatical endings to the base name where unambiguous. "
+                "Do not omit a destination explicitly named in the utterance. "
+                "Hesitation or filler alone is not meaningful progress: conversation_signal "
+                "must be none unless the answer actually narrows a goal or supplies data."
+            )
         agent.model_settings = ModelSettings(
             temperature=self.settings.router_temperature,
             max_tokens=self.settings.router_max_output_tokens,
@@ -96,6 +110,18 @@ class RouterAgent:
                 raise RouterOutputError()
             decision = result.final_output.to_decision()
             self._normalize_enums(decision)
+            if (
+                state.conversation is not None
+                and state.conversation.expected_answer_type
+                and decision.is_continuation
+                and [s.scenario_id for s in decision.scenarios] != [state.active_scenario]
+            ):
+                # Conversational progress does not select a business scenario.
+                decision.is_continuation = False
+                if decision.conversation_signal == "none" and [
+                    s.scenario_id for s in decision.scenarios
+                ] == ["SYS_UNCLEAR"]:
+                    decision.conversation_signal = "partial_answer"
             self._validate_decision(decision, state)
             if decision.response_language is None:
                 decision.response_language = (

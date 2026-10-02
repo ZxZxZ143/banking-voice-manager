@@ -59,6 +59,29 @@ class DecisionPolicy:
                 consecutive_low_confidence=low_count,
                 reason="Operator assistance is required",
             )
+        conversational = state.conversation
+        progress = bool(
+            (decision.slots and decision.is_continuation)
+            or (
+                conversational
+                and conversational.expected_answer_type
+                and decision.conversation_signal in {"answer", "partial_answer"}
+            )
+        )
+        if decision.conversation_signal == "greeting" or progress:
+            low_count = 0
+        if (
+            conversational
+            and conversational.expected_slot in decision.slots
+            and state.active_scenario is not None
+            and (ids == [state.active_scenario] or ids == ["SYS_UNCLEAR"])
+        ):
+            return PolicyResult(
+                outcome="continue",
+                scenario_ids=[state.active_scenario],
+                consecutive_low_confidence=0,
+                reason="Validated requested data continues the active scenario",
+            )
         confident = [
             item.scenario_id
             for item in decision.scenarios
@@ -78,7 +101,10 @@ class DecisionPolicy:
                 consecutive_low_confidence=0,
                 reason="Prioritize confident urgent requests; uncertain secondary intents deferred",
             )
-        if low_count >= self.settings.handoff_after:
+        repairs_exhausted = conversational is None or conversational.repair_attempts >= max(
+            2, self.settings.max_unclear_turns - 1
+        )
+        if low_count >= self.settings.handoff_after and repairs_exhausted and not progress:
             return PolicyResult(
                 outcome="handoff",
                 scenario_ids=["SC37"],
@@ -86,7 +112,12 @@ class DecisionPolicy:
                 reason="Operator assistance is required",
             )
         if confidence < self.settings.accept_threshold or "SYS_UNCLEAR" in ids:
-            if state.unclear_count + 1 >= self.settings.max_unclear_turns:
+            if (
+                state.unclear_count + 1 >= self.settings.max_unclear_turns
+                and repairs_exhausted
+                and not progress
+                and decision.conversation_signal != "greeting"
+            ):
                 return PolicyResult(
                     outcome="handoff",
                     scenario_ids=["SC37"],

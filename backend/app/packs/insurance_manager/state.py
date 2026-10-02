@@ -12,6 +12,17 @@ class DialogTurn(Contract):
     text: str = Field(min_length=1, max_length=10000)
 
 
+class ConversationState(Contract):
+    last_assistant_act: str | None = None
+    last_question: str | None = None
+    expected_answer_type: str | None = None
+    expected_slot: str | None = None
+    repair_attempts: int = Field(default=0, ge=0)
+    phase: Literal["discover", "collect", "resolve", "confirm", "handoff"] = "discover"
+    acknowledged_information: list[str] = Field(default_factory=list, max_length=8)
+    travel_duration_days: int | None = Field(default=None, ge=1, le=365)
+
+
 class DialogueState(Contract):
     session_id: str = Field(min_length=1, max_length=128)
     scenario_mode: str = "insurance_manager"
@@ -30,6 +41,7 @@ class DialogueState(Contract):
     clarification_options: list[str] = Field(default_factory=list, max_length=2)
     conversation_status: ConversationStatus = "active"
     history: list[DialogTurn] = Field(default_factory=list, max_length=20)
+    conversation: ConversationState | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 # Keep the foundation's public name compatible with existing integrations.
@@ -49,6 +61,7 @@ class InsuranceScenarioContext(Contract):
     unclear_count: int = Field(default=0, ge=0)
     clarification_options: list[str] = Field(default_factory=list, max_length=2)
     history: list[DialogTurn] = Field(default_factory=list, max_length=20)
+    conversation: ConversationState | None = Field(default_factory=ConversationState)
 
     def to_dialog(self, global_context: GlobalConversationContext) -> DialogState:
         return DialogState(
@@ -61,4 +74,6 @@ class InsuranceScenarioContext(Contract):
 
     @classmethod
     def from_dialog(cls, state: DialogState) -> "InsuranceScenarioContext":
-        return cls.model_validate(state.model_dump(include=set(cls.model_fields)))
+        data = state.model_dump(include=set(cls.model_fields))
+        data["conversation"] = state.conversation
+        return cls.model_validate(data)

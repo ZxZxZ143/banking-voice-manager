@@ -36,6 +36,11 @@ export interface TraceViewModel {
   selectedProduct: string | null;
   leadStatus: string | null;
   nextAction: string | null;
+  conversationAct: string | null;
+  expectedSlot: string | null;
+  conversationPhase: string | null;
+  repairAttempts: number | null;
+  composerError: string | null;
 }
 
 function record(value: unknown): Data | null {
@@ -113,7 +118,8 @@ function handoff(value: unknown): TraceViewModel['handoff'] {
 
 const latencyStages = [
   ['stt', 'STT'], ['triage', 'Triage'], ['router', 'Router'], ['policy', 'Policy'],
-  ['tools', 'Tools'], ['response', 'Response'], ['tts_first_audio', 'TTS first audio'],
+  ['tools', 'Tools'], ['business', 'Business'], ['composer', 'Composer'],
+  ['response', 'Response'], ['tts_first_audio', 'TTS first audio'],
   ['total', 'Total'],
 ] as const;
 
@@ -170,5 +176,10 @@ export function createTraceViewModel(snapshot: ConversationSnapshot): TraceViewM
     selectedProduct: string(trace?.selected_product_id),
     leadStatus: string(trace?.lead_status),
     nextAction: string(trace?.next_action),
+    conversationAct: string(trace?.conversation_act),
+    expectedSlot: string(trace?.expected_slot),
+    conversationPhase: string(trace?.conversation_phase),
+    repairAttempts: metric(trace?.repair_attempts),
+    composerError: string(trace?.composer_error),
   };
 }

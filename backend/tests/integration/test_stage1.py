@@ -117,7 +117,14 @@ def test_multi_request_retains_driver_request_and_its_slots():
         body = send(client, "Хочу продлить ОГПО и добавить туда сына.")
         assert body["state"]["active_scenario"] == "SC27"
         assert body["state"]["pending_scenarios"] == ["SC04"]
-        assert body["state"]["scenario_slots"]["SC04"]["new_driver_iin"] == "850314300121"
+        assert body["state"]["scenario_slots"]["SC04"]["new_driver_iin"] == "[получено]"
+        stored = client.app.state.services.dialogs.get_conversation(body["session_id"])
+        assert (
+            stored.scenario_contexts["insurance_manager"].state.scenario_slots["SC04"][
+                "new_driver_iin"
+            ]
+            == "850314300121"
+        )
 
 
 def dict_to_selection(sid):

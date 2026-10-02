@@ -25,6 +25,8 @@ class LatencyRecord(Contract):
     policy: Milliseconds | None = None
     tools: Milliseconds | None = None
     response: Milliseconds | None = None
+    business: Milliseconds | None = None
+    composer: Milliseconds | None = None
     tts_first_audio: Milliseconds | None = None
     total: Milliseconds | None = None
 
@@ -40,6 +42,12 @@ class TraceRecord(Contract):
     alternatives: list[ScenarioScore] = Field(default_factory=list)
     reason: str = Field(default="", max_length=500)
     routing_error: str | None = None
+    composer_error: str | None = None
+    conversation_act: str | None = None
+    expected_answer_type: str | None = None
+    expected_slot: str | None = None
+    conversation_phase: str | None = None
+    repair_attempts: int | None = None
     slots: Slots = Field(default_factory=dict)
     actions: list[str] = Field(default_factory=list)
     source_keys: list[str] = Field(default_factory=list)

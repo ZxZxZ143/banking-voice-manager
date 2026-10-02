@@ -1,6 +1,6 @@
-"""Composition root: explicitly register the only production pack and shared services."""
+"""Composition root: explicitly register production packs and shared services."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pydantic import SecretStr
 
@@ -97,6 +97,14 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
             max_unclear_turns=settings.router_max_unclear_turns,
         ),
         router_override=router_override,
+        composer_settings=(
+            replace(
+                transport,
+                openai_router_model=settings.openai_response_model or settings.openai_router_model,
+            )
+            if router_override is None
+            else None
+        ),
     )
     registry = ScenarioRegistry(default_pack_id=pack.manifest.id)
     registry.register(pack)
