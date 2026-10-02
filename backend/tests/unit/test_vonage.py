@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import io
 import json
+import logging
 import struct
 import time
 import wave
@@ -223,6 +224,78 @@ def test_outbound_single_configured_trial_request_and_sdk_application_auth(key_p
     assert request["from"] == {"type": "phone", "number": FROM}
     assert request["answer_url"] == [BASE + ANSWER_PATH] and request["answer_method"] == "POST"
     assert request["event_url"] == [BASE + EVENTS_PATH] and request["length_timer"] == 600
+
+
+@pytest.mark.parametrize("from_number", [FROM, "447700900002"])
+def test_outbound_final_http_body_preserves_configured_caller_id(
+    key_path, monkeypatch, caplog, from_number
+):
+    captured = []
+
+    def fake_send(session, prepared, **kwargs):
+        # Intercept the prepared HTTP body, after all SDK/requests serialization.
+        # Never inspect or print Authorization; no actual network request is made.
+        assert prepared.method == "POST"
+        assert prepared.url == "https://api.nexmo.com/v1/calls"
+        assert prepared.headers["Content-Type"] == "application/json"
+        captured.append(json.loads(prepared.body))
+        response = requests.Response()
+        response.status_code = 201
+        response.url = prepared.url
+        response._content = json.dumps(
+            {
+                "uuid": CALL,
+                "status": "started",
+                "direction": "outbound",
+                "conversation_uuid": "CON-test",
+            }
+        ).encode()
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", fake_send)
+    settings = config(
+        vonage_enabled=True,
+        vonage_private_key_path=key_path,
+        vonage_test_from_number=from_number,
+    )
+    with caplog.at_level(logging.INFO, logger="app.telephony.vonage_calls"):
+        assert create_trial_call(settings) == CALL
+    assert len(captured) == 1
+    assert captured[0]["from"] == {"type": "phone", "number": from_number}
+    assert captured[0]["to"] == [{"type": "phone", "number": TO}]
+    assert "from_" not in captured[0]
+    diagnostic = caplog.text
+    assert "from_configured=True to_configured=True from_type=phone to_type=phone" in diagnostic
+    assert f"trial_cli={from_number == FROM}" in diagnostic
+    for private_value in [from_number, TO, SIGNATURE_SECRET, "offline-api-key", str(key_path)]:
+        assert private_value not in diagnostic
+    assert "Bearer" not in diagnostic and "PRIVATE KEY" not in diagnostic
+
+
+@pytest.mark.parametrize("bad_from", [None, "Unknown", {"type": "phone", "number": "Unknown"}])
+def test_bad_sdk_caller_id_serialization_fails_before_submission(key_path, monkeypatch, bad_from):
+    from vonage_voice import CreateCallRequest
+
+    original_dump = CreateCallRequest.model_dump
+
+    def broken_dump(request, **kwargs):
+        payload = original_dump(request, **kwargs)
+        if bad_from is None:
+            payload.pop("from", None)
+        else:
+            payload["from"] = bad_from
+        return payload
+
+    class NeverCall:
+        def create_call(self, request):
+            pytest.fail("Must not submit a malformed caller ID")
+
+    monkeypatch.setattr(CreateCallRequest, "model_dump", broken_dump)
+    with pytest.raises(VonageConfigurationError, match="no call submitted"):
+        create_trial_call(
+            config(vonage_enabled=True, vonage_private_key_path=key_path),
+            voice_override=NeverCall(),
+        )
 
 
 @pytest.mark.parametrize(

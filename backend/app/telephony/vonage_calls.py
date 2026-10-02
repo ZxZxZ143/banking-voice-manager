@@ -16,6 +16,7 @@ from app.telephony.providers.vonage_messages import CallUuid, PhoneNumber
 ANSWER_PATH = "/api/v1/telephony/vonage/answer"
 EVENTS_PATH = "/api/v1/telephony/vonage/events"
 MEDIA_PATH = "/api/v1/telephony/vonage/media"
+logger = logging.getLogger(__name__)
 
 
 class VonageConfigurationError(ValueError):
@@ -92,14 +93,33 @@ def create_trial_call(settings: Settings, *, voice_override=None) -> str:
         )
     )
     request = CreateCallRequest(
-        to=[ToPhone(number=to_number)],
-        from_=Phone(number=from_number),
+        to=[ToPhone(number=to_number, type="phone")],
+        from_=Phone(number=from_number, type="phone"),
         answer_url=[origin + ANSWER_PATH],
         answer_method="POST",
         event_url=[origin + EVENTS_PATH],
         event_method="POST",
         ringing_timer=45,
         length_timer=600,
+    )
+    # The SDK uses this serialization for POST /v1/calls. Keep its typed model;
+    # reject an omitted/incorrect CLI before submitting, rather than sending raw JSON.
+    payload = request.model_dump(mode="json", by_alias=True, exclude_none=True)
+    if payload.get("from") != {"type": "phone", "number": from_number} or payload.get("to") != [
+        {"type": "phone", "number": to_number}
+    ]:
+        raise VonageConfigurationError(
+            "Vonage SDK did not serialize the configured phone endpoints; no call submitted."
+        )
+    # Only flags and validated endpoint types: no numbers, payloads, auth or key material.
+    logger.info(
+        "Vonage outbound endpoints validated: from_configured=%s to_configured=%s "
+        "from_type=%s to_type=%s trial_cli=%s",
+        bool(from_number),
+        bool(to_number),
+        payload["from"]["type"],
+        payload["to"][0]["type"],
+        from_number == "123456789",
     )
     # No automatic retry: an ambiguous timeout may already have placed the call.
     try:

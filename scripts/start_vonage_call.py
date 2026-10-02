@@ -3,10 +3,12 @@
 import sys
 
 from app.core.config import Settings
+from app.core.logging import configure_logging
 from app.telephony.vonage_calls import VonageConfigurationError, create_trial_call
 
 
 def main() -> int:
+    configure_logging()
     try:
         settings = Settings()
         call_uuid = create_trial_call(settings)

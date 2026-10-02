@@ -211,6 +211,10 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
 - `telephony/vonage_calls.py`, `scripts/start_vonage_call.py`: one CLI call to configured
   verified signup destination via official Voice-only SDK/application ID + RSA key JWT;
   no API secret required for dialing, 10s timeout and one SDK attempt, no public dialer.
+  Typed phone endpoints are checked with the SDK's aliased serialization before submission;
+  CLI logs configuration flags/types only. Offline tests intercept the final prepared HTTP body.
+  `docs/VONAGE_CALLER_ID_INVESTIGATION.md` records correct runtime/stored FROM despite the
+  reported Dashboard CLI block; exact provider policy and live success remain unverified.
 - `telephony/providers/vonage*.py`, `speech/conversion.py`: actual L16 little-endian mono16k
   input resampling to24k, shared MP3/WAV decoding for both providers, Vonage 20ms binary output
   and native notify/clear. 16k chosen from NCCO reference; live24k support not assumed.
@@ -332,8 +336,9 @@ and STT timing stay on the runtime side; only session_id/text cross the Core API
 Phone next: configure Vonage application/key, signed callback secret, verified signup TO,
 trial FROM123456789, HTTPS/WSS tunnel and existing OpenAI/TTS settings; follow outbound
 trial checklist in `docs/PHONE_RUNTIME.md` and run `python scripts/start_vonage_call.py`.
-No real Vonage call has been tested; root .env was absent in this workspace. No number
-purchase is required. Twilio remains available. Verified: 457 backend/37 frontend tests,
+Live Vonage success remains unverified; root .env is now configured. Existing call lookups
+retain the configured FROM/TO despite the reported Dashboard CLI block. No number
+purchase is required. Twilio remains available. Verified: 462 backend/37 frontend tests,
 all three phone smokes, typecheck/build/lint/format.
 Offline: generic, Twilio and Vonage smoke scripts. Actual transfer/shared event API deferred.
 
