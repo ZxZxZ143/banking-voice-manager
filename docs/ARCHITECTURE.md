@@ -43,7 +43,7 @@ All backend paths below are relative to `backend/app/`.
 | Supervisor traces | `tracing/` | Typed application trace, bounded collector and current-turn trace returned by `/api/message`; no supervisor feed/public trace endpoint yet. |
 | Evaluation | `evaluation/` | Offline data check and live-run CLI; predictions, official evaluator report and safe decision/timing/failure capture. Configurable concurrency/pacing and explicit continue-on-error mode. See ROUTER_EVALUATION.md. |
 | Development stand | `dev_stand/index.html`, `api/routes/dev.py` | Opt-in `/dev`, same-origin /api/message form with editable reused session ID, reply/status/routing/state/trace/latency. No frontend dependencies or credentials. |
-| Backend phone runtime | `telephony/`, `events/`, `speech/stt/streaming.py` | Provider-neutral, half-duplex server runtime; shared STT and existing MessageService/TTS. Events and calls are in memory. Mock bench works; no live provider/endpoint is configured. |
+| Backend phone runtime | `telephony/`, `events/`, `speech/stt/streaming.py` | Provider-neutral, half-duplex server runtime; shared STT and existing MessageService/TTS. Events and calls are in memory. Vonage flow is user-confirmed live; signed Vonage/Twilio gateways share the app event store. |
 | Browser stand | `frontend/src/` | Shared session runtime, mic/file STT, text fallback, live /api/message, browser TTS and defensive supervisor trace view. Explicit mock mode is dev-only and off by default. |
 
 Speech adapters require explicit model settings (and a voice for TTS) when constructed. Missing credentials fail clearly; OpenAI SDK exceptions and timeouts become actionable speech errors. Other stream transport errors propagate to the future orchestration boundary. Transcription language and duration remain `null` when the provider does not supply them. TTS language records the requested language, not a verified audio-quality result. Provider tests use isolated test doubles; these are not a runtime fallback.
@@ -119,8 +119,11 @@ in a bounded in-memory EventStore. Only web and phone channels exist. The backen
 runtime is documented in [PHONE_RUNTIME.md](PHONE_RUNTIME.md): shared STT → the same
 MessageService → backend TTS → provider output, with canonical server events. Agent Core
 remains channel-agnostic. Browser TTS and Phone TTS are different output adapters for the
-same Agent response. Provider-specific telephony, persistent events, Journey, Anomaly
-Detection and Analytics API remain deferred. All new Veyra frontend UI must use shadcn/ui
+same Agent response. Signed Vonage/Twilio transports are implemented. The backend now
+provides shared web/phone canonical ingestion, retained session summaries, Journey,
+Agent-only risk aggregation, count-based anomalies and authenticated Analytics API; see
+[DATA_INTELLIGENCE.md](DATA_INTELLIGENCE.md) for contracts, limits and metric semantics.
+Persistent events and dashboard UI remain deferred. All new Veyra frontend UI must use shadcn/ui
 as its primary component/design system; this feature does not redesign the frontend.
 
 | Workstream | Primary files | Shared boundary to coordinate |

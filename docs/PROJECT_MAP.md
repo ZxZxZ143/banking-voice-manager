@@ -19,6 +19,11 @@ Business specification: `data/starter_kit/README.ru.md`.
 - **Implemented channel/data foundation:** runtime-local web/phone identity, seven
   lifecycle event types, injectable bounded in-memory EventStore, optional opaque Agent risk
   capture, and typed transport references. Only web and phone are supported.
+- **Implemented Data Intelligence:** one app-level bounded backend store shared by web
+  `/api/message` and both phone gateways; typed retained-session summaries, event-derived
+  journeys, deterministic rolling count anomalies, Agent-only risk aggregation and separate
+  latency metrics. Seven opt-in supervisor-token analytics polling routes; explicit DEMO
+  fixtures. No dashboard/UI, financial routing or risk analyzer introduced.
 - **Implemented backend phone foundation:** active-call registry (one call/one Agent UUID),
   half-duplex PhoneRuntime using the same MessageService, shared streaming STT/endpointing,
   PCM normalization seam, existing backend TTS protocol, server events/store and offline bench.
@@ -26,7 +31,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   SDK Connect/Stream TwiML, actual PyAV mu-law 8k ↔ PCM/MP3 conversion, stream-scoped marks /
   clear, lifecycle cleanup, real shared STT / MessageService / backend OpenAI TTS composition.
   Opt-in via TWILIO_ENABLED; absent settings fail visibly without mock fallback.
-  Persistent events, Journey, Anomaly Detection and Analytics API remain deferred.
+  Persistent events remain deferred.
 - **Implemented Vonage outbound trial adapter (full live flow user-confirmed; latency tuning unverified):** explicit one-call CLI
   with application JWT, account-working FROM 12345678901 and configured verified signup TO; signed answer /
   event callbacks and WS, L16 16k ↔ PCM24k/real TTS conversion, native notify/clear playback,
@@ -61,8 +66,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/response/` | Slot/system replies and SC17/25/31/33/34 grounded read-only slice |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
 | `backend/app/telephony/`, `telephony/providers/` | Phone sessions, Agent bridge, audio seam, half-duplex runtime, separate signed Twilio/Vonage gateways and explicit mock provider |
-| `backend/app/events/` | Canonical server event envelope and bounded in-memory EventStore; no analytics API |
+| `backend/app/events/` | Canonical server event envelope, extraction boundary and bounded shared in-memory EventStore |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
+| `backend/app/analytics/` | Session summaries, journey, risk/latency aggregation, rolling count anomalies and opt-in DEMO fixtures |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
 | `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
@@ -77,6 +83,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
 | `data/starter_kit/` | One canonical copy of business/evaluation inputs |
 | `docs/ARCHITECTURE.md` | Detailed boundaries, contracts and parallel ownership |
+| `docs/DATA_INTELLIGENCE.md` | Canonical ingestion, supervisor API/schema/auth, thresholds, metric semantics and limits |
+| `scripts/smoke_data_intelligence.py` | Fixed-clock synthetic offline analytics smoke; no app/network seeding |
 | `docs/CHANNEL_EVENTS.md` | Frontend event schema/types, recording lifecycle and store API |
 | `docs/PHONE_RUNTIME.md` | Backend phone flow, provider contract, bounds, audio/TTS/event seams and offline bench |
 | `docs/AGENT_CORE_3H_PLAN.md` | Supplied implementation plan, preserved unchanged |
@@ -134,7 +142,8 @@ shared streaming STT/Silero → final admission → the existing MessageService 
 provider playback acknowledgement → listen again. Phone calls never use React/browser TTS.
 Closure invalidates work before cancellation; pending/late results cannot reopen a call.
 Server events carry phone channel/call/session identity and preserve supplied Agent evidence.
-The store is in-memory only; shared web-event ingestion and Analytics/Event API are future work.
+The app store is shared with server-generated `/api/message` web events and the analytics
+polling API; process-local in-memory retention and restart loss are explicit MVP limits.
 Only web and phone exist. Browser TTS and Phone TTS are different output adapters for the same
 Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI change here.
 
@@ -143,10 +152,17 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
 - `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
 - `POST /api/message`: `{session_id, text}`; nonblank string ID up to 128 characters,
   text up to 10,000 characters, whitespace trimmed. Reuse the ID for later turns.
-  Returns `{session_id, response_text, routing, state, trace, conversation_status}`.
+  Returns `{session_id, response_text, routing, state, trace, conversation_status}` plus optional
+  supplied Agent `risk` (omitted when absent). Optional validated `transport.language` and
+  `transport.stt_after_commit_ms` do not override backend business decisions; successful
+  turns emit canonical web events. Retained phone session IDs return 409 channel_conflict.
   Invalid input 422; missing key/model 503; provider/structured-output failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
   Failed routing does not commit history/state/trace. Responses do not claim actions ran.
+- `GET /api/v1/analytics/{overview,sessions,sessions/{id},sessions/{id}/journey,anomalies,scenarios,risk}`:
+  typed supervisor polling; disabled/unconfigured 503, wrong/missing Bearer token 403.
+  Channel/scenario/risk/time/session filters, recent phone metadata and distinct timing samples.
+  See `docs/DATA_INTELLIGENCE.md` for full schemas, semantics and limits.
 - `GET /dev`: standalone debug form, enabled only with `ENABLE_DEV_STAND=true` (otherwise
   404). Reuses editable session ID, shows reply/status/routing/state/trace and browser/backend
   latency. Text rendered safely; no key in browser. New session does not erase older sessions.
@@ -229,7 +245,11 @@ Agent response. All new Veyra frontend UI must use shadcn/ui; no migration/UI ch
   input resampling to24k, shared MP3/WAV decoding for both providers, Vonage 20ms binary output
   and native notify/clear. 16k chosen from NCCO reference; live24k support not assumed.
 - `events/models.py`, `events/store.py`: same seven event types as frontend, opaque optional
-  JSON Agent values, append/session/filter reads and defensive copies; last 5,000 events.
+  JSON Agent values, append/session/filter reads and defensive copies; shared app store keeps
+  last 5,000 events by default, max64KiB/event, eviction diagnostics and thread-safe reads.
+- `analytics/service.py`, `api/routes/analytics.py`: retained summaries, ordered journey,
+  Agent risk (missing=unknown), per-turn latency samples and rolling count signals. No LLM
+  analytics calls; production is unseeded. Explicit synthetic fixtures in `analytics/demo.py`.
 
 ## Data, state and evaluation
 
@@ -291,6 +311,11 @@ VONAGE_SIGNATURE_SECRET (Dashboard webhook signature secret), VONAGE_TEST_FROM_N
 (123456789), VONAGE_TEST_TO_NUMBER (verified signup destination, digits only).
 Twilio, Voice-only Vonage SDK, PyJWT and PyAV are direct dependencies; live STT needs voice extra.
 Root private.key/*.pem are ignored; use a key outside Git.
+Analytics names: ANALYTICS_ENABLED (false), ANALYTICS_API_TOKEN (server-only SecretStr),
+ANALYTICS_DEMO_ENABLED (false), ANALYTICS_MAX_EVENTS (5000), ANALYTICS_WINDOW_SECONDS (3600),
+ANALYTICS_BASELINE_WINDOWS (6), ANALYTICS_MIN_VOLUME (5), ANALYTICS_ANOMALY_MULTIPLIER (3).
+Use one app worker; events are process-local, bounded and lost on restart. Supervisor APIs
+require the token and are not an unauthenticated public feed. Never expose token in VITE vars.
 Root .env.example contains no credentials; .env is ignored.
 Health, UI and offline tests need no credentials. Live routing/evaluation needs an explicit
 Responses/structured-output-compatible model and key. Local .env has a verified key and
@@ -307,6 +332,7 @@ PowerShell from repository root:
 python -m venv .venv
 ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
 ./.venv/Scripts/python.exe -m app.main
+./.venv/Scripts/python.exe scripts/smoke_data_intelligence.py
 ./.venv/Scripts/python.exe scripts/smoke_phone_runtime.py
 ./.venv/Scripts/python.exe scripts/smoke_twilio_runtime.py
 ./.venv/Scripts/python.exe scripts/smoke_vonage_runtime.py
@@ -349,9 +375,10 @@ account-working FROM12345678901, HTTPS/WSS tunnel and existing OpenAI/TTS settin
 trial checklist in `docs/PHONE_RUNTIME.md` and run `python scripts/start_vonage_call.py`.
 Vonage/STT/Agent/TTS are user-confirmed end-to-end; repeat live calls to measure shorter
 phone endpointing with comparable timing boundaries. Root .env retains working FROM12345678901. No number
-purchase is required. Twilio remains available. Verified: 475 backend/37 frontend tests,
-all three phone smokes, typecheck/build/lint/format.
-Offline: generic, Twilio and Vonage smoke scripts. Actual transfer/shared event API deferred.
+purchase is required. Twilio remains available. Data Intelligence regression verified:
+540 backend/37 frontend tests, 231 focused analytics/phone/Vonage/Twilio tests,
+all three phone smokes plus the synthetic analytics smoke, typecheck/build/lint/format.
+Offline: generic, Twilio and Vonage smoke scripts. Actual transfer remains deferred; shared event analytics is implemented.
 
 Agent workstream next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.

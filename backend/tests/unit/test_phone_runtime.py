@@ -624,9 +624,14 @@ def test_short_phone_endpoint_once_after_continuation_with_latency_stages(monkey
         assert not await runtime.handle_transcript("call", final(item_id="same-final"))
         assert runtime._calls["call"].turn_number == 1
         await runtime.shutdown()
+        return next(
+            e.latency
+            for e in runtime.event_store.get_by_session(session.session_id)
+            if e.event_type == "agent.response"
+        )
 
     with caplog.at_level(logging.INFO):
-        asyncio.run(run())
+        event_latency = asyncio.run(run())
     stages = [
         dict(piece.split("=", 1) for piece in record.message.split() if "=" in piece)
         for record in caplog.records
@@ -655,6 +660,21 @@ def test_short_phone_endpoint_once_after_continuation_with_latency_stages(monkey
     ]:
         elapsed = float(by_stage[end]["monotonic_ms"]) - float(by_stage[start]["monotonic_ms"])
         assert float(by_stage[end]["duration_ms"]) == pytest.approx(elapsed, abs=0.003)
+    # Stored analytics copies existing monotonic measurements, without changing endpointing.
+    for metric, stage in [
+        ("agent_ms", "agent_done"),
+        ("tts_ms", "tts_ready"),
+        ("endpointing_ms", "endpointing_decision"),
+        ("stt_final_ms", "stt_final"),
+        ("speech_end_to_playback_complete_ms", "total_turn"),
+    ]:
+        assert event_latency[metric] == pytest.approx(
+            float(by_stage[stage]["duration_ms"]), abs=0.003
+        )
+    assert (
+        event_latency["speech_end_to_playback_submit_ms"]
+        <= event_latency["speech_end_to_playback_complete_ms"]
+    )
     assert "silence_ms=1216" in caplog.text
     assert (
         "PRIVATE_FIXTURE_TRANSCRIPT" not in caplog.text and "PRIVATE_FIXTURE_KEY" not in caplog.text
