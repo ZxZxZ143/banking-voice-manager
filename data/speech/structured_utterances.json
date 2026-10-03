@@ -1,0 +1,1122 @@
+[
+  {
+    "id": "phone-01",
+    "kind": "phone",
+    "language": "ru",
+    "style": "slow",
+    "text": "семь ноль ноль ноль один два три четыре ноль ноль ноль",
+    "expected": "+70001234000",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-02",
+    "kind": "phone",
+    "language": "kk",
+    "style": "fast",
+    "text": "сегіз нөл нөл нөл бір екі үш төрт нөл нөл бір",
+    "expected": "+70001234001",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-03",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "individual",
+    "text": "семь нөл ноль нөл один екі три төрт ноль нөл два",
+    "expected": "+70001234002",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-04",
+    "kind": "phone",
+    "language": "ru",
+    "style": "grouped",
+    "text": "восемьсот ноль один два триста сорок ноль три",
+    "expected": "+70001234003",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-05",
+    "kind": "phone",
+    "language": "kk",
+    "style": "letters",
+    "text": "жеті нөл нөл нөл бір екі үш төрт нөл нөл төрт",
+    "expected": "+70001234004",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-06",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "slow",
+    "text": "восемь нөл ноль нөл один екі три төрт ноль нөл пять",
+    "expected": "+70001234005",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-07",
+    "kind": "phone",
+    "language": "ru",
+    "style": "fast",
+    "text": "семь ноль ноль ноль один два три четыре ноль ноль шесть",
+    "expected": "+70001234006",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-08",
+    "kind": "phone",
+    "language": "kk",
+    "style": "individual",
+    "text": "сегіз нөл нөл нөл бір екі үш төрт нөл нөл жеті",
+    "expected": "+70001234007",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-09",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "семьсот ноль бір два триста сорок ноль сегіз",
+    "expected": "+70001234008",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-10",
+    "kind": "phone",
+    "language": "ru",
+    "style": "letters",
+    "text": "восемь ноль ноль ноль один два три четыре ноль ноль девять",
+    "expected": "+70001234009",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-11",
+    "kind": "phone",
+    "language": "kk",
+    "style": "slow",
+    "text": "жеті нөл нөл нөл бір екі үш төрт нөл бір нөл",
+    "expected": "+70001234010",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-12",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "fast",
+    "text": "восемь нөл ноль нөл один екі три төрт ноль бір один",
+    "expected": "+70001234011",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-13",
+    "kind": "phone",
+    "language": "ru",
+    "style": "individual",
+    "text": "семь ноль ноль ноль один два три четыре ноль один два",
+    "expected": "+70001234012",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-14",
+    "kind": "phone",
+    "language": "kk",
+    "style": "grouped",
+    "text": "сегіз жүз нөл бір екі үш жүз қырық бір үш",
+    "expected": "+70001234013",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-15",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "letters",
+    "text": "семь нөл ноль нөл один екі три төрт ноль бір четыре",
+    "expected": "+70001234014",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-16",
+    "kind": "phone",
+    "language": "ru",
+    "style": "slow",
+    "text": "восемь ноль ноль ноль один два три четыре ноль один пять",
+    "expected": "+70001234015",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-17",
+    "kind": "phone",
+    "language": "kk",
+    "style": "fast",
+    "text": "жеті нөл нөл нөл бір екі үш төрт нөл бір алты",
+    "expected": "+70001234016",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "phone-18",
+    "kind": "phone",
+    "language": "mixed",
+    "style": "individual",
+    "text": "восемь нөл ноль нөл один екі три төрт ноль бір семь",
+    "expected": "+70001234017",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "phone-19",
+    "kind": "phone",
+    "language": "ru",
+    "style": "grouped",
+    "text": "семьсот ноль один два триста сорок один восемь",
+    "expected": "+70001234018",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "phone-20",
+    "kind": "phone",
+    "language": "kk",
+    "style": "letters",
+    "text": "сегіз нөл нөл нөл бір екі үш төрт нөл бір тоғыз",
+    "expected": "+70001234019",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-01",
+    "kind": "iin",
+    "language": "ru",
+    "style": "slow",
+    "text": "ноль ноль ноль один два три четыре пять шесть семь ноль ноль",
+    "expected": "000123456700",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-02",
+    "kind": "iin",
+    "language": "kk",
+    "style": "fast",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті нөл бір",
+    "expected": "000123456701",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-03",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "individual",
+    "text": "ноль нөл ноль бір два үш четыре бес шесть жеті ноль екі",
+    "expected": "000123456702",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-04",
+    "kind": "iin",
+    "language": "ru",
+    "style": "grouped",
+    "text": "ноль ноль ноль сто двадцать три четыреста пятьдесят шесть семьсот три",
+    "expected": "000123456703",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-05",
+    "kind": "iin",
+    "language": "kk",
+    "style": "letters",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті нөл төрт",
+    "expected": "000123456704",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-06",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "slow",
+    "text": "ноль нөл ноль бір два үш четыре бес шесть жеті ноль бес",
+    "expected": "000123456705",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-07",
+    "kind": "iin",
+    "language": "ru",
+    "style": "fast",
+    "text": "ноль ноль ноль один два три четыре пять шесть семь ноль шесть",
+    "expected": "000123456706",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-08",
+    "kind": "iin",
+    "language": "kk",
+    "style": "individual",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті нөл жеті",
+    "expected": "000123456707",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-09",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "ноль нөл ноль сто двадцать три четыреста пятьдесят шесть семьсот восемь",
+    "expected": "000123456708",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-10",
+    "kind": "iin",
+    "language": "ru",
+    "style": "letters",
+    "text": "ноль ноль ноль один два три четыре пять шесть семь ноль девять",
+    "expected": "000123456709",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-11",
+    "kind": "iin",
+    "language": "kk",
+    "style": "slow",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті бір нөл",
+    "expected": "000123456710",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-12",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "fast",
+    "text": "ноль нөл ноль бір два үш четыре бес шесть жеті один бір",
+    "expected": "000123456711",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-13",
+    "kind": "iin",
+    "language": "ru",
+    "style": "individual",
+    "text": "ноль ноль ноль один два три четыре пять шесть семь один два",
+    "expected": "000123456712",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-14",
+    "kind": "iin",
+    "language": "kk",
+    "style": "grouped",
+    "text": "нөл нөл нөл бір жүз жиырма үш төрт жүз елу алты жеті жүз он үш",
+    "expected": "000123456713",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-15",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "letters",
+    "text": "ноль нөл ноль бір два үш четыре бес шесть жеті один төрт",
+    "expected": "000123456714",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-16",
+    "kind": "iin",
+    "language": "ru",
+    "style": "slow",
+    "text": "ноль ноль ноль один два три четыре пять шесть семь один пять",
+    "expected": "000123456715",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-17",
+    "kind": "iin",
+    "language": "kk",
+    "style": "fast",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті бір алты",
+    "expected": "000123456716",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "iin-18",
+    "kind": "iin",
+    "language": "mixed",
+    "style": "individual",
+    "text": "ноль нөл ноль бір два үш четыре бес шесть жеті один жеті",
+    "expected": "000123456717",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "iin-19",
+    "kind": "iin",
+    "language": "ru",
+    "style": "grouped",
+    "text": "ноль ноль ноль сто двадцать три четыреста пятьдесят шесть семьсот восемнадцать",
+    "expected": "000123456718",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "iin-20",
+    "kind": "iin",
+    "language": "kk",
+    "style": "letters",
+    "text": "нөл нөл нөл бір екі үш төрт бес алты жеті бір тоғыз",
+    "expected": "000123456719",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-01",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "slow",
+    "text": "один два три эй би си ноль один",
+    "expected": "123ABC01",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-02",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "fast",
+    "text": "бір екі төрт ди е эм нөл екі",
+    "expected": "124DEM02",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-03",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "individual",
+    "text": "один екі пять кей зед ноль үш",
+    "expected": "125KZ03",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-04",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "grouped",
+    "text": "сто двадцать шесть би е эйч ноль четыре",
+    "expected": "126BEH04",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-05",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "asr_artifact",
+    "text": "127 АВС 05",
+    "expected": "127ABC05",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-06",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "slow",
+    "text": "один екі восемь ди е эм ноль алты",
+    "expected": "128DEM06",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-07",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "fast",
+    "text": "один два девять кей зед ноль семь",
+    "expected": "129KZ07",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-08",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "individual",
+    "text": "бір үш нөл би е эйч нөл сегіз",
+    "expected": "130BEH08",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-09",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "сто тридцать один эй би си ноль тоғыз",
+    "expected": "131ABC09",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-10",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "asr_artifact",
+    "text": "132 DЕМ 10",
+    "expected": "132DEM10",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-11",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "slow",
+    "text": "бір үш үш кей зед бір бір",
+    "expected": "133KZ11",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-12",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "fast",
+    "text": "один үш четыре би е эйч один екі",
+    "expected": "134BEH12",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-13",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "individual",
+    "text": "один три пять эй би си один три",
+    "expected": "135ABC13",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-14",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "grouped",
+    "text": "бір жүз отыз алты ди е эм бір төрт",
+    "expected": "136DEM14",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-15",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "asr_artifact",
+    "text": "137 КZ 15",
+    "expected": "137KZ15",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-16",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "slow",
+    "text": "один три восемь би е эйч один шесть",
+    "expected": "138BEH16",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-17",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "fast",
+    "text": "бір үш тоғыз эй би си бір жеті",
+    "expected": "139ABC17",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "vehicle_plate-18",
+    "kind": "vehicle_plate",
+    "language": "mixed",
+    "style": "individual",
+    "text": "один төрт ноль ди е эм один сегіз",
+    "expected": "140DEM18",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "vehicle_plate-19",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "grouped",
+    "text": "сто сорок один кей зед один девять",
+    "expected": "141KZ19",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "vehicle_plate-20",
+    "kind": "vehicle_plate",
+    "language": "kk",
+    "style": "asr_artifact",
+    "text": "142 ВЕН 20",
+    "expected": "142BEH20",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-01",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "slow",
+    "text": "эс кью о гэ пэ о один два три ноль ноль ноль",
+    "expected": "SQ-OGPO-123000",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "policy_number-02",
+    "kind": "policy_number",
+    "language": "kk",
+    "style": "fast",
+    "text": "эс кью каско бір екі үш нөл нөл бір",
+    "expected": "SQ-CASCO-123001",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-03",
+    "kind": "policy_number",
+    "language": "mixed",
+    "style": "individual",
+    "text": "эс кью ти ар ви эл один екі три нөл ноль екі",
+    "expected": "SQ-TRVL-123002",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "policy_number-04",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "grouped",
+    "text": "эс кью пи ар оу пи сто двадцать три ноль ноль три",
+    "expected": "SQ-PROP-123003",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "policy_number-05",
+    "kind": "policy_number",
+    "language": "kk",
+    "style": "letters",
+    "text": "эс кью эн эс бір екі үш нөл нөл төрт",
+    "expected": "SQ-NS-123004",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-06",
+    "kind": "policy_number",
+    "language": "mixed",
+    "style": "slow",
+    "text": "эс кью ди эм эс один екі три нөл ноль бес",
+    "expected": "SQ-DMS-123005",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "policy_number-07",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "fast",
+    "text": "эс кью о гэ пэ о один два три ноль ноль шесть",
+    "expected": "SQ-OGPO-123006",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "policy_number-08",
+    "kind": "policy_number",
+    "language": "kk",
+    "style": "individual",
+    "text": "эс кью каско бір екі үш нөл нөл жеті",
+    "expected": "SQ-CASCO-123007",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-09",
+    "kind": "policy_number",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "эс кью ти ар ви эл сто двадцать три ноль нөл восемь",
+    "expected": "SQ-TRVL-123008",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "policy_number-10",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "letters",
+    "text": "эс кью пи ар оу пи один два три ноль ноль девять",
+    "expected": "SQ-PROP-123009",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "policy_number-11",
+    "kind": "policy_number",
+    "language": "kk",
+    "style": "slow",
+    "text": "эс кью эн эс бір екі үш нөл бір нөл",
+    "expected": "SQ-NS-123010",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-12",
+    "kind": "policy_number",
+    "language": "mixed",
+    "style": "fast",
+    "text": "эс кью ди эм эс один екі три нөл один бір",
+    "expected": "SQ-DMS-123011",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "policy_number-13",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "individual",
+    "text": "эс кью о гэ пэ о один два три ноль один два",
+    "expected": "SQ-OGPO-123012",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "policy_number-14",
+    "kind": "policy_number",
+    "language": "kk",
+    "style": "grouped",
+    "text": "эс кью каско бір жүз жиырма үш нөл бір үш",
+    "expected": "SQ-CASCO-123013",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "policy_number-15",
+    "kind": "policy_number",
+    "language": "mixed",
+    "style": "letters",
+    "text": "эс кью ти ар ви эл один екі три нөл один төрт",
+    "expected": "SQ-TRVL-123014",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "claim_number-01",
+    "kind": "claim_number",
+    "language": "ru",
+    "style": "slow",
+    "text": "си эл один два три ноль ноль ноль",
+    "expected": "CL-123000",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "claim_number-02",
+    "kind": "claim_number",
+    "language": "kk",
+    "style": "fast",
+    "text": "си эл бір екі үш нөл нөл бір",
+    "expected": "CL-123001",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "claim_number-03",
+    "kind": "claim_number",
+    "language": "mixed",
+    "style": "individual",
+    "text": "си эл один екі три нөл ноль екі",
+    "expected": "CL-123002",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "claim_number-04",
+    "kind": "claim_number",
+    "language": "ru",
+    "style": "grouped",
+    "text": "си эл сто двадцать три ноль ноль три",
+    "expected": "CL-123003",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "claim_number-05",
+    "kind": "claim_number",
+    "language": "kk",
+    "style": "letters",
+    "text": "си эл бір екі үш нөл нөл төрт",
+    "expected": "CL-123004",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "claim_number-06",
+    "kind": "claim_number",
+    "language": "mixed",
+    "style": "slow",
+    "text": "си эл один екі три нөл ноль бес",
+    "expected": "CL-123005",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "claim_number-07",
+    "kind": "claim_number",
+    "language": "ru",
+    "style": "fast",
+    "text": "си эл один два три ноль ноль шесть",
+    "expected": "CL-123006",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "claim_number-08",
+    "kind": "claim_number",
+    "language": "kk",
+    "style": "individual",
+    "text": "си эл бір екі үш нөл нөл жеті",
+    "expected": "CL-123007",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "claim_number-09",
+    "kind": "claim_number",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "си эл сто двадцать три ноль нөл восемь",
+    "expected": "CL-123008",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "claim_number-10",
+    "kind": "claim_number",
+    "language": "ru",
+    "style": "letters",
+    "text": "си эл один два три ноль ноль девять",
+    "expected": "CL-123009",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-01",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "slow",
+    "text": "регион ноль один",
+    "expected": "01",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-02",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "fast",
+    "text": "регион ноль два",
+    "expected": "02",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "region_code-03",
+    "kind": "region_code",
+    "language": "mixed",
+    "style": "individual",
+    "text": "регион ноль үш",
+    "expected": "03",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "region_code-04",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "grouped",
+    "text": "регион ноль четыре",
+    "expected": "04",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-05",
+    "kind": "region_code",
+    "language": "kk",
+    "style": "letters",
+    "text": "өңір нөл бес",
+    "expected": "05",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "region_code-06",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "slow",
+    "text": "это регион ноль шесть",
+    "expected": "06",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "region_code-07",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "fast",
+    "text": "регион ноль семь",
+    "expected": "07",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-08",
+    "kind": "region_code",
+    "language": "kk",
+    "style": "individual",
+    "text": "өңір нөл сегіз",
+    "expected": "08",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "region_code-09",
+    "kind": "region_code",
+    "language": "mixed",
+    "style": "grouped",
+    "text": "регион ноль тоғыз",
+    "expected": "09",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "region_code-10",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "letters",
+    "text": "регион один ноль",
+    "expected": "10",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-11",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "slow",
+    "text": "регион 11",
+    "expected": "11",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "region_code-12",
+    "kind": "region_code",
+    "language": "mixed",
+    "style": "fast",
+    "text": "регион один екі",
+    "expected": "12",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "region_code-13",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "individual",
+    "text": "регион один три",
+    "expected": "13",
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "region_code-14",
+    "kind": "region_code",
+    "language": "kk",
+    "style": "grouped",
+    "text": "өңір бір төрт",
+    "expected": "14",
+    "synthetic": true,
+    "voice": "nova"
+  },
+  {
+    "id": "region_code-15",
+    "kind": "region_code",
+    "language": "mixed",
+    "style": "letters",
+    "text": "регион один бес",
+    "expected": "15",
+    "synthetic": true,
+    "voice": "shimmer"
+  },
+  {
+    "id": "negative-01",
+    "kind": "iin",
+    "language": "ru",
+    "style": "invalid",
+    "text": "ноль ноль один",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-02",
+    "kind": "phone",
+    "language": "ru",
+    "style": "invalid",
+    "text": "8777000123",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-03",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "invalid",
+    "text": "123 ABC 99",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-04",
+    "kind": "policy_number",
+    "language": "ru",
+    "style": "invalid",
+    "text": "SQ BAD 123456",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-05",
+    "kind": "claim_number",
+    "language": "ru",
+    "style": "invalid",
+    "text": "CL 12345",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-06",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "invalid",
+    "text": "регион 21",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-07",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "invalid",
+    "text": "не Алматы",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-08",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "invalid",
+    "text": "Алматы или Астана",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-09",
+    "kind": "region_code",
+    "language": "ru",
+    "style": "invalid",
+    "text": "регион 02 или 01",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-10",
+    "kind": "phone",
+    "language": "ru",
+    "style": "invalid",
+    "text": "87770001234 или 87770001235",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-11",
+    "kind": "iin",
+    "language": "ru",
+    "style": "invalid",
+    "text": "000101300000 или 000101300001",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  },
+  {
+    "id": "negative-12",
+    "kind": "vehicle_plate",
+    "language": "ru",
+    "style": "invalid",
+    "text": "123 эй би си 02 или 124 эй би си 02",
+    "expected": null,
+    "synthetic": true,
+    "voice": "coral"
+  }
+]
