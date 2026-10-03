@@ -107,8 +107,8 @@ export function OverviewView({
   return (
     <>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        Source sessions: runtime {data.sources.runtime ?? 0} � synthetic{" "}
-        {data.sources.synthetic_demo ?? 0} � mixed {data.sources.mixed ?? 0}
+        Source sessions: runtime {data.sources.runtime ?? 0} · synthetic{" "}
+        {data.sources.synthetic_demo ?? 0} · mixed {data.sources.mixed ?? 0}
         {(data.sources.synthetic_demo ?? 0) + (data.sources.mixed ?? 0) > 0 && (
           <DemoBadge
             mixed={(data.sources.runtime ?? 0) + (data.sources.mixed ?? 0) > 0}

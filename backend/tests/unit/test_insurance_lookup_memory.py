@@ -74,6 +74,45 @@ def private(built, session):
     return built.dialogs.get_conversation(session).scenario_contexts["insurance_manager"].state
 
 
+@pytest.mark.parametrize("language", ["ru", "kk"])
+def test_failed_phone_then_iin_does_not_reopen_phone_collection(language):
+    from app.packs.insurance_manager.response.lookup import lookup_client
+
+    built = build()
+    state = DialogState(session_id="sequential-identifiers", response_language=language)
+    state.slots["phone"] = "+77770001234"
+    _, alternative, actions = lookup_client(state, built.insurance.processor.replies.backend)
+    assert alternative["expected_slot"] == "iin"
+    assert actions == ["find_client"]
+
+    state.slots["iin"] = "000000000000"
+    client_id, alternative, actions = lookup_client(
+        state, built.insurance.processor.replies.backend
+    )
+    assert client_id is None
+    assert alternative is None
+    assert actions == ["find_client"]
+    assert state.identification.failed_fields == ["phone", "iin"]
+    assert lookup_client(state, built.insurance.processor.replies.backend) == (None, None, [])
+
+
+def test_valid_alternative_iin_resolves_after_failed_phone_without_reusing_it():
+    from app.packs.insurance_manager.response.lookup import lookup_client
+
+    built = build()
+    backend = built.insurance.processor.replies.backend
+    owner = backend.get_all("clients")[0]
+    state = DialogState(session_id="alternative-identity")
+    state.slots["phone"] = "+77770001234"
+    lookup_client(state, backend)
+    state.slots["iin"] = owner["iin"]
+    client_id, alternative, actions = lookup_client(state, backend)
+    assert client_id == owner["client_id"]
+    assert alternative is None
+    assert actions == ["find_client"]
+    assert state.identification.successful_field == "iin"
+
+
 def test_full_screenshot_flow_terminates_before_unsupported_plate_and_retains_context():
     from app.conversation.service import SessionClosedError
 

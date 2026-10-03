@@ -169,7 +169,8 @@ def validate_composition(result: ComposedReply, payload: dict) -> None:
         }
         if payload.get("next_slot") in patterns and any(
             re.search(pattern, result.question, re.I)
-            for field, pattern in patterns.items() if field != payload["next_slot"]
+            for field, pattern in patterns.items()
+            if field != payload["next_slot"]
         ):
             raise ValueError("unexpected_collection_target")
     if action in {"discover", "repair", "greet"} and (
@@ -232,9 +233,13 @@ def composer_payload(previous, state, text, decision, policy, reply, slots):
             "strategy": ["phone", "iin", "owned_record", "operator_review"],
         },
         "received_this_turn": list(decision.slots),
-        "missing_slots": [name for name in required if state.slots.get(name) in (None, "", [])
-                          and name not in state.identification.unavailable_fields
-                          and name not in state.identification.failed_fields],
+        "missing_slots": [
+            name
+            for name in required
+            if state.slots.get(name) in (None, "", [])
+            and name not in state.identification.unavailable_fields
+            and name not in state.identification.failed_fields
+        ],
         "conversation": conversation.model_dump(),
         "grounded_facts": facts,
         "grounded_variants": reply.fact_variants,

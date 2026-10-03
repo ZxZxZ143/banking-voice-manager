@@ -59,7 +59,11 @@ def lookup_client(state, backend, supplied=()):
     available = {
         name: state.slots[name]
         for name in ("phone", "iin")
-        if state.slots.get(name) and name not in memory.unavailable_fields
+        if state.slots.get(name)
+        and name not in memory.unavailable_fields
+        # A failed value must not contaminate the next alternative identifier.
+        # Fingerprints still allow a genuinely corrected value of the same field.
+        and fingerprint("find_client", {name: state.slots[name]}) not in memory.failed_attempts
     }
     # Simultaneous contradictory identifiers must not establish ownership.
     candidates = (

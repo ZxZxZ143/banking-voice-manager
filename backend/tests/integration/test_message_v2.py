@@ -338,9 +338,7 @@ def test_clarification_preserves_context_rejects_uncertain_slots_then_accepts_co
         assert corrected["state"]["clarification_options"] == []
         assert corrected["state"]["unclear_count"] == 0
         # The unique owned claim can now be resolved without collecting its number.
-        assert corrected["state"]["slots"] == {
-            "phone": "[получено]", "claim_number": "[получено]"
-        }
+        assert corrected["state"]["slots"] == {"phone": "[получено]", "claim_number": "[получено]"}
         assert router.previous_states[2].slots == {"phone": "+77010000001"}
         assert corrected["conversation_status"] == "awaiting_user"
         assert corrected["trace"]["policy_outcome"] == "accept"
