@@ -12,6 +12,12 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 6 telephony integration (offline):** teammate PhoneRuntime/shared STT/Twilio/Vonage
+  selectively ported onto Stage 5B main `48da4bb` on `codex/stage6-telephony-integration`.
+  Both use current MessageService/Risk and SQLite with canonical `voice` events. Disabled
+  by default; incomplete enabled config fails closed. No outbound trigger or PSTN transfer.
+  Live status **pending_credentials**; see `STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md`.
+
 - **Insurance lookup memory hotfix:** per-scenario typed unavailable/failed identifier memory,
   exact failed-attempt deduplication, alternative identifiers and voluntary corrections.
   Owned policy/claim lookup is bounded; unavailable or failed paths end in prepared
@@ -101,7 +107,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
 - **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
   loopback ports 8000/5173, runtime-only secrets and health checks.
-- **Not introduced:** Supabase, vector store, RAG, queues or unrelated production packs.
+- **Not introduced:** Supabase, vector store, RAG, external task brokers or unrelated production packs.
 
 ## Navigation
 
@@ -113,6 +119,11 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
+| `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
+| `backend/app/speech/audio.py`, `speech/conversion.py` | Canonical PCM24 contract and bounded PyAV TTS conversion |
+| `scripts/smoke_*runtime.py`, `scripts/smoke_stage6_integration.py` | Explicit offline provider fixtures and current core/Risk/SQLite/API smoke |
+| `docs/PHONE_RUNTIME.md`, `docs/VONAGE_WEBSOCKET_INVESTIGATION.md` | Phone contract, bounds, provenance and retained startup backpressure fix |
+| `docs/STAGE6_LIVE_TELEPHONY_CHECKLIST.md` | Future credentials/console/call validation; not yet performed |
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
 | `backend/app/analytics/` | Safe event models/mapping, best-effort recorder, EventStore and SQLite queries |
@@ -169,6 +180,15 @@ Business specification: `data/starter_kit/README.ru.md`.
 Backend paths in this table are relative to `backend/app/` where abbreviated.
 
 ## Actual and planned flow
+
+Phone: signed Twilio/Vonage admission → per-provider decoder/resampler → PCM16LE mono24k
+→ shared StreamingSTT → PhoneRuntime final admission → AgentBridge → current
+MessageService.process(..., channel="voice") → existing pack/Risk + EventRecorder/SQLite
+→ backend TTS → provider playback ack → listen/terminal cleanup. Same core, no new prompt.
+MessageService.end_session finalizes committed calls under the existing lock, without a
+new turn; EventRecorder.record_end adds an idempotent safe terminal event. Empty calls
+create no analytics conversation. Provider IDs/transcripts/audio are never persisted.
+Shared browser STT extraction preserves `/api/v1/voice`; browser TTS remains unchanged.
 
 Startup constructs five registered assistants from canonical Insurance, sales and security
 inputs. The shared
@@ -354,6 +374,17 @@ This affects replies only, not scenario selection or the recorded Router languag
 
 ## Configuration and commands
 
+Stage 6 names (empty examples, no provider credentials): TWILIO_ENABLED (false),
+TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER; VONAGE_ENABLED (false),
+VONAGE_APPLICATION_ID, VONAGE_PRIVATE_KEY_PATH, VONAGE_API_KEY, VONAGE_SIGNATURE_SECRET,
+VONAGE_TEST_FROM_NUMBER, VONAGE_TEST_TO_NUMBER; PUBLIC_BASE_URL, BACKEND_TTS_MODEL,
+BACKEND_TTS_VOICE, PHONE_ENDPOINT_SILENCE_MS (1200, 800–5000). Health adds provider
+`disabled|unavailable|ready` labels only. Signed HTTP routes: Twilio `/api/v1/telephony/twilio/voice`,
+Vonage `/api/v1/telephony/vonage/answer` and `/events`; each provider has WS `/media`.
+No public transcript/mock/dial route. Private keys remain outside Git/image, mounted read-only.
+Run `python scripts/smoke_stage6_integration.py` for an isolated two-turn core/Risk/SQLite/API
+smoke and restart proof; three `smoke_*runtime.py` scripts verify explicit provider fixtures.
+
 Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Router fallback), ROUTER_TIMEOUT_SECONDS (45), RISK_TIMEOUT_SECONDS (8), SECURITY_POLICY_PATH,
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
@@ -422,3 +453,8 @@ Next scale work requires measured need: current aggregate reads materialize reta
 Best-effort recording can lose events; no auth/retention/backups/outbox/production-scale claim. Preserve measured O11 backlog: card campaign
 → deposit request can be interpreted as decline instead of out_of_scope. No routing/model
 prompt changes were made in Stage 5B; prior model variability remains documented.
+
+Stage 6 offline integration gates: 929 backend / 80 frontend tests, four Windows/Linux
+phone smokes, current-core/Risk/SQLite restart proof, focused browser/health/security checks.
+Providers stay disabled; next gate is authorized live verification when credentials arrive,
+using `STAGE6_LIVE_TELEPHONY_CHECKLIST.md`. Integration branch only, no automatic main merge.

@@ -14,16 +14,25 @@ See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
-- Stage 5A: privacy-safe structured conversation events persist in SQLite; read-only
+- Stages 5A/5B: privacy-safe structured conversation events persist in SQLite; read-only
   `/api/analytics/events`, `/api/analytics/sessions/{session_id}` and
-  `/api/analytics/summary` support the future teammate dashboard. `EVENT_DB_PATH` defaults
+  `/api/analytics/summary` and additive dashboard APIs support the integrated Finance
+  Supervisor Dashboard. `EVENT_DB_PATH` defaults
   to `data/runtime/veyra_events.db`; Docker uses the `analytics_data` named volume.
   Normal `docker compose down`/`up` retains events. Conversation state still resets.
-  No analytics dashboard/frontend was added or merged. See the
+  See the
   [integration contract](docs/ANALYTICS_API_CONTRACT.md) and
   [storage validation](docs/STAGE5A_STORAGE_VALIDATION.md).
   Seed safely with `python scripts/seed_analytics_demo.py` in the installed backend
   environment; `--reset` replaces only synthetic demo events.
+
+- Stage 6 integration: the teammate's PhoneRuntime, Twilio and Vonage adapters call the
+  current MessageService and shared Risk, with `voice` events in the same SQLite store.
+  Telephony is disabled by default; no provider secrets are needed for web/dashboard startup.
+  Offline fixtures are verified; live PSTN remains **pending_credentials**. No outbound
+  dial command or real operator transfer is included. See [PhoneRuntime](docs/PHONE_RUNTIME.md),
+  [integration validation](docs/STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md) and the
+  [future live checklist](docs/STAGE6_LIVE_TELEPHONY_CHECKLIST.md).
 
 - Manually selected `fraud_security`: brief RU/KK security guidance, safe yes/no incident
   questions and `FraudCaseResult` for human review. It never asks for OTP/PIN/CVV/password,

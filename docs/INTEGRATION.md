@@ -1,4 +1,8 @@
-# Frontend integration handoff
+# Platform integration handoff
+
+Stage 6 adds server phone transports alongside these existing frontend boundaries.
+Both gateways use current MessageService and SQLite; no historical phone analytics or
+frontend runtime replaces the Stage 5B integration. See the phone contract below.
 
 The frontend already owns the session ID, conversation loop, text fallback, browser TTS,
 and trace display. The integrated MVP connects these two boundaries in real HTTP mode.
@@ -180,3 +184,25 @@ counts and demo badges; session rows/details use their explicit source. The moun
 Conversation Demo preserves current Insurance/Sales/Fraud/Risk/voice/TTS functionality.
 Check `ANALYTICS_API_CONTRACT.md` and backend OpenAPI for typed aggregate/page contracts;
 run `npm test`, `npm run build` and backend pytest for the integration regressions.
+
+## Stage 6 phone integration
+
+The teammate's single PhoneRuntime implementation backs both optional server gateways.
+AgentBridge calls the current MessageService directly with an application UUID and
+`channel="voice"`. Same selected packs, Insurance lookup-memory and shared Risk; no
+provider-side routing or transcript submission API. Partial STT never enters the core.
+Backend TTS replies wait for provider mark/notify playback acknowledgement. Browser
+ConversationRuntime/TTS stay intact; `/api/v1/voice` now wraps the shared extracted STT relay.
+
+Current EventRecorder/SQLite remain the only production analytics source. Phone call
+cleanup finalizes committed sessions idempotently without fabricating a customer turn.
+No raw speech/reply/audio/identifiers/provider metadata enter events. Dashboard APIs and
+schema are unchanged: voice includes browser and phone, and recent activity is not PSTN
+presence. Phone fixture `runtime` events use a temporary DB, not the normal Docker volume.
+
+`/health.telephony` reports each provider as `disabled`, `unavailable` or `ready` with no
+config values. Disabled/partial config cannot open media connections; web keeps working.
+See `PHONE_RUNTIME.md` for exact callback paths, bounds and protocol. Provenance/offline
+evidence: `STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md`. Live gate and future settings:
+`STAGE6_LIVE_TELEPHONY_CHECKLIST.md`. No provider credentials, outbound calling command,
+public tunnel or real operator transfer is added.

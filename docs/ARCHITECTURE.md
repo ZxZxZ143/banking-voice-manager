@@ -1,10 +1,10 @@
-# Scenario Pack architecture — Stage 5A
+# Scenario Pack architecture — Stage 6 integration
 
 Production registers `insurance_manager` and three proactive campaigns: `product_promoter`
 (deposit), `card_promoter`, `loan_promoter`, plus consultative `fraud_security`. The sales campaigns reuse one implementation
 with distinct manifests and isolated contexts. Shared sessions, HTTP, voice, traces and lifecycle remain
 independent of their business logic. Stage 5A adds replaceable SQLite event persistence;
-no queue, RAG or dynamic plugin loading is introduced.
+no external task broker, RAG or dynamic plugin loading is introduced.
 
 ```text
 Browser text / final STT → POST /api/message
@@ -312,7 +312,8 @@ from backend analysis time and never derived from generated token count.
 
 Docker retains two health-checked services and loopback ports 8000/5173, Nginx HTTP/WS
 proxy, non-root backend and runtime-only `.env`. Both catalog paths are explicit in Compose.
-No authentication or contact-center connection is implemented. Installed
+Web/demo APIs have no production authentication or contact-center connection. Stage 6
+phone callbacks separately require provider signatures. Installed
 voices and real microphone quality require manual verification. Measured results and
 remaining model-output variability are in `STAGE3_1_CONVERSATION_VALIDATION.md` and the
 earlier `STAGE3_VALIDATION.md`.
@@ -342,8 +343,8 @@ future schema evolution needs explicit migration, not an ORM dependency now.
 
 Typed read-only event/session/summary endpoints use indexed filters and bounded pages.
 Summary deduplicates evolving results by session/assistant within the filtered period.
-Historical queries support future time-window anomaly analysis; detection is deferred.
-The teammate owns dashboard/frontend work. No frontend files or integration were changed.
+Historical queries now support the deterministic Stage 5B anomaly analysis below.
+Stage 5A introduced storage; Stage 5B integrated the teammate dashboard/frontend.
 See `ANALYTICS_API_CONTRACT.md` for schemas, count semantics, seeding and Stage 5B checklist.
 
 
@@ -375,3 +376,33 @@ Polling cancels obsolete requests, avoids overlap and pauses while hidden. Aggre
 materialize safe retained events in application memory at demo scale; large-volume storage
 queries/capacity work require future measurement. Persistence retains its best-effort gap
 limitation. See `FINANCE_DASHBOARD.md` and `STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md`.
+
+## Stage 6 phone transport
+
+The teammate implementation from `feature/backend-phone-runtime` →
+`feature/twilio-telephony-provider` → `feature/vonage-telephony-provider` is selectively
+ported; historical core/events/frontend code is not merged. `main.py` builds an optional
+gateway for each enabled/configured provider, sharing the current Services.messages object.
+Both use the same PhoneRuntime implementation and shared speech modules; each gateway owns
+its bounded transport registry and playback acknowledgements.
+
+```text
+signed Twilio/Vonage admission → provider decoder/resampler → PCM16LE mono 24k
+    → shared streaming STT → final-only PhoneRuntime → AgentBridge
+    → current MessageService.process(session UUID, text, channel="voice")
+    → existing selected pack + shared Risk + EventRecorder → SQLite
+    → backend OpenAI TTS → provider codec → playback acknowledgement → listen/close
+```
+
+Browser `/api/v1/voice` uses the extracted STT relay with unchanged wire semantics; browser
+TTS remains frontend-owned. Phone starts listening and defaults to Insurance; it does not
+add a second Router, auto-selector, campaign or greeting model. Phone response-language
+precedence matches browser security guidance while preserving business state.
+
+MessageService.end_session closes a committed transport conversation under its existing
+session lock without adding a turn or invoking models. EventRecorder.record_end writes an
+idempotent safe terminal event, preserving handoff. An unanswered call with no committed
+turn creates no analytics conversation. Transcripts, raw audio and provider IDs stay outside
+SQLite. Best-effort storage/cancellation limitations still apply; runtime state/tombstones
+are process-local. See `PHONE_RUNTIME.md` for bounds and authentication, and
+`STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md` for measured offline evidence.
