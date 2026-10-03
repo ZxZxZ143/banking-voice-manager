@@ -15,6 +15,11 @@ node_modules/
 dist/
 coverage/
 work/
+data/runtime/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite*
 predictions.json
 predictions.report.txt
 predictions.details.json

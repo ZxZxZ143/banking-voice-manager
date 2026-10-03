@@ -4,6 +4,8 @@ from dataclasses import dataclass, replace
 
 from pydantic import SecretStr
 
+from app.analytics.recorder import EventRecorder
+from app.analytics.sqlite import SQLiteEventStore
 from app.core.config import Settings
 from app.dialog.message import MessageService
 from app.dialog.store import InMemoryDialogStore
@@ -41,6 +43,7 @@ class Services:
     messages: MessageService
     triage: TriageService
     risk: RiskIntelligence | None = None
+    events: EventRecorder | None = None
 
     @property
     def insurance(self):
@@ -138,6 +141,14 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
     registry.register(FraudSecurityPack(intelligence))
     dialogs = InMemoryDialogStore()
     traces = TraceCollector()
+    events = EventRecorder(
+        SQLiteEventStore(settings.event_db_path),
+        product_ids=frozenset(product.id for product in products.products),
+        scenario_ids=frozenset(
+            [item.scenario_id for item in pack.kit.scenarios.scenarios]
+            + [item.id for item in pack.kit.scenarios.system_intents]
+        ),
+    )
     messages = MessageService(
         pack.processor.router,
         dialogs,
@@ -148,5 +159,8 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         # Legacy Router fixtures isolate Insurance business behavior. Stage 4 tests
         # explicitly inject Risk fixtures; every normal production build enables Risk.
         risk=intelligence if router_override is None else None,
+        events=events,
     )
-    return Services(registry, dialogs, traces, messages, TriageService(), risk=intelligence)
+    return Services(
+        registry, dialogs, traces, messages, TriageService(), risk=intelligence, events=events
+    )

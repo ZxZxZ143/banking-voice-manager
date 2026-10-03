@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 
+from app.analytics.models import StorageHealth
 from app.core.contracts import Contract
 
 router = APIRouter()
@@ -17,16 +18,18 @@ class HealthResponse(Contract):
     service: str = "voice-router"
     mode: str = "foundation"
     starter_kit: DataCounts
+    analytics: StorageHealth
 
 
 @router.get("/health", response_model=HealthResponse)
 def health(request: Request) -> HealthResponse:
     kit = request.app.state.services.kit
     return HealthResponse(
+        analytics=request.app.state.services.events.health(),
         starter_kit=DataCounts(
             scenarios=len(kit.scenarios.scenarios),
             system_intents=len(kit.scenarios.system_intents),
             actions=len(kit.actions.actions),
             dev_utterances=len(kit.dev_utterances.utterances),
-        )
+        ),
     )

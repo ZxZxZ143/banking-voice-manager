@@ -33,3 +33,4 @@ class Settings(BaseSettings):
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"
     product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"
     security_policy_path: Path = PROJECT_ROOT / "data" / "security" / "policy.json"
+    event_db_path: Path = PROJECT_ROOT / "data" / "runtime" / "veyra_events.db"

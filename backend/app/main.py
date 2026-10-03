@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent.router import Router
+from app.api.routes.analytics import router as analytics_router
 from app.api.routes.dev import router as dev_router
 from app.api.routes.health import router as health_router
 from app.api.routes.message import router as message_router
@@ -35,6 +36,7 @@ def create_app(
         allow_headers=["Content-Type"],
     )
     application.include_router(health_router)
+    application.include_router(analytics_router)
     if config.enable_dev_stand:
         application.include_router(dev_router)
     application.include_router(message_router)

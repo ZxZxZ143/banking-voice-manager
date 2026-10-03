@@ -23,6 +23,13 @@ def test_health_loaded_actual_data(client):
         "service": "voice-router",
         "mode": "foundation",
         "starter_kit": {"scenarios": 40, "system_intents": 3, "actions": 31, "dev_utterances": 104},
+        "analytics": {
+            "status": "ok",
+            "backend": "sqlite",
+            "failure_count": 0,
+            "last_error": None,
+            "last_failure_at": None,
+        },
     }
 
 

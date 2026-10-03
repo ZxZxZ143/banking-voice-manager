@@ -25,11 +25,12 @@ class MessageService(SharedMessageService):
         *,
         registry: ScenarioRegistry | None = None,
         risk=None,
+        events=None,
     ) -> None:
         if registry is None:
             registry = ScenarioRegistry(default_pack_id=INSURANCE_MANIFEST.id)
             registry.register(InsuranceManagerPack(InsuranceTurnProcessor(router, policy, replies)))
-        super().__init__(registry, dialogs, traces, risk=risk)
+        super().__init__(registry, dialogs, traces, risk=risk, events=events)
 
     @property
     def router(self) -> Router:

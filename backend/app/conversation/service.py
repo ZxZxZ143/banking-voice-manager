@@ -2,6 +2,7 @@ from time import perf_counter
 
 from pydantic import Field, SerializeAsAny
 
+from app.analytics.recorder import EventRecorder
 from app.conversation.status import ConversationStatus
 from app.conversation.store import ConversationStore
 from app.core.contracts import Contract
@@ -47,6 +48,7 @@ class MessageService:
         dialogs: ConversationStore,
         traces: TraceCollector,
         risk: RiskIntelligence | None = None,
+        events: EventRecorder | None = None,
     ) -> None:
         self.registry = registry
         self.dialogs = dialogs
@@ -54,6 +56,7 @@ class MessageService:
         self.lifecycle = ScenarioLifecycle(registry)
         self.selector = None
         self.risk = risk
+        self.events = events
 
     async def process(
         self,
@@ -187,6 +190,19 @@ class MessageService:
             if global_context.turn_number == 1:
                 self.traces.delete(session_id)
             self.traces.add(session_id, trace)
+            if self.events:
+                await self.events.record(
+                    global_context,
+                    pack.manifest.id,
+                    turn.result,
+                    run.assessment,
+                    previous_assistant=previous_pack,
+                    assistant_initiated=start_scenario,
+                    emit_result=(
+                        getattr(turn.routing, "kind", None) != "security_guidance"
+                        or turn.result.status in ("handoff", "ended")
+                    ),
+                )
             return MessageResult(
                 session_id=session_id,
                 response_text=turn.response_text,
