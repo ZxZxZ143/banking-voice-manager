@@ -120,6 +120,7 @@ class ProductScenarioContext(Contract):
     next_action: NextAction = "continue_consultation"
     last_question: Question | None = None
     response_language: Literal["ru", "kk"] = "ru"
+    preferred_response_language: Literal["ru", "kk"] | None = None
     last_intent: Intent | None = None
     last_assistant_text: str | None = Field(default=None, max_length=7000)
     last_question_text: str | None = Field(default=None, max_length=500)
@@ -131,6 +132,12 @@ class ProductScenarioContext(Contract):
     )
     refusal_count: int = Field(default=0, ge=0, le=2)
     customer_turns: int = Field(default=0, ge=0)
+
+
+class ProductLanguageControl(Contract):
+    kind: Literal["language_control"] = "language_control"
+    language: Language
+    response_language: Literal["ru", "kk"]
 
 
 class Product(Contract):

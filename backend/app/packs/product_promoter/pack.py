@@ -1,7 +1,7 @@
 from time import perf_counter
 
 from app.agent.errors import RouterOutputError
-from app.conversation.language import reply_language
+from app.conversation.language import language_request, stable_response_language
 from app.conversation.terminal import terminal_reply
 from app.core.contracts import Contract
 from app.packs.contracts import (
@@ -16,6 +16,7 @@ from app.packs.product_promoter.models import (
     ProductCatalog,
     ProductConditions,
     ProductDecision,
+    ProductLanguageControl,
     ProductPublicState,
     ProductScenarioContext,
     SalesLeadResult,
@@ -137,7 +138,7 @@ class ProductPromoterPack:
     async def open_turn(self, global_context: GlobalConversationContext, context: Contract):
         if type(context) is not ProductScenarioContext or context.campaign != self.campaign:
             raise ValueError("Product Promoter requires its own context")
-        language = (
+        language = context.preferred_response_language or (
             global_context.language
             if global_context.language in ("ru", "kk")
             else context.response_language
@@ -213,11 +214,16 @@ class ProductPromoterPack:
     ):
         if type(context) is not ProductScenarioContext or context.campaign != self.campaign:
             raise ValueError("Product Promoter requires its own context")
+        requested, business_text = language_request(text)
+        if requested:
+            context.preferred_response_language = requested
+            if not business_text.strip():
+                return self._language_control(text, requested, global_context, context)
         started = perf_counter()
         first_response = context.last_intent is None
         invalid = False
         try:
-            decision = await self.agent.decide(text, context.model_copy(deep=True))
+            decision = await self.agent.decide(business_text, context.model_copy(deep=True))
             if type(decision) is not ProductDecision or any(
                 pid not in self._products for pid in decision.product_ids
             ):
@@ -237,10 +243,16 @@ class ProductPromoterPack:
                 confidence=0,
             )
         router_ms = (perf_counter() - started) * 1000
-        if not invalid:
-            decision.response_language = reply_language(
-                text, decision.language, decision.response_language
-            )
+        decision.response_language = stable_response_language(
+            business_text,
+            context.response_language,
+            context.preferred_response_language,
+            initial_hint=(
+                decision.response_language
+                if not invalid and not context.last_assistant_text and not context.customer_turns
+                else None
+            ),
+        )
         model_intent = decision.intent
         has_preferences = any(v is not None for v in decision.preferences.model_dump().values())
         if (
@@ -585,7 +597,7 @@ class ProductPromoterPack:
         )
         return PackTurn(
             context=context,
-            language=decision.language,
+            language=language,
             response_text=response,
             routing=decision,
             public_state=self._public_state(context, lead, global_context, shown),
@@ -593,6 +605,47 @@ class ProductPromoterPack:
             result=lead,
             complete_pack=complete,
             out_of_domain=decision.intent == "out_of_scope",
+        )
+
+    def _language_control(self, text, language, global_context, context):
+        # Preserve the pending business step, preferences, counters and completion.
+        context.response_language = language
+        response = (
+            self._question(context.last_question, language)
+            if context.last_question in QUESTIONS
+            else (
+                "Что хотите уточнить по нашему разговору?"
+                if language == "ru"
+                else "Әңгімеміз бойынша нені нақтылағыңыз келеді?"
+            )
+        )
+        context.last_assistant_text = response
+        context.last_question_text = response if context.last_question in QUESTIONS else None
+        outcome = (
+            "declined"
+            if context.interest_level == "declined"
+            else "interested"
+            if context.completed
+            else "consulting"
+        )
+        lead = self._lead(context, global_context.conversation_status, outcome, context.completed)
+        return PackTurn(
+            context=context,
+            language=language,
+            response_text=response,
+            routing=ProductLanguageControl(language=language, response_language=language),
+            public_state=self._public_state(context, lead, global_context, []),
+            trace=TraceRecord(
+                turn=global_context.turn_number + 1,
+                transcript=text,
+                language=language,
+                reason="Explicit response-language preference; pending sales step preserved",
+                conversation_act="language_control",
+                conversation_phase=context.sales_phase,
+                latency_ms=LatencyRecord(router=0, response=0),
+            ),
+            result=lead,
+            complete_pack=context.completed,
         )
 
     def _question(self, key, language):

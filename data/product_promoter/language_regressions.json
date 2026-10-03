@@ -1,0 +1,14 @@
+[
+  {"id":"ru_screenshot","prior":"ru","text":"меня интересует накопительный депозит","model":"kk","expected":"ru"},
+  {"id":"ru_morphology","prior":"kk","text":"интересует выгодный накопительный вариант","model":"kk","expected":"ru"},
+  {"id":"kk_continuity","prior":"kk","text":"Жинақ үшін тиімді ұсыныс керек","model":"ru","expected":"kk"},
+  {"id":"banking_noun","prior":"ru","text":"депозит","model":"kk","expected":"ru"},
+  {"id":"kk_banking_noun","prior":"kk","text":"карта","model":"ru","expected":"kk"},
+  {"id":"mixed_ru","prior":"kk","text":"Мне нужно узнать, какие условия и ставка по этому депозиту, рақмет","model":"kk","expected":"ru"},
+  {"id":"mixed_kk","prior":"ru","text":"Маған осы депозит туралы айтып беріңіз, cashback бар ма","model":"ru","expected":"kk"},
+  {"id":"kk_ascii_cyrillic","prior":"ru","text":"Мен депозит ашкым келеди, кандай шарттар бар","model":"kk","expected":"kk"},
+  {"id":"numeric","prior":"kk","text":"100 тысяч","model":"ru","expected":"kk"},
+  {"id":"neutral_term","prior":"kk","text":"на год","model":"ru","expected":"kk"},
+  {"id":"short_yes","prior":"kk","text":"да","model":"ru","expected":"kk"},
+  {"id":"short_no","prior":"ru","text":"нет","model":"kk","expected":"ru"}
+]

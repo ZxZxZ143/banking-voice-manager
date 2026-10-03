@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field, SerializeAsAny
 
+from app.conversation.language import language_request
 from app.conversation.status import ConversationStatus
 from app.conversation.terminal import terminal_reply
 from app.core.contracts import Contract
@@ -43,7 +44,13 @@ async def guidance_turn(pack, global_context, entry, run, text, policy):
             entry.result.model_copy(deep=True),
         )
     decision, assessment = run.decision, run.assessment
-    language = (
+    preferred = getattr(entry.state, "preferred_response_language", None)
+    if "preferred_response_language" in type(entry.state).model_fields:
+        requested, _ = language_request(text)
+        if requested:
+            preferred = requested
+            entry.state.preferred_response_language = requested
+    language = preferred or (
         decision.response_language
         if decision
         else security_language(text, global_context.language, "ru")
@@ -78,6 +85,10 @@ async def guidance_turn(pack, global_context, entry, run, text, policy):
     public = public.model_copy(
         update={k: v for k, v in metadata.items() if k in type(public).model_fields}
     )
+    if preferred:
+        public = public.model_copy(
+            update={"preferred_response_language": preferred, "response_language": preferred}
+        )
     trace = TraceRecord(
         turn=global_context.turn_number + 1,
         transcript="",
