@@ -1,0 +1,923 @@
+{
+  "overview": {
+    "total_sessions": 144,
+    "active_sessions": 0,
+    "recent_sessions": 0,
+    "sessions_by_channel": {
+      "text": 60,
+      "voice": 84
+    },
+    "sessions_by_scenario": [
+      {
+        "key": "fraud_security",
+        "count": 48
+      },
+      {
+        "key": "card_promoter",
+        "count": 24
+      },
+      {
+        "key": "insurance_manager",
+        "count": 24
+      },
+      {
+        "key": "loan_promoter",
+        "count": 24
+      },
+      {
+        "key": "product_promoter",
+        "count": 24
+      }
+    ],
+    "conversation_statuses": {
+      "ended": 108,
+      "handoff": 12,
+      "awaiting_user": 24
+    },
+    "handoff_count": 12,
+    "handoff_rate": 0.08333333333333333,
+    "risk": {
+      "levels": {
+        "unknown": 80,
+        "none": 0,
+        "low": 0,
+        "medium": 0,
+        "high": 52,
+        "critical": 12
+      },
+      "high_risk_sessions": 64,
+      "top_signals": [
+        {
+          "key": "otp_requested_by_third_party",
+          "count": 64
+        },
+        {
+          "key": "bank_impersonation",
+          "count": 40
+        }
+      ],
+      "high_risk_scenarios": [
+        {
+          "key": "fraud_security",
+          "count": 48
+        },
+        {
+          "key": "card_promoter",
+          "count": 4
+        },
+        {
+          "key": "insurance_manager",
+          "count": 4
+        },
+        {
+          "key": "loan_promoter",
+          "count": 4
+        },
+        {
+          "key": "product_promoter",
+          "count": 4
+        }
+      ],
+      "fraud_case_types": [
+        {
+          "key": "social_engineering",
+          "count": 24
+        }
+      ]
+    },
+    "sales_outcomes": [
+      {
+        "key": "interested",
+        "count": 48
+      },
+      {
+        "key": "declined",
+        "count": 24
+      }
+    ],
+    "insurance_completed": 24,
+    "sources": {
+      "synthetic_demo": 144
+    },
+    "retained_events": 688,
+    "latency": {
+      "agent_ms": {
+        "average_ms": null,
+        "samples": 0
+      },
+      "tts_ms": {
+        "average_ms": null,
+        "samples": 0
+      },
+      "endpointing_ms": {
+        "average_ms": null,
+        "samples": 0
+      },
+      "stt_final_ms": {
+        "average_ms": null,
+        "samples": 0
+      },
+      "speech_end_to_playback_submit_ms": {
+        "average_ms": null,
+        "samples": 0
+      },
+      "speech_end_to_playback_complete_ms": {
+        "average_ms": null,
+        "samples": 0
+      }
+    },
+    "clarification_count": null,
+    "clarification_rate": null,
+    "capacity": null,
+    "evicted_events": null
+  },
+  "risk": {
+    "levels": {
+      "unknown": 80,
+      "none": 0,
+      "low": 0,
+      "medium": 0,
+      "high": 52,
+      "critical": 12
+    },
+    "high_risk_sessions": 64,
+    "top_signals": [
+      {
+        "key": "otp_requested_by_third_party",
+        "count": 64
+      },
+      {
+        "key": "bank_impersonation",
+        "count": 40
+      }
+    ],
+    "high_risk_scenarios": [
+      {
+        "key": "fraud_security",
+        "count": 48
+      },
+      {
+        "key": "card_promoter",
+        "count": 4
+      },
+      {
+        "key": "insurance_manager",
+        "count": 4
+      },
+      {
+        "key": "loan_promoter",
+        "count": 4
+      },
+      {
+        "key": "product_promoter",
+        "count": 4
+      }
+    ],
+    "fraud_case_types": [
+      {
+        "key": "social_engineering",
+        "count": 24
+      }
+    ]
+  },
+  "sessions": {
+    "sessions": [
+      {
+        "session_id": "synthetic-demo-v1-119",
+        "channel": "voice",
+        "source": "synthetic_demo",
+        "started_at": "2026-10-03T09:59:00Z",
+        "ended_at": "2026-10-03T09:59:00Z",
+        "latest_event_at": "2026-10-03T09:59:00Z",
+        "assistant_sequence": [
+          "fraud_security"
+        ],
+        "latest_assistant": "fraud_security",
+        "scenarios": [
+          "fraud_security"
+        ],
+        "primary_scenario": "fraud_security",
+        "last_scenario": "fraud_security",
+        "scenario_ids": [],
+        "risk_level": "high",
+        "risk_signals": [
+          "bank_impersonation",
+          "otp_requested_by_third_party"
+        ],
+        "handoff": false,
+        "completed": true,
+        "active": false,
+        "status": "ended",
+        "turn_count": 1,
+        "total_duration_ms": 0.0,
+        "result_types": [
+          "fraud_case"
+        ],
+        "results": [
+          {
+            "event_id": "8bf4671c-cab1-5e5e-860e-be3f1d1f33d1",
+            "schema_version": 1,
+            "created_at": "2026-10-03T09:59:00Z",
+            "session_id": "synthetic-demo-v1-119",
+            "turn_number": 1,
+            "sequence": 3,
+            "channel": "voice",
+            "assistant_id": "fraud_security",
+            "event_type": "fraud_case",
+            "conversation_status": "ended",
+            "scenario_id": null,
+            "risk_level": "high",
+            "risk_signals": [
+              "bank_impersonation",
+              "otp_requested_by_third_party"
+            ],
+            "result_status": "ended",
+            "source": "synthetic_demo",
+            "payload": {
+              "kind": "fraud_case",
+              "case_type": "social_engineering",
+              "case_status": "needs_review",
+              "facts": [
+                "bank_impersonation",
+                "otp_requested_by_third_party"
+              ],
+              "recommended_action": "security_review",
+              "guidance_shown": [],
+              "completed": true,
+              "handoff": false
+            }
+          }
+        ],
+        "partial_history": false,
+        "language": null,
+        "clarification_count": null,
+        "average_agent_ms": null,
+        "average_tts_ms": null,
+        "latest_latency": {}
+      },
+      {
+        "session_id": "synthetic-demo-v1-118",
+        "channel": "text",
+        "source": "synthetic_demo",
+        "started_at": "2026-10-03T09:58:00Z",
+        "ended_at": "2026-10-03T09:58:00Z",
+        "latest_event_at": "2026-10-03T09:58:00Z",
+        "assistant_sequence": [
+          "loan_promoter"
+        ],
+        "latest_assistant": "loan_promoter",
+        "scenarios": [
+          "loan_promoter"
+        ],
+        "primary_scenario": "loan_promoter",
+        "last_scenario": "loan_promoter",
+        "scenario_ids": [],
+        "risk_level": "unknown",
+        "risk_signals": [],
+        "handoff": false,
+        "completed": true,
+        "active": false,
+        "status": "ended",
+        "turn_count": 1,
+        "total_duration_ms": 0.0,
+        "result_types": [
+          "sales_lead"
+        ],
+        "results": [
+          {
+            "event_id": "c8a58c36-29b0-5af2-9c87-8a1cfbadeca6",
+            "schema_version": 1,
+            "created_at": "2026-10-03T09:58:00Z",
+            "session_id": "synthetic-demo-v1-118",
+            "turn_number": 1,
+            "sequence": 3,
+            "channel": "text",
+            "assistant_id": "loan_promoter",
+            "event_type": "sales_lead",
+            "conversation_status": "ended",
+            "scenario_id": null,
+            "risk_level": null,
+            "risk_signals": [],
+            "result_status": "ended",
+            "source": "synthetic_demo",
+            "payload": {
+              "kind": "sales_lead",
+              "campaign": "loan",
+              "product_category": "loan",
+              "selected_product_id": "LOAN-PERSONAL",
+              "presented_product_ids": [
+                "LOAN-PERSONAL"
+              ],
+              "outcome": "interested",
+              "interest_level": "high",
+              "next_action": "application_interest",
+              "completed": true,
+              "handoff": false
+            }
+          }
+        ],
+        "partial_history": false,
+        "language": null,
+        "clarification_count": null,
+        "average_agent_ms": null,
+        "average_tts_ms": null,
+        "latest_latency": {}
+      },
+      {
+        "session_id": "synthetic-demo-v1-117",
+        "channel": "voice",
+        "source": "synthetic_demo",
+        "started_at": "2026-10-03T09:57:00Z",
+        "ended_at": "2026-10-03T09:57:00Z",
+        "latest_event_at": "2026-10-03T09:57:00Z",
+        "assistant_sequence": [
+          "card_promoter"
+        ],
+        "latest_assistant": "card_promoter",
+        "scenarios": [
+          "card_promoter"
+        ],
+        "primary_scenario": "card_promoter",
+        "last_scenario": "card_promoter",
+        "scenario_ids": [],
+        "risk_level": "unknown",
+        "risk_signals": [],
+        "handoff": false,
+        "completed": true,
+        "active": false,
+        "status": "ended",
+        "turn_count": 1,
+        "total_duration_ms": 0.0,
+        "result_types": [
+          "sales_lead"
+        ],
+        "results": [
+          {
+            "event_id": "9524a861-0839-57fa-b367-b1ad952e37ad",
+            "schema_version": 1,
+            "created_at": "2026-10-03T09:57:00Z",
+            "session_id": "synthetic-demo-v1-117",
+            "turn_number": 1,
+            "sequence": 3,
+            "channel": "voice",
+            "assistant_id": "card_promoter",
+            "event_type": "sales_lead",
+            "conversation_status": "ended",
+            "scenario_id": null,
+            "risk_level": null,
+            "risk_signals": [],
+            "result_status": "ended",
+            "source": "synthetic_demo",
+            "payload": {
+              "kind": "sales_lead",
+              "campaign": "card",
+              "product_category": "card",
+              "selected_product_id": "CARD-DAILY",
+              "presented_product_ids": [
+                "CARD-DAILY"
+              ],
+              "outcome": "declined",
+              "interest_level": "declined",
+              "next_action": "declined",
+              "completed": true,
+              "handoff": false
+            }
+          }
+        ],
+        "partial_history": false,
+        "language": null,
+        "clarification_count": null,
+        "average_agent_ms": null,
+        "average_tts_ms": null,
+        "latest_latency": {}
+      },
+      {
+        "session_id": "synthetic-demo-v1-116",
+        "channel": "text",
+        "source": "synthetic_demo",
+        "started_at": "2026-10-03T09:56:00Z",
+        "ended_at": "2026-10-03T09:56:00Z",
+        "latest_event_at": "2026-10-03T09:56:00Z",
+        "assistant_sequence": [
+          "product_promoter"
+        ],
+        "latest_assistant": "product_promoter",
+        "scenarios": [
+          "product_promoter"
+        ],
+        "primary_scenario": "product_promoter",
+        "last_scenario": "product_promoter",
+        "scenario_ids": [],
+        "risk_level": "unknown",
+        "risk_signals": [],
+        "handoff": false,
+        "completed": true,
+        "active": false,
+        "status": "ended",
+        "turn_count": 1,
+        "total_duration_ms": 0.0,
+        "result_types": [
+          "sales_lead"
+        ],
+        "results": [
+          {
+            "event_id": "cf86a9d2-b20e-569e-8b1a-e429a6a54143",
+            "schema_version": 1,
+            "created_at": "2026-10-03T09:56:00Z",
+            "session_id": "synthetic-demo-v1-116",
+            "turn_number": 1,
+            "sequence": 3,
+            "channel": "text",
+            "assistant_id": "product_promoter",
+            "event_type": "sales_lead",
+            "conversation_status": "ended",
+            "scenario_id": null,
+            "risk_level": null,
+            "risk_signals": [],
+            "result_status": "ended",
+            "source": "synthetic_demo",
+            "payload": {
+              "kind": "sales_lead",
+              "campaign": "deposit",
+              "product_category": "deposit",
+              "selected_product_id": "DEP-FLEX",
+              "presented_product_ids": [
+                "DEP-FLEX"
+              ],
+              "outcome": "interested",
+              "interest_level": "high",
+              "next_action": "application_interest",
+              "completed": true,
+              "handoff": false
+            }
+          }
+        ],
+        "partial_history": false,
+        "language": null,
+        "clarification_count": null,
+        "average_agent_ms": null,
+        "average_tts_ms": null,
+        "latest_latency": {}
+      },
+      {
+        "session_id": "synthetic-demo-v1-115",
+        "channel": "voice",
+        "source": "synthetic_demo",
+        "started_at": "2026-10-03T09:55:00Z",
+        "ended_at": "2026-10-03T09:55:00Z",
+        "latest_event_at": "2026-10-03T09:55:00Z",
+        "assistant_sequence": [
+          "insurance_manager"
+        ],
+        "latest_assistant": "insurance_manager",
+        "scenarios": [
+          "insurance_manager"
+        ],
+        "primary_scenario": "insurance_manager",
+        "last_scenario": "insurance_manager",
+        "scenario_ids": [
+          "SC33"
+        ],
+        "risk_level": "unknown",
+        "risk_signals": [],
+        "handoff": false,
+        "completed": true,
+        "active": false,
+        "status": "ended",
+        "turn_count": 1,
+        "total_duration_ms": 0.0,
+        "result_types": [
+          "insurance_result"
+        ],
+        "results": [
+          {
+            "event_id": "cc18b87a-1114-599d-ac4a-9e16d3c75d63",
+            "schema_version": 1,
+            "created_at": "2026-10-03T09:55:00Z",
+            "session_id": "synthetic-demo-v1-115",
+            "turn_number": 1,
+            "sequence": 3,
+            "channel": "voice",
+            "assistant_id": "insurance_manager",
+            "event_type": "insurance_result",
+            "conversation_status": "ended",
+            "scenario_id": "SC33",
+            "risk_level": null,
+            "risk_signals": [],
+            "result_status": "ended",
+            "source": "synthetic_demo",
+            "payload": {
+              "kind": "insurance_result",
+              "completed": true,
+              "handoff": false,
+              "actions": [
+                "get_offices"
+              ]
+            }
+          }
+        ],
+        "partial_history": false,
+        "language": null,
+        "clarification_count": null,
+        "average_agent_ms": null,
+        "average_tts_ms": null,
+        "latest_latency": {}
+      }
+    ],
+    "total": 144,
+    "limit": 5,
+    "offset": 0,
+    "next_offset": 5
+  },
+  "anomalies": {
+    "anomalies": [
+      {
+        "id": "ebe559e7-4b68-598d-b71b-381243aafe8c",
+        "detected_at": "2026-10-03T03:00:00Z",
+        "metric": "risk_level",
+        "key": "high",
+        "source": "synthetic_demo",
+        "current_count": 18,
+        "baseline_count": 6,
+        "baseline_expected_count": 1.0,
+        "ratio": 18.0,
+        "severity": "high",
+        "window": {
+          "current_from": "2026-10-03T02:00:00Z",
+          "current_to": "2026-10-03T03:00:00Z",
+          "baseline_from": "2026-10-02T20:00:00Z",
+          "baseline_to": "2026-10-03T02:00:00Z",
+          "window_seconds": 3600,
+          "baseline_windows": 6
+        },
+        "explanation": "Anomalous increase relative to observed baseline; supervisor review required. Cause is not established.",
+        "partial_history": false
+      },
+      {
+        "id": "a8dc6a64-caca-52e8-a940-e9e004bc1362",
+        "detected_at": "2026-10-03T03:00:00Z",
+        "metric": "risk_signal",
+        "key": "otp_requested_by_third_party",
+        "source": "synthetic_demo",
+        "current_count": 18,
+        "baseline_count": 6,
+        "baseline_expected_count": 1.0,
+        "ratio": 18.0,
+        "severity": "high",
+        "window": {
+          "current_from": "2026-10-03T02:00:00Z",
+          "current_to": "2026-10-03T03:00:00Z",
+          "baseline_from": "2026-10-02T20:00:00Z",
+          "baseline_to": "2026-10-03T02:00:00Z",
+          "window_seconds": 3600,
+          "baseline_windows": 6
+        },
+        "explanation": "Anomalous increase relative to observed baseline; supervisor review required. Cause is not established.",
+        "partial_history": false
+      }
+    ],
+    "history_status": "ready",
+    "as_of": "2026-10-03T03:00:00Z",
+    "total": 2,
+    "limit": 5,
+    "offset": 0,
+    "next_offset": null
+  },
+  "detail": {
+    "summary": {
+      "session_id": "synthetic-demo-v1-002",
+      "channel": "text",
+      "source": "synthetic_demo",
+      "started_at": "2026-10-03T08:02:00Z",
+      "ended_at": "2026-10-03T08:02:00Z",
+      "latest_event_at": "2026-10-03T08:02:00Z",
+      "assistant_sequence": [
+        "card_promoter"
+      ],
+      "latest_assistant": "card_promoter",
+      "scenarios": [
+        "card_promoter"
+      ],
+      "primary_scenario": "card_promoter",
+      "last_scenario": "card_promoter",
+      "scenario_ids": [],
+      "risk_level": "unknown",
+      "risk_signals": [],
+      "handoff": false,
+      "completed": true,
+      "active": false,
+      "status": "ended",
+      "turn_count": 1,
+      "total_duration_ms": 0.0,
+      "result_types": [
+        "sales_lead"
+      ],
+      "results": [
+        {
+          "event_id": "92621061-7111-5dcd-8afd-b4566f34d322",
+          "schema_version": 1,
+          "created_at": "2026-10-03T08:02:00Z",
+          "session_id": "synthetic-demo-v1-002",
+          "turn_number": 1,
+          "sequence": 3,
+          "channel": "text",
+          "assistant_id": "card_promoter",
+          "event_type": "sales_lead",
+          "conversation_status": "ended",
+          "scenario_id": null,
+          "risk_level": null,
+          "risk_signals": [],
+          "result_status": "ended",
+          "source": "synthetic_demo",
+          "payload": {
+            "kind": "sales_lead",
+            "campaign": "card",
+            "product_category": "card",
+            "selected_product_id": "CARD-DAILY",
+            "presented_product_ids": [
+              "CARD-DAILY"
+            ],
+            "outcome": "interested",
+            "interest_level": "high",
+            "next_action": "application_interest",
+            "completed": true,
+            "handoff": false
+          }
+        }
+      ],
+      "partial_history": false,
+      "language": null,
+      "clarification_count": null,
+      "average_agent_ms": null,
+      "average_tts_ms": null,
+      "latest_latency": {}
+    },
+    "timeline": [
+      {
+        "event_id": "269b3613-2d30-50e7-9d61-92ed550f9ed7",
+        "schema_version": 1,
+        "created_at": "2026-10-03T08:02:00Z",
+        "session_id": "synthetic-demo-v1-002",
+        "turn_number": 1,
+        "sequence": 0,
+        "channel": "text",
+        "assistant_id": "card_promoter",
+        "event_type": "conversation_started",
+        "conversation_status": "ended",
+        "scenario_id": null,
+        "risk_level": null,
+        "risk_signals": [],
+        "result_status": null,
+        "source": "synthetic_demo",
+        "payload": {
+          "kind": "conversation_started",
+          "assistant_initiated": false
+        }
+      },
+      {
+        "event_id": "1e108eb5-e09c-5afe-a185-b1ca8428ea46",
+        "schema_version": 1,
+        "created_at": "2026-10-03T08:02:00Z",
+        "session_id": "synthetic-demo-v1-002",
+        "turn_number": 1,
+        "sequence": 1,
+        "channel": "text",
+        "assistant_id": "card_promoter",
+        "event_type": "assistant_selected",
+        "conversation_status": "ended",
+        "scenario_id": null,
+        "risk_level": null,
+        "risk_signals": [],
+        "result_status": null,
+        "source": "synthetic_demo",
+        "payload": {
+          "kind": "assistant_selected",
+          "previous_assistant_id": null
+        }
+      },
+      {
+        "event_id": "72d642f4-06d5-5e9d-9cd8-3b4ca8c48003",
+        "schema_version": 1,
+        "created_at": "2026-10-03T08:02:00Z",
+        "session_id": "synthetic-demo-v1-002",
+        "turn_number": 1,
+        "sequence": 2,
+        "channel": "text",
+        "assistant_id": "card_promoter",
+        "event_type": "conversation_turn",
+        "conversation_status": "ended",
+        "scenario_id": null,
+        "risk_level": null,
+        "risk_signals": [],
+        "result_status": null,
+        "source": "synthetic_demo",
+        "payload": {
+          "kind": "conversation_turn",
+          "assistant_initiated": false
+        }
+      },
+      {
+        "event_id": "92621061-7111-5dcd-8afd-b4566f34d322",
+        "schema_version": 1,
+        "created_at": "2026-10-03T08:02:00Z",
+        "session_id": "synthetic-demo-v1-002",
+        "turn_number": 1,
+        "sequence": 3,
+        "channel": "text",
+        "assistant_id": "card_promoter",
+        "event_type": "sales_lead",
+        "conversation_status": "ended",
+        "scenario_id": null,
+        "risk_level": null,
+        "risk_signals": [],
+        "result_status": "ended",
+        "source": "synthetic_demo",
+        "payload": {
+          "kind": "sales_lead",
+          "campaign": "card",
+          "product_category": "card",
+          "selected_product_id": "CARD-DAILY",
+          "presented_product_ids": [
+            "CARD-DAILY"
+          ],
+          "outcome": "interested",
+          "interest_level": "high",
+          "next_action": "application_interest",
+          "completed": true,
+          "handoff": false
+        }
+      },
+      {
+        "event_id": "532f0bfa-5930-5b55-8d98-26f2e4b61446",
+        "schema_version": 1,
+        "created_at": "2026-10-03T08:02:00Z",
+        "session_id": "synthetic-demo-v1-002",
+        "turn_number": 1,
+        "sequence": 4,
+        "channel": "text",
+        "assistant_id": "card_promoter",
+        "event_type": "conversation_ended",
+        "conversation_status": "ended",
+        "scenario_id": null,
+        "risk_level": null,
+        "risk_signals": [],
+        "result_status": null,
+        "source": "synthetic_demo",
+        "payload": {
+          "kind": "conversation_ended"
+        }
+      }
+    ],
+    "journey": [
+      {
+        "id": "269b3613-2d30-50e7-9d61-92ed550f9ed7",
+        "session_id": "synthetic-demo-v1-002",
+        "timestamp": "2026-10-03T08:02:00Z",
+        "event_type": "conversation_started",
+        "scenario": "card_promoter",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "269b3613-2d30-50e7-9d61-92ed550f9ed7",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "1e108eb5-e09c-5afe-a185-b1ca8428ea46",
+        "session_id": "synthetic-demo-v1-002",
+        "timestamp": "2026-10-03T08:02:00Z",
+        "event_type": "assistant_selected",
+        "scenario": "card_promoter",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "1e108eb5-e09c-5afe-a185-b1ca8428ea46",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "92621061-7111-5dcd-8afd-b4566f34d322",
+        "session_id": "synthetic-demo-v1-002",
+        "timestamp": "2026-10-03T08:02:00Z",
+        "event_type": "sales_lead",
+        "scenario": "card_promoter",
+        "scenario_id": null,
+        "action": [
+          "interested",
+          "application_interest"
+        ],
+        "source_event_id": "92621061-7111-5dcd-8afd-b4566f34d322",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "532f0bfa-5930-5b55-8d98-26f2e4b61446",
+        "session_id": "synthetic-demo-v1-002",
+        "timestamp": "2026-10-03T08:02:00Z",
+        "event_type": "conversation_ended",
+        "scenario": "card_promoter",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "532f0bfa-5930-5b55-8d98-26f2e4b61446",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": true
+      }
+    ],
+    "total": 5,
+    "limit": 5,
+    "offset": 0,
+    "next_offset": null
+  },
+  "journey": {
+    "stages": [
+      {
+        "id": "fa430dfe-c256-57cb-873c-b70ee5bbb4fb",
+        "session_id": "synthetic-demo-v1-004",
+        "timestamp": "2026-10-03T08:04:00Z",
+        "event_type": "conversation_started",
+        "scenario": "fraud_security",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "fa430dfe-c256-57cb-873c-b70ee5bbb4fb",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "3a921db6-13dd-51ad-abcd-7a6a6119366b",
+        "session_id": "synthetic-demo-v1-004",
+        "timestamp": "2026-10-03T08:04:00Z",
+        "event_type": "assistant_selected",
+        "scenario": "fraud_security",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "3a921db6-13dd-51ad-abcd-7a6a6119366b",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "d9d304a5-ed2d-5017-8333-c6102f08d9c7",
+        "session_id": "synthetic-demo-v1-004",
+        "timestamp": "2026-10-03T08:04:00Z",
+        "event_type": "fraud_case",
+        "scenario": "fraud_security",
+        "scenario_id": null,
+        "action": [
+          "social_engineering",
+          "needs_review",
+          "operator_handoff"
+        ],
+        "source_event_id": "d9d304a5-ed2d-5017-8333-c6102f08d9c7",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "6941d466-79d0-5d9c-a257-3b8e8edd7e56",
+        "session_id": "synthetic-demo-v1-004",
+        "timestamp": "2026-10-03T08:04:00Z",
+        "event_type": "risk_signal",
+        "scenario": "fraud_security",
+        "scenario_id": null,
+        "action": [
+          "bank_impersonation",
+          "otp_requested_by_third_party",
+          "operator_handoff"
+        ],
+        "source_event_id": "6941d466-79d0-5d9c-a257-3b8e8edd7e56",
+        "channel": "text",
+        "clarification": false,
+        "handoff": false,
+        "completion": false
+      },
+      {
+        "id": "9eeb740e-48d9-5589-b908-056b0843a070",
+        "session_id": "synthetic-demo-v1-004",
+        "timestamp": "2026-10-03T08:04:00Z",
+        "event_type": "operator_handoff",
+        "scenario": "fraud_security",
+        "scenario_id": null,
+        "action": [],
+        "source_event_id": "9eeb740e-48d9-5589-b908-056b0843a070",
+        "channel": "text",
+        "clarification": false,
+        "handoff": true,
+        "completion": false
+      }
+    ],
+    "total": 5,
+    "limit": 5,
+    "offset": 0,
+    "next_offset": null
+  }
+}
