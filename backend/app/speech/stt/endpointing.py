@@ -1,5 +1,7 @@
 """Per-connection Silero speech detection; no Whisper transcription is loaded."""
 
+from app.speech.audio import PCM_SAMPLE_RATE
+
 
 class PauseTracker:
     def __init__(self, pause_ms: int):
@@ -44,7 +46,7 @@ class SpeechEndDetector:
     def feed(self, pcm: bytes):
         samples = self.np.frombuffer(pcm, dtype="<i2").reshape(1, -1)
         frame = self.av.AudioFrame.from_ndarray(samples, format="s16", layout="mono")
-        frame.sample_rate = 24000
+        frame.sample_rate = PCM_SAMPLE_RATE
         for converted in self.resampler.resample(frame):
             self.pending = self.np.concatenate((self.pending, converted.to_ndarray().ravel()))
         ended = False

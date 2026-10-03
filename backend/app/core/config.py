@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8000, ge=1, le=65535)
     frontend_origin: str = "http://localhost:5173"
     enable_dev_stand: bool = False
+    twilio_enabled: bool = False
+    twilio_account_sid: str | None = Field(default=None, pattern=r"^AC[0-9a-fA-F]{32}$")
+    twilio_auth_token: SecretStr | None = None
+    twilio_phone_number: str | None = None
+    public_base_url: str | None = None
+    backend_tts_model: str | None = None
+    backend_tts_voice: str | None = None
+    phone_endpoint_silence_ms: int = Field(default=1200, ge=800, le=5000)
+    vonage_enabled: bool = False
+    vonage_application_id: str | None = None
+    vonage_private_key_path: Path | None = Field(default=None, repr=False)
+    vonage_api_key: str | None = None
+    vonage_signature_secret: SecretStr | None = None
+    vonage_test_from_number: str | None = Field(default=None, repr=False)
+    vonage_test_to_number: str | None = Field(default=None, repr=False)
     starter_kit_path: Path = PROJECT_ROOT / "data" / "starter_kit"
     product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"
     security_policy_path: Path = PROJECT_ROOT / "data" / "security" / "policy.json"

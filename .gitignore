@@ -3,6 +3,8 @@ __MACOSX/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
 .venv/
 __pycache__/
 *.py[cod]

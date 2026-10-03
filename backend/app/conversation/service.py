@@ -58,6 +58,20 @@ class MessageService:
         self.risk = risk
         self.events = events
 
+    async def end_session(self, session_id: str) -> None:
+        """Close a transport session without inventing another customer/Agent turn."""
+        async with self.dialogs.session(session_id):
+            conversation = self.dialogs.get_conversation(session_id)
+            if conversation is None or not conversation.global_context.turn_number:
+                return  # No committed conversation to project into analytics.
+            context = conversation.global_context
+            if context.conversation_status not in ("ended", "handoff"):
+                context.conversation_status = "ended"
+                self.lifecycle.complete(conversation)
+                self.dialogs.save_conversation(conversation)
+            if self.events:
+                await self.events.record_end(context, conversation.active_scenario_pack)
+
     async def process(
         self,
         session_id: str,

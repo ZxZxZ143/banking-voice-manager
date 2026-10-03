@@ -79,7 +79,7 @@ export function OverviewView({
     [
       "Voice sessions",
       count(data.sessions_by_channel.voice),
-      "Browser voice channel",
+      "Voice conversation channel",
     ],
     [
       "Text sessions",

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from threading import Lock
 
 from app.analytics.mapping import map_turn_events
-from app.analytics.models import StorageHealth
+from app.analytics.models import EndedPayload, HandoffPayload, StorageHealth, make_event
 from app.analytics.store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,31 @@ class EventRecorder:
         except Exception:
             self.failure("event_mapping_failed")
             return
+        await self._append(events)
+
+    async def record_end(self, context, assistant_id):
+        """Safe, idempotent transport close; no provider IDs, reason text or transcript."""
+        try:
+            payload = (
+                HandoffPayload() if context.conversation_status == "handoff" else EndedPayload()
+            )
+            event = make_event(
+                created_at=datetime.now(UTC),
+                session_id=context.session_id,
+                turn_number=context.turn_number,
+                sequence=8,
+                channel=context.channel,
+                assistant_id=assistant_id,
+                conversation_status=context.conversation_status,
+                event_type=payload.kind,
+                payload=payload,
+            )
+        except Exception:
+            self.failure("event_mapping_failed")
+            return
+        await self._append([event])
+
+    async def _append(self, events):
         try:
             # SQLite lock waits/fsync never block the async customer/STT event loop.
             await asyncio.to_thread(self.store.append_many, events)
