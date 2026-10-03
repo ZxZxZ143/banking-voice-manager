@@ -12,6 +12,14 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 5A:** `app/analytics/` contains typed privacy-safe ConversationEvents,
+  deterministic result mapping, post-commit best-effort recorder, EventStore protocol
+  and SQLite implementation. Atomic turn batches, unique idempotency, deterministic
+  sequence, indexed read filters and typed event/session/summary APIs. Docker named
+  analytics_data volume preserves events; conversation state/traces remain in-memory.
+  No dashboard/frontend code was changed or integrated. Contract:
+  `ANALYTICS_API_CONTRACT.md`; evidence: `STAGE5A_STORAGE_VALIDATION.md`.
+
 - **Stage 4:** five manually selected assistants, with `fraud_security` producing
   `FraudCaseResult`. `app/risk/` owns typed signals/assessment, conservative candidate
   precheck and one bounded structured Risk Agent call. Ordinary turns skip that call;
@@ -71,7 +79,7 @@ Business specification: `data/starter_kit/README.ru.md`.
   TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
 - **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
   loopback ports 8000/5173, runtime-only secrets and health checks.
-- **Not introduced:** database, Supabase, vector store, RAG, queues or unrelated production packs.
+- **Not introduced:** Supabase, vector store, RAG, queues or unrelated production packs.
 
 ## Navigation
 
@@ -85,6 +93,10 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
+| `backend/app/analytics/` | Safe event models/mapping, best-effort recorder, EventStore and SQLite queries |
+| `backend/app/api/routes/analytics.py` | Typed read-only events, session journey and summary APIs |
+| `scripts/seed_analytics_demo.py`, `benchmark_analytics.py`, `stage5a_storage_smoke.py` | Deterministic synthetic seed/reset, timings and real API/restart checks |
+| `docs/ANALYTICS_API_CONTRACT.md`, `STAGE5A_STORAGE_VALIDATION.md` | Teammate integration schemas/checklist and storage evidence |
 | `backend/app/risk/` | Shared input firewall, candidate gate, typed Risk Agent, source policy and business-state-preserving guidance |
 | `backend/app/packs/fraud_security/` | Manually selected consultative security pack, safe facts/questions and FraudCaseResult |
 | `frontend/src/components/security/` | Allowlisted reusable Risk panel and Fraud case view |
@@ -132,10 +144,11 @@ Backend paths in this table are relative to `backend/app/` where abbreviated.
 
 ## Actual and planned flow
 
-Startup constructs both production packs from separate canonical catalogs. The shared
+Startup constructs five registered assistants from canonical Insurance, sales and security
+inputs. The shared
 store contains global metadata, active pack, isolated typed entries and legacy unused pending-switch
 metadata. A pack receives only its own state and a copied global context. Latest InsuranceResult
-and SalesLeadResult remain in their respective entries. Explicit selection is registry lookup;
+SalesLeadResult and FraudCaseResult remain in their respective entries. Explicit selection is registry lookup;
 natural selection is disabled; out-of-domain questions stay in the selected assistant.
 
 A normal request locks/snapshots the session, activates/resumes the selected pack, calls its
@@ -143,6 +156,8 @@ Router, runs deterministic policy/business logic, then Insurance Composer phrase
 authorized step; Product retains its single-Agent flow. State/result/trace commit together.
 Router/provider failures roll back; Composer failures retain business progress and use a
 diagnosable safe fallback. Both openers use `/api/conversation/start` with zero model calls.
+After commit, deterministic safe events are appended atomically through EventStore in a
+worker thread; write failure degrades analytics health without failing the customer reply.
 All SDK transport is bounded: no tools/handoffs, max_turns=1, retry=0, disabled tracing/storage.
 The extended Insurance schema/prompt have a separate unchanged 104-case live regression run.
 
@@ -171,6 +186,16 @@ Application traces expose concise reasons and measured latency, never hidden cha
 
 ## API and domain contracts
 
+- `GET /api/analytics/events`, `/api/analytics/summary`: optional from/to (timezone-aware,
+  inclusive/exclusive), assistant_id, event_type, risk_level, channel=text|voice,
+  source=runtime|synthetic_demo, limit (1–500, default 100), offset (0–1,000,000).
+  Typed EventPage/AnalyticsSummary; summary ignores pagination and counts latest result
+  per session/assistant inside the filter period. Invalid params 422; storage failure
+  503 with fixed detail code. Source: `analytics/models.py`, `api/routes/analytics.py`.
+- `GET /api/analytics/sessions/{session_id}`: bounded typed SessionEvents, ordered by
+  turn/sequence/time/UUID; unknown session 200 with [], total=0, channel=null.
+- `GET /health` adds analytics status/backend/failure_count/last_error/last_failure_at.
+  Storage failure degrades this section without failing a successful customer turn.
 - `GET /health` → 200: status, service, mode=foundation and starter-kit counts.
 - `POST /api/message`: `{session_id, text}`; nonblank string ID up to 128 characters,
   text up to 10,000 characters, whitespace trimmed. Reuse the ID for later turns.
@@ -254,7 +279,13 @@ State/traces are bounded and per-process; restart loses them. Use one worker. St
 Concurrent same-session turns are serialized, distinct sessions can run concurrently,
 and active sessions are pinned against eviction. Session IDs are demo correlation IDs,
 not authentication: keep the service local until access control is implemented.
-No database, migrations, RLS, persistent storage or upload service exists.
+SQLite schema v1 `events` persists only allowlisted enums, catalog IDs and booleans plus
+opaque correlation metadata; no raw transcripts, collected identifiers, preferences,
+replies or free-text reasons. Indexes cover time/session/assistant/type/risk/source.
+Unique hash of source/session/turn/type makes retried batches idempotent; started/handoff/
+ended keys are unique across a session. Schema and queries: `analytics/sqlite.py`.
+No ORM/external DB/RLS/upload service or durable replay exists. Failed writes are
+observable but can lose events. Runtime DB/WAL/SHM are ignored and excluded from images.
 
 Evaluation passes only text and fresh state to an injected Router, without expected labels,
 and writes `{utterance_id: [scenario_id, ...]}`. The supplied evaluator scores that output.
@@ -284,7 +315,8 @@ This affects replies only, not scenario selection or the recorded Router languag
 Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Router fallback), ROUTER_TIMEOUT_SECONDS (45), RISK_TIMEOUT_SECONDS (8), SECURITY_POLICY_PATH,
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
-ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH.
+ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH,
+EVENT_DB_PATH (repository data/runtime/veyra_events.db; Docker /app/data/runtime/veyra_events.db).
 Root .env.example contains no credentials/personal phone; .env is ignored. Optional
 `DEMO_TEST_PHONE` seeds a generated local overlay via `data/demo_profile.py`;
 `python scripts/show_demo_profile.py` prints only that synthetic profile. Canonical data is untouched.
@@ -326,8 +358,8 @@ Tested with Python 3.13 and Node 24.13; minimum Python 3.11.
 ## Skills and next step
 
 Skills live in `.agents/skills/`; read only relevant ones: agents-sdk, agent-evals,
-agent-debugging, security-review, demo-readiness. supabase-data is conditional on future
-persistence; agri-rag-vision is irrelevant to current requirements.
+agent-debugging, security-review, demo-readiness. supabase-data is conditional on an actual
+Supabase requirement; SQLite uses no external DB skill. agri-rag-vision is irrelevant here.
 
 Integrated `feature/agent-core-router-eval` with `origin/integration/voice-runtime` (0261acc),
 which already includes `origin/feature/conversation-runtime` (cb9e7fb) and
@@ -337,5 +369,10 @@ and STT timing stay on the runtime side; voice turns add channel=voice to sessio
 
 Next: resolve measured routing errors, improve complete RU/KK business wording and actual
 identity verification, then implement one preview/confirmation workflow when needed.
-No DB was added; actual insurer/bank writes remain disabled. Product turns use one bounded
+SQLite safe event storage is implemented; actual insurer/bank writes remain disabled. Product turns use one bounded
 structured agent. Assistant/campaign selection is explicit registry lookup, never a model call.
+
+Stage 5B next: integrate the separately owned teammate dashboard using the analytics API
+contract; anomaly detection remains deferred. Preserve measured O11 backlog: card campaign
+→ deposit request can be interpreted as decline instead of out_of_scope. No routing/model
+prompt changes were made in Stage 5A; prior model variability remains documented.

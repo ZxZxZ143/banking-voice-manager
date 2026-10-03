@@ -14,6 +14,17 @@ See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
+- Stage 5A: privacy-safe structured conversation events persist in SQLite; read-only
+  `/api/analytics/events`, `/api/analytics/sessions/{session_id}` and
+  `/api/analytics/summary` support the future teammate dashboard. `EVENT_DB_PATH` defaults
+  to `data/runtime/veyra_events.db`; Docker uses the `analytics_data` named volume.
+  Normal `docker compose down`/`up` retains events. Conversation state still resets.
+  No analytics dashboard/frontend was added or merged. See the
+  [integration contract](docs/ANALYTICS_API_CONTRACT.md) and
+  [storage validation](docs/STAGE5A_STORAGE_VALIDATION.md).
+  Seed safely with `python scripts/seed_analytics_demo.py` in the installed backend
+  environment; `--reset` replaces only synthetic demo events.
+
 - Manually selected `fraud_security`: brief RU/KK security guidance, safe yes/no incident
   questions and `FraudCaseResult` for human review. It never asks for OTP/PIN/CVV/password,
   confirms fraud, blocks accounts or changes transactions.

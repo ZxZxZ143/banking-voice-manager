@@ -1,10 +1,10 @@
-# Scenario Pack architecture — Stage 4
+# Scenario Pack architecture — Stage 5A
 
 Production registers `insurance_manager` and three proactive campaigns: `product_promoter`
 (deposit), `card_promoter`, `loan_promoter`, plus consultative `fraud_security`. The sales campaigns reuse one implementation
 with distinct manifests and isolated contexts. Shared sessions, HTTP, voice, traces and lifecycle remain
-independent of their business logic. No database, queue, RAG or dynamic plugin loading
-is introduced.
+independent of their business logic. Stage 5A adds replaceable SQLite event persistence;
+no queue, RAG or dynamic plugin loading is introduced.
 
 ```text
 Browser text / final STT → POST /api/message
@@ -312,7 +312,36 @@ from backend analysis time and never derived from generated token count.
 
 Docker retains two health-checked services and loopback ports 8000/5173, Nginx HTTP/WS
 proxy, non-root backend and runtime-only `.env`. Both catalog paths are explicit in Compose.
-No authentication, persistence or contact-center connection is implemented. Installed
+No authentication or contact-center connection is implemented. Installed
 voices and real microphone quality require manual verification. Measured results and
 remaining model-output variability are in `STAGE3_1_CONVERSATION_VALIDATION.md` and the
 earlier `STAGE3_VALIDATION.md`.
+
+## Stage 5A persistent event backend
+
+The shared MessageService emits allowlisted ConversationEvents only after successful
+state/result/trace commit. EventRecorder maps InsuranceResult, SalesLeadResult,
+FraudCaseResult and relevant/failed RiskAssessment deterministically, without model
+calls. A security detour retaining a business result emits no duplicate result snapshot;
+explicit terminal guidance persists its updated result status.
+It uses EventStore, implemented by SQLiteEventStore: schema-v1 events table, indexed
+time/session/assistant/type/risk fields, unique idempotency key, and atomic turn batches.
+Session order uses turn number plus sequence. Whole results, collected identifiers,
+preferences, transcripts, replies and free-text risk reasons never enter storage.
+
+Each DB operation owns and closes its connection. WAL permits concurrent readers;
+lock waits are bounded to 100 ms. Post-commit writes run in a worker thread so SQLite
+does not block the async customer/voice event loop. Persistence errors leave successful
+customer replies intact, log fixed error codes and appear in additive /health analytics
+diagnostics. There is no durable outbox; write failures can leave analytics gaps.
+
+`EVENT_DB_PATH` configures the local DB; Compose mounts a non-root-owned analytics_data
+named volume at /app/data/runtime. Only safe events persist; bounded conversation state
+and traces remain process-local. SQLite schema user_version=1 rejects unknown versions;
+future schema evolution needs explicit migration, not an ORM dependency now.
+
+Typed read-only event/session/summary endpoints use indexed filters and bounded pages.
+Summary deduplicates evolving results by session/assistant within the filtered period.
+Historical queries support future time-window anomaly analysis; detection is deferred.
+The teammate owns dashboard/frontend work. No frontend files or integration were changed.
+See `ANALYTICS_API_CONTRACT.md` for schemas, count semantics, seeding and Stage 5B checklist.

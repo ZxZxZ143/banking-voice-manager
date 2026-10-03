@@ -142,3 +142,18 @@ normalized preferences use KZT/USD while replies/TTS use human names. Complete n
 conditions stay in the backend-provided disclosure. A refusal stops the sales pitch;
 recorded application interest does not open a real product. Switch to Insurance and back:
 one UUID/history remains, but each pack sees only its own preferences/slots/result.
+
+## Stage 5A backend handoff
+
+Dashboard/frontend remains owned separately; Stage 5A adds no analytics UI and does not
+merge or adapt teammate frontend files. Existing `/api/` proxy serves the new read-only
+`/api/analytics/events`, `/api/analytics/summary` and
+`/api/analytics/sessions/{session_id}`. No CORS changes are needed. OpenAPI is available
+directly at backend `/openapi.json`; the frontend proxy does not forward that path.
+
+Use `ANALYTICS_API_CONTRACT.md` as the integration specification: typed discriminated
+events, enums, source filters, UTC timestamps, pagination (default 100/max 500), empty
+states, count semantics, errors and the Stage 5B checklist. Seed with
+`python scripts/seed_analytics_demo.py` in the backend environment; source=synthetic_demo
+separates fixtures from runtime. Analytics persists through Docker down/up; in-memory
+conversation state does not. Use new opaque conversation IDs after backend restart.
