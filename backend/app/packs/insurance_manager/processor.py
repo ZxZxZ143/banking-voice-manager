@@ -11,11 +11,17 @@ from app.packs.insurance_manager.composer import (
     composer_payload,
     fallback_composition,
 )
-from app.packs.insurance_manager.expected_answers import expected_identifier, expected_trip_duration
+from app.packs.insurance_manager.expected_answers import (
+    expected_identifier,
+    expected_trip_duration,
+    expected_unavailable,
+    identifier_answers,
+)
 from app.packs.insurance_manager.history import append_turn
+from app.packs.insurance_manager.response.lookup import IDENTIFIERS, remember
 from app.packs.insurance_manager.response.routing import RoutingReplyGenerator
 from app.packs.insurance_manager.scenarios.decision_policy import DecisionPolicy, PolicyResult
-from app.packs.insurance_manager.state import DialogState, DialogTurn
+from app.packs.insurance_manager.state import DialogState, DialogTurn, IdentificationState
 from app.tracing.models import LatencyRecord, TraceRecord
 
 
@@ -120,6 +126,7 @@ class InsuranceTurnProcessor:
                     )
                 ],
             )
+        alternatives = identifier_answers(text, previous, self.replies.slots)
         supplied = expected_identifier(text, previous, self.replies.slots)
         if not supplied and (
             self.replies.catalog.get_by_id(decision.scenarios[0].scenario_id)
@@ -135,6 +142,16 @@ class InsuranceTurnProcessor:
             name, value = supplied
             decision.slots[name] = value
             decision.conversation_signal = "answer"
+        decision.slots.update(alternatives)
+        if alternatives:
+            decision.conversation_signal = "answer"
+        from app.packs.insurance_manager.agent.schemas import IdentifierAnswer
+
+        unavailable = expected_unavailable(text, previous)
+        if unavailable and decision.identifier_answer is None:
+            decision.identifier_answer = IdentifierAnswer(status="unavailable", field=unavailable)
+        if decision.identifier_answer and decision.identifier_answer.status == "unavailable":
+            decision.conversation_signal = "partial_answer"
         duration = expected_trip_duration(text, previous)
         known_duration = duration or (
             previous.conversation.travel_duration_days if previous.conversation else None
@@ -184,6 +201,23 @@ class InsuranceTurnProcessor:
         except ValueError as exc:
             raise RouterOutputError() from exc
         state = self._transition(previous, decision, policy)
+        if state.active_scenario and policy.outcome in {"accept", "continue"}:
+            memory = state.identification
+            answer = decision.identifier_answer
+            if answer and answer.status == "unavailable":
+                field = answer.field or (
+                    previous.conversation.expected_slot if previous.conversation else None
+                )
+                if field in IDENTIFIERS and field not in decision.slots:
+                    remember(memory.unavailable_fields, field)
+            for name in IDENTIFIERS & decision.slots.keys():
+                value = decision.slots[name]
+                known = memory.provided_values.setdefault(name, [])
+                if value not in known:
+                    known.append(value)
+                    memory.exhausted = False
+                if name in memory.unavailable_fields:
+                    memory.unavailable_fields.remove(name)
         if duration and state.conversation:
             state.conversation.travel_duration_days = duration
         elif supplied_end and state.conversation:
@@ -194,6 +228,10 @@ class InsuranceTurnProcessor:
         reply = self.replies.generate_result(state, policy, decision)
         state.client_id = reply.resolved_client_id
         state.client_lookup_attempts = reply.lookup_attempts
+        state.identification = reply.identification
+        state.slots = reply.resolved_slots
+        if reply.manager_summary:
+            state.manager_summary = reply.manager_summary
         if (
             policy.outcome == "clarify"
             and previous.conversation
@@ -267,6 +305,13 @@ class InsuranceTurnProcessor:
                 if part
             )
             meta = state.conversation
+            if payload["allowed_action"] == "ask_slot" and payload["next_slot"] in IDENTIFIERS:
+                # Identifier requests are an application-owned step. Free wording (including
+                # indirect pronouns) must never reopen an unavailable or failed path.
+                from app.packs.insurance_manager.privacy import redact_text
+
+                composed.question = redact_text(reply.text, state.slots)
+                composed.acknowledgement = ""
             variant = getattr(composed, "fact_variant", "default")
             if variant in payload["grounded_variants"]:
                 payload["grounded_facts"] = payload["grounded_variants"][variant]
@@ -446,6 +491,13 @@ class InsuranceTurnProcessor:
         if previous.active_scenario != selected:
             if previous.active_scenario:
                 state.scenario_slots[previous.active_scenario] = dict(previous.slots)
+                state.scenario_identification[previous.active_scenario] = (
+                    previous.identification.model_copy(deep=True)
+                )
+            state.identification = state.scenario_identification.get(
+                selected, IdentificationState()
+            ).model_copy(deep=True)
+            state.manager_summary = None
             # Personal identifiers can be reused; scenario-specific parameters cannot
             # silently leak from a previous trip/quote into a new independent request.
             shared = {
@@ -483,6 +535,7 @@ class InsuranceTurnProcessor:
                 if state.client_id:
                     state.client_lookup_attempts = []
                 state.client_id = None
+                state.identification.successful_field = None
                 state.scenario_slots = {}
                 for name in ("policy_number", "claim_number"):
                     if name not in incoming:
@@ -493,6 +546,7 @@ class InsuranceTurnProcessor:
     def _finish_scenario(state: DialogState, current_requests: list[str]) -> None:
         """Complete a read-only answer, not the conversation; resume deferred work."""
         finished = state.active_scenario
+        state.scenario_identification.pop(finished, None)
         state.scenario_slots.pop(finished, None)
         state.scenario_stack = [value for value in state.scenario_stack if value != finished]
         state.pending_scenarios = [value for value in state.pending_scenarios if value != finished]
@@ -514,6 +568,9 @@ class InsuranceTurnProcessor:
             value for value in state.pending_scenarios if value != state.active_scenario
         ]
         if state.active_scenario:
+            state.identification = state.scenario_identification.get(
+                state.active_scenario, IdentificationState()
+            ).model_copy(deep=True)
             state.slots = {
                 **state.scenario_slots.get(state.active_scenario, {}),
                 **{

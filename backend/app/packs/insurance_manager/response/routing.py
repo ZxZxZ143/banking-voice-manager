@@ -7,15 +7,19 @@ from app.core.contracts import Contract
 from app.packs.insurance_manager.agent.schemas import RouterDecision
 from app.packs.insurance_manager.data.models import SlotDataset
 from app.packs.insurance_manager.data.repositories import KnowledgeRepository, MockBackendRepository
+from app.packs.insurance_manager.response.lookup import (
+    IDENTIFIERS,
+    can_ask,
+    lookup_client,
+    lookup_exhausted,
+    lookup_record,
+    remember,
+)
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.scenarios.decision_policy import PolicyResult
-from app.packs.insurance_manager.state import DialogState
+from app.packs.insurance_manager.state import DialogState, IdentificationState
 from app.packs.insurance_manager.tools.capabilities import ManagerSummary
-from app.packs.insurance_manager.tools.read_only import (
-    get_claim,
-    get_policy,
-    kb_lookup,
-)
+from app.packs.insurance_manager.tools.read_only import kb_lookup
 
 # Exact translations of the supplied source values, never replacement business data.
 # Unknown values must stay unavailable until a grounded translation is added.
@@ -131,6 +135,8 @@ class RoutingReplyResult(Contract):
     manager_summary: ManagerSummary | None = None
     resolved_client_id: str | None = Field(default=None, exclude=True)
     lookup_attempts: list[str] = Field(default_factory=list, exclude=True)
+    identification: IdentificationState = Field(default_factory=IdentificationState, exclude=True)
+    resolved_slots: dict = Field(default_factory=dict, exclude=True)
 
 
 class RoutingReplyGenerator:
@@ -162,6 +168,8 @@ class RoutingReplyGenerator:
         result = self._generate_result(working, policy, decision)
         result.resolved_client_id = working.client_id
         result.lookup_attempts = list(working.client_lookup_attempts)
+        result.identification = working.identification
+        result.resolved_slots = working.slots
         return result
 
     def _generate_result(self, state, policy, decision):
@@ -283,6 +291,14 @@ class RoutingReplyGenerator:
         )
 
     def _ask(self, state: DialogState, name: str) -> RoutingReplyResult:
+        if name in IDENTIFIERS:
+            if not can_ask(state, name):
+                return RoutingReplyResult(
+                    **lookup_exhausted(
+                        state, self.catalog.get_by_id(state.active_scenario), self.capabilities
+                    )
+                )
+            remember(state.identification.requested_fields, name)
         return RoutingReplyResult(
             text=getattr(self.slots[name].prompt, state.response_language), expected_slot=name
         )
@@ -390,66 +406,30 @@ class RoutingReplyGenerator:
     ) -> RoutingReplyResult:
         assert self.backend is not None
         language = state.response_language
-        phone, iin = self._string_slot(state, "phone"), self._string_slot(state, "iin")
-        if phone is None and iin is None:
-            return self._ask(state, "phone")
-        from app.packs.insurance_manager.response.lookup import lookup_client
-
-        client_id, alternative = lookup_client(
+        client_id, alternative, actions = lookup_client(
             state, self.backend, decision.slots if decision else ()
         )
         if alternative:
             return RoutingReplyResult(**alternative)
         if not client_id:
-            identifier = "policy_number" if scenario_id == "SC25" else "claim_number"
-            if not state.slots.get(identifier):
-                return self._ask(state, identifier)
             scenario = self.catalog.get_by_id(scenario_id)
             return RoutingReplyResult(
-                text=(
-                    (
-                        "В доступной базе клиента найти не удалось. Для проверки записи "
-                        "потребуется специалист. Передаю ему диалог и собранные сведения."
-                    )
-                    if language == "ru"
-                    else (
-                        "Қолжетімді қорда клиент табылмады. Жазбаны тексеру үшін диалогты "
-                        "маманға тапсырамын."
-                    )
-                ),
-                handoff=True,
-                manager_summary=self.capabilities.summary(state, scenario, [], "client_not_found")
-                if self.capabilities
-                else None,
+                **lookup_exhausted(state, scenario, self.capabilities, actions)
             )
         state.client_id = client_id
         identifier = "policy_number" if scenario_id == "SC25" else "claim_number"
-        function = get_policy if scenario_id == "SC25" else get_claim
-        action = "get_policy" if scenario_id == "SC25" else "get_claim"
-        result = function(
-            self.backend,
-            client_id=client_id,
-            **{identifier: self._string_slot(state, identifier)},
-        )
-        actions = ["find_client", action]
-        if not result.success:
-            missing = self._string_slot(state, identifier) is None
-            text = (
-                self._ask(state, identifier).text
-                if missing
-                else {
-                    "ru": (
-                        "В демонстрационных данных запись для этого клиента не найдена. "
-                        "Уточните номер."
-                    ),
-                    "kk": (
-                        "Демонстрациялық деректерден бұл клиенттің жазбасы табылмады. "
-                        "Нөмірді нақтылаңызшы."
-                    ),
-                }[language]
+        record, checks = lookup_record(state, self.backend, identifier)
+        actions += checks
+        if record is None:
+            if not state.slots.get(identifier) and can_ask(state, identifier):
+                reply = self._ask(state, identifier)
+                reply.actions = actions
+                return reply
+            return RoutingReplyResult(
+                **lookup_exhausted(
+                    state, self.catalog.get_by_id(scenario_id), self.capabilities, actions
+                )
             )
-            return RoutingReplyResult(text=text, actions=actions, expected_slot=identifier)
-        record = result.data
         prefix = {"ru": "По демонстрационным данным", "kk": "Демонстрациялық деректер бойынша"}[
             language
         ]

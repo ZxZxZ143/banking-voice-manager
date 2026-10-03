@@ -6,7 +6,13 @@ from pydantic import Field, StrictBool, StrictInt, create_model, model_validator
 
 from app.core.contracts import Contract, Language, Slots
 from app.packs.insurance_manager.data.models import SlotDataset
+from app.packs.insurance_manager.state import IdentifierKind
 from app.tracing.selections import ScenarioScore, ScenarioSelection
+
+
+class IdentifierAnswer(Contract):
+    status: Literal["provided", "unavailable", "correction", "partial", "unknown"]
+    field: IdentifierKind | None = None
 
 
 class SemanticSegment(ScenarioSelection):
@@ -15,6 +21,7 @@ class SemanticSegment(ScenarioSelection):
 
 
 class RouterDecision(Contract):
+    identifier_answer: IdentifierAnswer | None = None
     language: Language
     response_language: Literal["ru", "kk"] | None = None
     clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
@@ -53,6 +60,7 @@ class ExtractedSlot(Contract):
 class RouterAgentOutput(Contract):
     """SDK transport schema; adapter restores the starter-kit slots object."""
 
+    identifier_answer: IdentifierAnswer | None = None
     language: Language
     response_language: Literal["ru", "kk"] | None = None
     clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
@@ -79,6 +87,7 @@ class RouterAgentOutput(Contract):
             is_continuation=self.is_continuation,
             conversation_signal=self.conversation_signal,
             scope_kind=self.scope_kind,
+            identifier_answer=self.identifier_answer,
         )
 
 

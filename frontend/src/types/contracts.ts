@@ -27,7 +27,10 @@ export interface TraceRecord {
   manager_summary?: {
     reason: string;
     scenario: string;
+    business_problem?: string;
     collected_fields: string[];
+    unavailable_fields?: string[];
+    failed_lookup_fields?: string[];
     known_client: boolean;
     completed_read_only_checks: string[];
     next_required_action: string | null;

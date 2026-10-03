@@ -4,6 +4,7 @@ from pydantic import Field, model_validator
 
 from app.core.contracts import Contract
 from app.packs.insurance_manager.agent.schemas import RouterDecision
+from app.packs.insurance_manager.response.lookup import IDENTIFIERS
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.state import DialogState
 
@@ -82,8 +83,14 @@ class DecisionPolicy:
             and (
                 conversational.expected_slot in decision.slots
                 or (
-                    conversational.expected_slot in {"phone", "iin"}
-                    and bool({"phone", "iin"} & decision.slots.keys())
+                    conversational.expected_slot in IDENTIFIERS
+                    and (
+                        bool(IDENTIFIERS & decision.slots.keys())
+                        or (
+                            decision.identifier_answer is not None
+                            and decision.identifier_answer.status == "unavailable"
+                        )
+                    )
                 )
             )
             and state.active_scenario is not None

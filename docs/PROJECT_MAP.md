@@ -12,6 +12,14 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Insurance lookup memory hotfix:** per-scenario typed unavailable/failed identifier memory,
+  exact failed-attempt deduplication, alternative identifiers and voluntary corrections.
+  Owned policy/claim lookup is bounded; unavailable or failed paths end in prepared
+  `lookup_exhausted` handoff with retained private context and a safe ManagerSummary.
+  No policy lookup by vehicle plate is offered. Validation and measured live limitations:
+  `docs/INSURANCE_LOOKUP_MEMORY_VALIDATION.md` (754 backend / 80 frontend tests; live RU/KK
+  lookup 8/8; real browser and synthetic-STT runtime checked).
+
 - **Stage 5B implemented, browser/push verification pending:** teammate Veyra dashboard
   navigation, shadcn views, responsive styles and polling now consume persisted Stage 5A
   events through one same-origin analytics client. Additive AnalyticsService provides
@@ -119,6 +127,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/packs/insurance_manager/agent/` | One-call SDK Router, structured routing plus conversational progress signal |
 | `backend/app/packs/insurance_manager/composer.py` | Natural acknowledgement/question, strict output, immutable facts and safe fallback |
 | `backend/app/packs/insurance_manager/expected_answers.py`, `privacy.py` | Already requested identifier normalization and presentation redaction |
+| `backend/app/packs/insurance_manager/state.py`, `response/lookup.py` | Per-scenario identification memory, failed-value fingerprints, finite owned-record lookup and prepared handoff |
 | `backend/app/packs/insurance_manager/data/`, `scenarios/`, `tools/`, `response/` | Canonical-data adapters, catalog/policy, disabled writes, read-only helpers and insurance replies |
 | `backend/app/agent/`, `dialog/`, `data/`, `scenarios/`, `tools/`, `response/` | Compatibility exports/adapters for existing consumers; insurance implementation moved into the pack |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
@@ -236,6 +245,11 @@ Application traces expose concise reasons and measured latency, never hidden cha
   nullable language and `stt_after_commit_ms`. See `docs/VOICE_STREAMING_CONTRACT.md`.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, conversation_signal, optional clarification_question and continuation.
+  Insurance also has optional typed identifier_answer (provided/unavailable/correction/partial/
+  unknown + field kind); unavailability and clear alternative identifiers continue the active
+  identification step. Private supplied values and failed fingerprints are excluded from
+  Router/Composer/public projections. ManagerSummary adds safe business_problem,
+  unavailable_fields and failed_lookup_fields, with lookup_exhausted/operator_review.
   SDK transport uses a named-slot list with non-null values for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
   SDK selections/segments are nonempty even for system intents. Fresh routing input omits

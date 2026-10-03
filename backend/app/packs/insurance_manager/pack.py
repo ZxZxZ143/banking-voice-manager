@@ -191,6 +191,11 @@ class InsuranceManagerPack:
             handoff=state.conversation_status == "handoff",
         )
         public_state = state.model_copy(deep=True)
+        public_state.identification.failed_attempts = []
+        public_state.identification.provided_values = {}
+        for memory in public_state.scenario_identification.values():
+            memory.failed_attempts = []
+            memory.provided_values = {}
         public_state.slots = safe_slots(state.slots)
         public_state.scenario_slots = {
             key: safe_slots(value) for key, value in state.scenario_slots.items()

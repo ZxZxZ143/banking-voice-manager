@@ -9,6 +9,14 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from app.packs.insurance_manager.data.models import Scenario
 from app.packs.insurance_manager.data.repositories import KnowledgeRepository, MockBackendRepository
+from app.packs.insurance_manager.response.lookup import (
+    IDENTIFIERS,
+    can_ask,
+    lookup_client,
+    lookup_exhausted,
+    lookup_record,
+    remember,
+)
 from app.packs.insurance_manager.scenarios.catalog import ScenarioCatalog
 from app.packs.insurance_manager.state import DialogState
 
@@ -141,6 +149,10 @@ class InsuranceReplies:
             )
 
         def ask(name):
+            if name in IDENTIFIERS:
+                if not can_ask(state, name):
+                    return lookup_exhausted(state, scenario, self.capabilities)
+                remember(state.identification.requested_fields, name)
             return {
                 **answer(getattr(self.slots[name].prompt, lang), actions=(), completed=False),
                 "expected_slot": name,
@@ -202,7 +214,11 @@ class InsuranceReplies:
                 "келісілгенде ғана өтеледі.",
             )
             missing = next(
-                (name for name in scenario.slots.required if values.get(name) in (None, "", [])),
+                (
+                    name
+                    for name in scenario.slots.required
+                    if name != "policy_number" and values.get(name) in (None, "", [])
+                ),
                 None,
             )
             if missing:
@@ -211,10 +227,7 @@ class InsuranceReplies:
                     "fact_text": guidance,
                     "source_keys": ["knowledge_base.products.travel.notes"],
                 }
-            return transfer(
-                guidance,
-                ["knowledge_base.products.travel.notes"],
-            )
+            # Urgent guidance precedes the shared finite identification path below.
         if sid == "SC38":
             guidance = text(
                 "Никому не сообщайте СМС-коды, CVV или PIN и не переводите деньги на личную "
@@ -255,7 +268,61 @@ class InsuranceReplies:
                 ),
                 ["knowledge_base.products.dms"],
             )
+        client_id = state.client_id
+        if scenario.requires_identification:
+            identifier = next(
+                (
+                    name
+                    for name in ("policy_number", "claim_number")
+                    if name in scenario.slots.required
+                ),
+                None,
+            )
+            # Keep the existing business-question order when the requested record number
+            # was supplied. An alternative identity still bypasses a missing record field.
+            if (
+                identifier
+                and values.get(identifier)
+                and not client_id
+                and not values.get("phone")
+                and not values.get("iin")
+            ):
+                missing_detail = next(
+                    (
+                        name
+                        for name in scenario.slots.required
+                        if name not in IDENTIFIERS and values.get(name) in (None, "", [])
+                    ),
+                    None,
+                )
+                if missing_detail:
+                    return ask(missing_detail)
+            if (
+                identifier
+                and not values.get(identifier)
+                and not client_id
+                and not values.get("phone")
+                and not values.get("iin")
+                and not state.identification.attempted_fields
+                and can_ask(state, identifier)
+            ):
+                return ask(identifier)
+            client_id, alternative, checks = lookup_client(state, self.backend)
+            if alternative:
+                return alternative
+            if not client_id:
+                return lookup_exhausted(state, scenario, self.capabilities, checks)
+            if identifier:
+                record, record_checks = lookup_record(state, self.backend, identifier)
+                checks += record_checks
+                if record is None:
+                    if not values.get(identifier) and can_ask(state, identifier):
+                        return {**ask(identifier), "actions": checks}
+                    return lookup_exhausted(state, scenario, self.capabilities, checks)
+                values[identifier] = record[identifier]
         for name in scenario.slots.required:
+            if name in {"phone", "iin"} and client_id and scenario.requires_identification:
+                continue
             if name == "phone" and values.get("iin"):
                 continue
             if values.get(name) in (None, "", []):
@@ -408,31 +475,6 @@ class InsuranceReplies:
                 ),
                 [f"knowledge_base.products.{product}"],
             )
-
-        client_id = None
-        if scenario.requires_identification or sid in {"SC30", "SC26", "SC29", "SC39"}:
-            if not values.get("phone") and not values.get("iin"):
-                return ask("phone")
-            from app.packs.insurance_manager.response.lookup import lookup_client
-
-            client_id, alternative = lookup_client(
-                state, self.backend, decision.slots if decision else ()
-            )
-            if alternative:
-                return alternative
-            if not client_id:
-                return transfer(
-                    text(
-                        (
-                            "В доступной базе клиента найти не удалось. Для проверки "
-                            "конкретного полиса нужна помощь специалиста."
-                        ),
-                        "Қолжетімді қорда клиент табылмады. "
-                        "Нақты полисті тексеру үшін маман қажет.",
-                    ),
-                    reason="client_not_found",
-                )
-            state.client_id = client_id
 
         if sid == "SC24":
             return transfer(

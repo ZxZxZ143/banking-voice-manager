@@ -84,24 +84,23 @@ def test_phone_normalization_and_overlay_lookup_no_format_loop(phone):
     asyncio.run(flow())
 
 
-def test_unknown_identifiers_one_alternative_then_useful_context_and_handoff():
+def test_unknown_identifiers_one_alternative_then_preserved_context_and_handoff():
     built = build(
         decision("SC25", {"phone": "+77075551234"}),
         decision("SC25", {"iin": "000101300000"}),
-        decision("SC25", {"policy_number": "SQ-OGPO-990001"}),
     )
 
     async def flow():
         first = await built.messages.process("unknown", "Проверка")
         assert first.state.conversation.expected_slot == "iin"
         second = await built.messages.process("unknown", "ИИН")
-        assert second.state.conversation.expected_slot == "policy_number"
-        third = await built.messages.process("unknown", "Номер полиса")
-        assert third.conversation_status == "handoff"
-        assert third.trace.manager_summary["reason"] == "client_not_found"
-        assert third.trace.manager_summary["completed_read_only_checks"] == []
-        assert third.trace.manager_summary["known_client"] is False
-        assert third.state.client_lookup_attempts == ["phone", "iin"]
+        # With no resolved client, another policy number cannot authorize a lookup.
+        assert second.state.conversation.expected_slot is None
+        assert second.conversation_status == "handoff"
+        assert second.trace.manager_summary["reason"] == "lookup_exhausted"
+        assert second.trace.manager_summary["completed_read_only_checks"] == ["find_client"]
+        assert second.trace.manager_summary["known_client"] is False
+        assert second.state.client_lookup_attempts == ["phone", "iin"]
 
     asyncio.run(flow())
 

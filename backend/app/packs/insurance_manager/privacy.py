@@ -10,6 +10,8 @@ SENSITIVE_SLOTS = {
     "policy_number",
     "claim_number",
     "new_value",
+    "vehicle_plate",
+    "culprit_vehicle_plate",
 }
 
 
@@ -62,6 +64,7 @@ def redact_text(text: str, slots: dict | None = None) -> str:
                 if isinstance(item, str) and item:
                     text = re.sub(re.escape(item), "[номер скрыт]", text, flags=re.I)
     text = re.sub(r"(?<!\d)(?:\+?\d[\s()-]*){10,12}(?!\d)", "[номер скрыт]", text)
+    text = re.sub(r"\b\d{3}[A-ZА-Я]{3}\d{2}\b", "[номер скрыт]", text, flags=re.I)
     return re.sub(r"\b[A-Z]{2,}(?:-[A-Z]+)*-\d{3,}\b", "[номер скрыт]", text, flags=re.I)
 
 

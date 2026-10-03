@@ -246,7 +246,9 @@ def test_policy_number_from_another_client_matches_absent_record_failure(kit):
             assert policy.start_date.isoformat() not in body["response_text"]
             assert policy.end_date.isoformat() not in body["response_text"]
             assert body["state"]["active_scenario"] == "SC25"
-            assert body["conversation_status"] == "awaiting_user"
+            # A failed owned-record lookup now exhausts this path instead of looping.
+            assert body["conversation_status"] == "handoff"
+            assert body["trace"]["manager_summary"]["reason"] == "lookup_exhausted"
             assert_trace(body, completed=None, actions=["find_client", "get_policy"], sources=[])
 
 
@@ -335,7 +337,10 @@ def test_clarification_preserves_context_rejects_uncertain_slots_then_accepts_co
         assert corrected["state"]["scenario_stack"] == ["SC27"]
         assert corrected["state"]["clarification_options"] == []
         assert corrected["state"]["unclear_count"] == 0
-        assert corrected["state"]["slots"] == {"phone": "[получено]"}
+        # The unique owned claim can now be resolved without collecting its number.
+        assert corrected["state"]["slots"] == {
+            "phone": "[получено]", "claim_number": "[получено]"
+        }
         assert router.previous_states[2].slots == {"phone": "+77010000001"}
         assert corrected["conversation_status"] == "awaiting_user"
         assert corrected["trace"]["policy_outcome"] == "accept"

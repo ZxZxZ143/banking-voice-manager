@@ -140,8 +140,19 @@ the application asks for required slots after accepting a scenario.
 
 SLOTS
 Use only slot definitions below, and only values evidenced by the current utterance.
-Use dialogue context to interpret answers but do not echo all existing slots. Normalize
-spoken phone/IIN/plate/number/date values when unambiguous; resolve relative dates against
+Use dialogue context to interpret answers but do not echo all existing slots.
+identifier_answer reports the meaning of an identifier answer: provided, unavailable,
+correction, partial or unknown, with its field (phone, iin, policy_number, claim_number,
+vehicle_plate). Use null when unrelated. Resolve 'I do not have it / cannot remember /
+not at hand' in Russian or Kazakh against expected_slot and last_question, or an explicitly
+named field. An unavailable identifier is useful progress: keep the active scenario and
+conversation_signal=partial_answer, not SYS_UNCLEAR solely because no value was given.
+Never put an unavailable marker in slots. A clear alternative identifier also continues
+the current scenario even when a different identifier was requested. Do not infer that an
+identifier became available again without a newly supplied value or explicit correction.
+The application owns finite lookup order and exhausted handoff; do not choose a different
+business scenario simply to collect another identifier. Never echo earlier stored values.
+Normalize spoken phone/IIN/plate/number/date values when unambiguous; resolve relative dates against
 reference_date in the catalog. Match exact enum spelling and JSON types; dates YYYY-MM-DD.
 Return slots as a list of unique {name, value} items, never application fields such as
 client_id, active_scenario, turn_number, history, conversation_status or confirmation flags.
@@ -202,6 +213,10 @@ Unsupported life insurance is out of scope in either language.
 
 def build_router_input(text: str, state: DialogState, *, local_phone=None) -> str:
     context = state.model_dump(mode="json")
+    context["identification"] = state.identification.safe_view()
+    context["scenario_identification"] = {
+        key: value.safe_view() for key, value in state.scenario_identification.items()
+    }
     if context.get("conversation") is None:
         context.pop("conversation", None)
     if state.turn_number == 0 and not state.history:

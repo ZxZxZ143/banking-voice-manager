@@ -52,7 +52,7 @@ def expected_trip_duration(text: str, state) -> int | None:
 
 def expected_identifier(text: str, state, definitions) -> tuple[str, str] | None:
     name = state.conversation.expected_slot if state.conversation else None
-    if name not in {"phone", "iin", "policy_number", "claim_number"}:
+    if name not in {"phone", "iin", "policy_number", "claim_number", "vehicle_plate"}:
         return None
     definition = definitions[name]
     candidates = []
@@ -61,6 +61,8 @@ def expected_identifier(text: str, state, definitions) -> tuple[str, str] | None
         words = re.findall(r"\w+", text.casefold())
         if words and all(word in _DIGITS for word in words):
             candidates.append("".join(_DIGITS[word] for word in words))
+    elif name == "vehicle_plate":
+        candidates = re.findall(r"\b\d{3}[A-Z]{3}\d{2}\b", text.upper())
     else:
         candidates = re.findall(r"\b(?:SQ-[A-Z]+|CL)-\d+\b", text.upper())
     valid = set()
@@ -75,3 +77,40 @@ def expected_identifier(text: str, state, definitions) -> tuple[str, str] | None
         if re.fullmatch(definition.pattern, value):
             valid.add(value)
     return (name, valid.pop()) if len(valid) == 1 else None
+
+
+def identifier_answers(text, state, definitions):
+    """Source-pattern literals; alternative IDs are accepted only inside identification."""
+    from app.packs.insurance_manager.state import ConversationState
+
+    expected = state.conversation.expected_slot if state.conversation else None
+    names = [expected] if expected in definitions else []
+    if expected in {"phone", "iin", "policy_number", "claim_number", "vehicle_plate"}:
+        names = ["phone", "iin", "policy_number", "claim_number", "vehicle_plate"]
+    found = {}
+    for name in names:
+        candidate = state.model_copy(deep=True)
+        candidate.conversation = ConversationState(expected_slot=name)
+        value = expected_identifier(text, candidate, definitions)
+        if value:
+            found[value[0]] = value[1]
+    return found
+
+
+def expected_unavailable(text, state):
+    """Bounded literal fallback only for the current requested identifier, not routing."""
+    from app.packs.insurance_manager.response.lookup import IDENTIFIERS
+
+    expected = state.conversation.expected_slot if state.conversation else None
+    if expected not in IDENTIFIERS:
+        return None
+    answer = text.strip().casefold().rstrip(".!?")
+    if re.fullmatch(
+        r"(?:у меня )?(?:его |её |этого номера )?нет(?: под рукой)?"
+        r"|(?:не знаю|не помню)(?: его| номер)?"
+        r"|(?:менде )?(?:ол |оның нөмірі )?жоқ"
+        r"|(?:нөмірін )?(?:білмеймін|ұмытып қалдым)",
+        answer,
+    ):
+        return expected
+    return None

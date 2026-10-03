@@ -5,6 +5,28 @@ from pydantic import Field
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
 from app.packs.contracts import GlobalConversationContext
+from app.packs.insurance_manager.tools.capabilities import ManagerSummary
+
+IdentifierKind = Literal["phone", "iin", "policy_number", "claim_number", "vehicle_plate"]
+
+
+class IdentificationState(Contract):
+    """Private, per-scenario lookup memory; values/fingerprints never cross projections."""
+
+    unavailable_fields: list[IdentifierKind] = Field(default_factory=list)
+    attempted_fields: list[IdentifierKind] = Field(default_factory=list)
+    failed_fields: list[IdentifierKind] = Field(default_factory=list)
+    requested_fields: list[IdentifierKind] = Field(default_factory=list)
+    successful_field: IdentifierKind | None = None
+    exhausted: bool = False
+    failed_attempts: list[str] = Field(default_factory=list, repr=False, exclude_if=lambda v: not v)
+    provided_values: dict[IdentifierKind, list[str]] = Field(
+        default_factory=dict, repr=False, exclude_if=lambda v: not v
+    )
+    completed_read_only_checks: list[str] = Field(default_factory=list)
+
+    def safe_view(self) -> dict:
+        return self.model_dump(exclude={"failed_attempts", "provided_values"})
 
 
 class DialogTurn(Contract):
@@ -30,6 +52,9 @@ class DialogueState(Contract):
     language: Language | None = None
     response_language: Literal["ru", "kk"] = "ru"
     client_id: str | None = None
+    identification: IdentificationState = Field(default_factory=IdentificationState)
+    scenario_identification: dict[str, IdentificationState] = Field(default_factory=dict)
+    manager_summary: ManagerSummary | None = None
     client_lookup_attempts: list[str] = Field(
         default_factory=list, max_length=2, exclude_if=lambda v: not v
     )
@@ -55,6 +80,9 @@ DialogState = DialogueState
 class InsuranceScenarioContext(Contract):
     response_language: Literal["ru", "kk"] = "ru"
     client_id: str | None = None
+    identification: IdentificationState = Field(default_factory=IdentificationState)
+    scenario_identification: dict[str, IdentificationState] = Field(default_factory=dict)
+    manager_summary: ManagerSummary | None = None
     client_lookup_attempts: list[str] = Field(
         default_factory=list, max_length=2, exclude_if=lambda v: not v
     )
