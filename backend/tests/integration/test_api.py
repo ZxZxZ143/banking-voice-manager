@@ -22,6 +22,7 @@ def test_health_loaded_actual_data(client):
         "status": "ok",
         "service": "voice-router",
         "mode": "foundation",
+        "telephony": {"twilio": "disabled", "vonage": "disabled"},
         "starter_kit": {"scenarios": 40, "system_intents": 3, "actions": 31, "dev_utterances": 104},
         "analytics": {
             "status": "ok",
