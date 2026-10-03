@@ -8,7 +8,8 @@ The inherited outbound trial trigger and its SDK dependencies are intentionally 
 ## One application core
 
 ```text
-Browser → ConversationRuntime → /api/message → current MessageService → browser TTS
+Browser → ConversationRuntime → /api/message → current MessageService → shared backend TTS
+        → browser audio (SpeechSynthesis fallback)
 Phone → signed provider gateway → canonical PCM → shared STT → PhoneRuntime
       → AgentBridge → same current MessageService → backend TTS → provider playback
 Both → current EventRecorder → SQLiteEventStore → /api/analytics/* → dashboard
@@ -66,6 +67,21 @@ Restart resets transient ownership; no multi-worker routing or durable replay ca
 implemented. SQLite histories survive restart, but active conversations cannot resume.
 
 ## Speech and provider protocols
+
+Browser and both gateways now receive the same configured `speech/tts/factory.py` provider
+instance from application startup. `TTS_PROVIDER=auto|openai` uses configured OpenAI;
+`browser` or missing backend credentials yields no phone speech provider and enabled
+gateways remain unavailable. Phone never uses a silent mock or browser fallback in
+production. `BACKEND_TTS_MODEL`, `BACKEND_TTS_VOICE`, and RU/KK delivery instructions remain
+server-side configuration. Defaults: `gpt-4o-mini-tts` / `cedar`. Normalization preserves
+numeric facts and returns the existing MP3 contract; codecs and acknowledgement flow
+are unchanged. Forty generated RU/KK MP3 samples passed both actual conversion adapters.
+Silero/Piper TTS are evaluation-only pending listening; this does not change Silero VAD.
+Details: `TTS_QUALITY_VALIDATION.md`.
+
+The new private `/api/speech/tts` is for the browser, not a phone webhook. Future public
+ingress must expose only signed telephony routes. It must not forward generic app,
+analytics or speech routes. Runtime generated audio is memory-only and never persisted.
 
 Canonical audio: signed PCM16 **little-endian**, mono, 24 kHz, even nonempty frames ≤4,800
 bytes. The browser relay and OpenAIStreamingSTT share `speech/stt/streaming.py`, Silero VAD

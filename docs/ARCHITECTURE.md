@@ -18,7 +18,7 @@ Browser text / final STT → POST /api/message
     → Product: structured Agent → deterministic catalog policy/reply
     → out-of-domain: current assistant scope reply, no selector/forwarding
     → Shared Core: typed local context/result + global status + trace commit
-    → browser TTS → listening / handoff / ended
+    → shared backend TTS → browser audio (SpeechSynthesis fallback) → listening / handoff / ended
 
 Either pack selected at Start → POST /api/conversation/start
     → same Shared Core → pack opener (zero model calls, no customer transcript)
@@ -26,6 +26,24 @@ Either pack selected at Start → POST /api/conversation/start
 ```
 
 ## Shared Core and context firewall
+
+Product response-language authority is pack-local: explicit typed preference first,
+then conservative utterance evidence and prior response language. A complete language
+command is a `ProductLanguageControl`, not a business intent. It re-renders the pending
+question without changing sales counters/preferences/campaign. `ProductMessageResponse`
+accepts this typed routing variant. Risk guidance honors Product's explicit preference;
+Insurance/Fraud detection and model prompts are unchanged. Details and tests:
+`TTS_QUALITY_VALIDATION.md`.
+
+`speech/tts/factory.py` composes the shared backend provider for web and phone. The current
+validated technical path is OpenAI (`auto` / `openai`) with deterministic RU/KK speech
+preparation and application-owned delivery instructions; `browser` disables backend TTS.
+Local TTS engines are evaluation-only pending human quality review, not production imports.
+`BackendTtsService` requests private `/api/speech/tts`, plays bounded MP3/WAV through a
+temporary object URL and waits for actual completion. It cancels fetch/playback and ignores
+late results, falling back to `BrowserTtsService` only before backend audio has played.
+The endpoint caps body/text/audio/time/concurrency, cancels disconnected requests and never
+writes audio to storage. It is not a public unauthenticated speech service.
 
 `conversation/service.py` owns registry resolution, per-session locking, snapshots,
 activation by explicit selection, terminal rejection and atomic commit. The bounded
@@ -353,7 +371,8 @@ See `ANALYTICS_API_CONTRACT.md` for schemas, count semantics, seeding and Stage 
 The teammate Finance Dashboard's React shell/components/styles are selectively integrated,
 without its historical phone backend, process-local store, runtime or token proxy. Current
 conversation/runtime/assistant/voice code remains. App owns one lasting ConversationRuntime
-and BrowserTtsService; dashboard navigation hides the mounted demo and stops capture on exit.
+and BackendTtsService with BrowserTtsService fallback; dashboard navigation hides the
+mounted demo and stops capture on exit.
 Scoped conversation CSS prevents collisions with Tailwind/shadcn dashboard styles.
 
 The existing loopback Vite/Nginx `/api` proxy serves one `/api/analytics` namespace. Additive
@@ -395,7 +414,8 @@ signed Twilio/Vonage admission → provider decoder/resampler → PCM16LE mono 2
 ```
 
 Browser `/api/v1/voice` uses the extracted STT relay with unchanged wire semantics; browser
-TTS remains frontend-owned. Phone starts listening and defaults to Insurance; it does not
+TTS playback remains frontend-owned while synthesis uses the shared backend provider.
+Phone starts listening and defaults to Insurance; it does not
 add a second Router, auto-selector, campaign or greeting model. Phone response-language
 precedence matches browser security guidance while preserving business state.
 

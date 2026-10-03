@@ -12,6 +12,16 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Product language / TTS hotfix on Stage 6 branch:** pack-local conservative RU/KK
+  continuity and persistent typed explicit preference; language-control commands repeat
+  the pending question without sales mutation. Typed HTTP response supports this control.
+  Shared backend TTS factory powers browser MP3 playback and existing phone adapters;
+  same-origin `/api/speech/tts` is bounded/private, with browser SpeechSynthesis fallback.
+  Auto currently uses OpenAI `gpt-4o-mini-tts` / `cedar`; configurable voice/model/RU+KK
+  instructions and deterministic speech-only normalization. Silero/Piper CPU prototypes
+  ran on Windows/Linux; subjective RU/KK quality remains pending human listening.
+  Evidence, model pins, exact tests/latencies: `docs/TTS_QUALITY_VALIDATION.md`.
+
 - **Stage 6 telephony integration (offline):** teammate PhoneRuntime/shared STT/Twilio/Vonage
   selectively ported onto Stage 5B main `48da4bb` on `codex/stage6-telephony-integration`.
   Both use current MessageService/Risk and SQLite with canonical `voice` events. Disabled
@@ -104,7 +114,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 - **Still incomplete:** business writes/confirmation, actual identity verification, full
   insurer write integrations, real contact-center transfer and public supervisor feed.
   Legacy `/api/v1/turns/text` remains 501 and is not used. Live routing/STT use the local key;
-  TTS uses installed browser voices. Missing dependencies fail visibly, without mock fallback.
+  TTS uses shared backend synthesis with installed browser voices as web fallback. Missing
+  dependencies fail visibly, without mock responses.
 - **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
   loopback ports 8000/5173, runtime-only secrets and health checks.
 - **Not introduced:** Supabase, vector store, RAG, external task brokers or unrelated production packs.
@@ -118,7 +129,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/main.py` | FastAPI factory, lifespan and startup command |
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
-| `backend/app/speech/stt/`, `speech/tts/` | Provider protocols and minimal OpenAI adapters |
+| `backend/app/speech/stt/`, `speech/tts/` | Shared STT; backend TTS factory, bounded OpenAI synthesis and deterministic RU/KK speech normalization |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
 | `backend/app/speech/audio.py`, `speech/conversion.py` | Canonical PCM24 contract and bounded PyAV TTS conversion |
 | `scripts/smoke_*runtime.py`, `scripts/smoke_stage6_integration.py` | Explicit offline provider fixtures and current core/Risk/SQLite/API smoke |
@@ -153,7 +164,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `frontend/src/analytics/`, `components/dashboard/`, `components/ui/` | One typed same-origin client, safe parsers, cancellation/polling and teammate dashboard/shadcn views |
 | `frontend/src/styles.css`, `conversation.css`, `lib/shadcn-tailwind.css` | Preserved dashboard styling, scoped current conversation CSS and licensed shadcn variants |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
-| `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
+| `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/` | HTTP/mock agent; backend audio playback, cancellation and stable locale browser fallback |
+| `backend/app/api/routes/speech.py` | Private POST `/api/speech/tts`, strict text/language request, audio-only no-store response |
+| `data/tts/eval_samples.json`, `scripts/evaluate_tts.py` | Synthetic RU/KK TTS comparison; ignored audio/metrics/listening sheets under `work/tts-eval/` |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
 | `frontend/src/components/voice/VoiceControls.tsx`, `voiceRuntimeBridge.ts` | Streaming mic/file capture UI and final-transcript bridge to runtime |
 | `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
@@ -188,7 +201,8 @@ MessageService.process(..., channel="voice") → existing pack/Risk + EventRecor
 MessageService.end_session finalizes committed calls under the existing lock, without a
 new turn; EventRecorder.record_end adds an idempotent safe terminal event. Empty calls
 create no analytics conversation. Provider IDs/transcripts/audio are never persisted.
-Shared browser STT extraction preserves `/api/v1/voice`; browser TTS remains unchanged.
+Shared browser STT extraction preserves `/api/v1/voice`; browser TTS now uses the shared
+backend factory with SpeechSynthesis fallback, as described in the hotfix evidence.
 
 Startup constructs five registered assistants from canonical Insurance, sales and security
 inputs. The shared
@@ -210,8 +224,8 @@ The extended Insurance schema/prompt have a separate unchanged 104-case live reg
 The browser fetches real health through Vite. The frontend runtime creates one session ID,
 accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
 `POST /api/message` (or either assistant-only start request), displays the reply, awaits TTS playback, then resumes listening unless
-the API says `handoff` or `ended`. Browser TTS uses `speechSynthesis` and waits for
-`onend`; `onstart` gives first-audio latency. A bounded playback watchdog rejects stalled
+the API says `handoff` or `ended`. Browser playback uses backend MP3/WAV (`onplaying`/
+`onended`) with `speechSynthesis` (`onstart`/`onend`) fallback. A bounded watchdog rejects stalled
 speech. Successful handoff/ended states survive TTS failure. A no-audio adapter remains for tests.
 Voice controller start/stop calls are serialized so a delayed start is stopped on reset/end.
 VoiceControls opens one WebSocket per utterance using that same session ID; partials stay
@@ -402,7 +416,9 @@ Frontend
 `frontend/.env.example` defines `VITE_API_BASE_URL` (empty means Vite proxy) and
 `VITE_USE_MOCK_AGENT` (false by default; true works only in Vite dev).
 Streaming STT uses gpt-live-transcribe and local faster-whisper Silero VAD (voice extra).
-Browser TTS uses the backend response_language and installed OS/browser voices.
+Browser TTS uses the backend response_language for backend synthesis and locale-safe
+OS/browser fallback. Configure `TTS_PROVIDER`, `BACKEND_TTS_MODEL`, `BACKEND_TTS_VOICE`,
+`BACKEND_TTS_INSTRUCTIONS_RU`, `BACKEND_TTS_INSTRUCTIONS_KK`; all settings stay server-side.
 
 PowerShell from repository root:
 

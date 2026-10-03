@@ -14,6 +14,17 @@ See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
+- Product language continuity is application-owned. Explicit «ответь на русском» /
+  «қазақша жауап беріңіз» persists and repeats the pending question without advancing sales.
+  Browser and phone use the same authorized response language for speech.
+- Browser speech uses private backend TTS first, then SpeechSynthesis fallback. Configure
+  `TTS_PROVIDER=auto|openai|browser`, `BACKEND_TTS_MODEL` (default `gpt-4o-mini-tts`),
+  `BACKEND_TTS_VOICE` (default `cedar`) and optional `BACKEND_TTS_INSTRUCTIONS_RU/KK`.
+  OpenAI uses the existing server-only key. No backend provider means browser fallback for
+  web and unavailable speech for phone. Local Silero/Piper RU+KK prototypes were measured
+  on Windows/Linux but still require human listening before becoming the default.
+  See [measured TTS quality and language validation](docs/TTS_QUALITY_VALIDATION.md).
+
 - Stages 5A/5B: privacy-safe structured conversation events persist in SQLite; read-only
   `/api/analytics/events`, `/api/analytics/sessions/{session_id}` and
   `/api/analytics/summary` and additive dashboard APIs support the integrated Finance
@@ -192,7 +203,7 @@ remain in their own internal entries. Trace includes pack, mode, lifecycle and s
 
 Voice WebSocket: `ws://127.0.0.1:5173/api/v1/voice`. Start with a UUID `session_id`, 24 kHz mono PCM16, then send binary frames. Only `utterance.final` reaches Agent Core; partial text remains in voice diagnostics. See [the streaming protocol](docs/VOICE_STREAMING_CONTRACT.md).
 
-The runtime stops capture before routing/TTS. Normal playback resumes listening; `handoff` and `ended` keep it stopped. Reset invalidates stale callbacks. Browser TTS waits for playback completion and bounds stalled playback. Installed Russian/Kazakh voices determine audible language quality; the browser default is used when a matching voice is absent.
+The runtime stops capture before routing/TTS. Normal playback resumes listening; `handoff` and `ended` keep it stopped. Reset invalidates stale callbacks. Backend audio is currently buffered before browser playback; its measured first chunk is not browser onset. Browser fallback prefers stable Natural/Neural/Online voices within the requested locale and reports missing locale voices. Runtime audio is not stored. Only signed telephony routes may be exposed through a future public tunnel; generic speech, app and analytics APIs stay private.
 
 The supervisor panel displays the returned transcript, scenarios/confidence, alternatives, concise reason, slots, active/pending/stack context, clarification, actions, status and timings. It does not calculate routing or display hidden chain-of-thought.
 

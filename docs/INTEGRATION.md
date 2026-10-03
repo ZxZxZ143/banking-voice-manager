@@ -4,7 +4,7 @@ Stage 6 adds server phone transports alongside these existing frontend boundarie
 Both gateways use current MessageService and SQLite; no historical phone analytics or
 frontend runtime replaces the Stage 5B integration. See the phone contract below.
 
-The frontend already owns the session ID, conversation loop, text fallback, browser TTS,
+The frontend owns the session ID, conversation loop, text fallback, browser audio playback,
 and trace display. The integrated MVP connects these two boundaries in real HTTP mode.
 
 Stage 4 keeps voice pack-agnostic with five packs: `insurance_manager`, `product_promoter`
@@ -32,6 +32,33 @@ Trace adds `pack_switch`, product category, shown/selected products, lead status
 action; absent legacy fields still render. See `ARCHITECTURE.md` for isolation and rollback.
 
 ## Voice Input → ConversationRuntime
+
+Product language-control responses add `routing.kind="language_control"` and typed
+`state.preferred_response_language: "ru" | "kk" | null`. The UI must preserve final
+`state.response_language`; model/trace/STT language is evidence, not a TTS override.
+Existing runtime response-language precedence already satisfies this rule.
+
+## Private browser speech API
+
+`BackendTtsService` implements the existing `TtsService` contract. POST same-origin
+`/api/speech/tts` with `{ "text": "...", "language": "ru" }` (`ru`, `kk`, `mixed`).
+Only configured local origins are allowed. No credentials/model/provider settings come
+from the browser. Strict limits: 20 KB JSON, 4,000 characters, 8 MB MP3/WAV response;
+4000-character normalized text bound; 5 s body / 35 s endpoint deadline. Responses are
+`no-store`; validation does not echo submitted speech. Errors: 403 origin, 415 content type,
+413 body, 422 validation, 503 unavailable, 502 synthesis failure. Stop/reset aborts fetch
+and active audio. The browser falls back on pre-playback errors and timeout; it never
+repeats partially played backend speech. Playback completion still gates microphone resume.
+
+Shared `TTS_PROVIDER=auto|openai|browser` selection uses OpenAI when configured, otherwise
+browser fallback for web only. Defaults: `gpt-4o-mini-tts` / `cedar`, configurable model,
+voice and RU/KK instructions. Silero/Piper TTS are evaluation-only until the listening gate
+passes. Display text is unchanged while backend speech text expands rates/money/dates.
+See `TTS_QUALITY_VALIDATION.md` for exact measurements, licenses and limitations.
+Origin validation is not authentication: public phone ingress must route only signed
+telephony endpoints, never this generic speech endpoint.
+
+## Voice input lifecycle
 
 `ConversationPanel` now attaches `VoiceControls` through `voiceRuntimeBridge.ts` before Start.
 The runtime starts microphone capture, stops it for each turn and restarts it after TTS.
