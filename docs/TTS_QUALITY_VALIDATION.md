@@ -188,7 +188,69 @@ telephony paths, never `/api/speech/tts`, message, dashboard, analytics or gener
 Runtime synthesis writes no audio to disk/SQLite and logs no submitted/generated text.
 Only explicitly synthetic evaluation audio is saved under ignored `work/tts-eval/`.
 
-## Reproduction and listening handoff
+## Five-voice refinement and streaming investigation (2026-10-03)
+
+The existing OpenAI/backend MP3 architecture remains. Optional BACKEND_TTS_VOICE_RU
+and BACKEND_TTS_VOICE_KK override BACKEND_TTS_VOICE for those languages; blank overrides,
+mixed and unknown language retain the legacy choice. Server-only configuration and
+browser fallback/phone codec behavior remain intact. RU/KK instructions request calm,
+warm, feminine-presenting manager delivery, natural sentence rhythm/moderate pace,
+clear numbers and brief pauses. This is an instruction intent, not a measured gender
+property. Visible assistant facts and deterministic speech preparation are unchanged.
+
+New gpt-4o-mini-tts comparisons used coral, nova, shimmer, marin and cedar: 20 samples
+per voice, ten RU/ten KK, including ordinary replies, financial numbers, Risk and handoff.
+All 100 files completed on Windows in ignored
+`work/tts-eval/openai-gpt-4o-mini-tts-{voice}-windows/`. These are provider timings;
+first chunk does not mean browser audible start. Runs were sequential and time-varying,
+so the table is not a statistically controlled voice-performance ranking.
+
+| Voice | First chunk p50/p95 ms | Full synthesis p50/p95 ms | Duration p50/p95 seconds |
+|---|---:|---:|---:|
+| coral | 2536 / 9142 | 4232 / 10464 | 8.52 / 12.17 |
+| nova | 2151 / 3829 | 3716 / 7363 | 8.16 / 11.95 |
+| shimmer | 1270 / 2523 | 2459 / 4141 | 8.30 / 12.17 |
+| marin | 1068 / 1408 | 2045 / 2683 | 8.40 / 11.57 |
+| cedar | 1303 / 2590 | 2392 / 3654 | 8.02 / 11.86 |
+
+The user reported **«cedar звучит лучше всего»** on 2026-10-03 after the listening
+question. Cedar remains the existing default; no real .env edit was needed. This records
+an overall preference, not separate RU/KK ratings or feminine approval. All numeric
+naturalness/clarity/feminine scores remain blank. The comparison index is ignored
+`work/tts-eval/VOICE_LISTENING.md`; per-voice sheets now include a blank feminine
+presentation column. Evaluator resume preserves human listening notes. OpenAI does not
+officially gender-label these built-in voices; their names do not establish gender.
+The previous Silero/Piper measurements, pins, audio and limitations remain above/below
+as dated historical evidence. No large optional TTS packages were added to production.
+
+`scripts/evaluate_tts_streaming.py` is a separate localhost-only synthetic prototype,
+with fixed sample IDs, key on server, cancellation, 60-second/8-MB bound and no arbitrary
+customer text ingress. An actual browser played progressive MP3 before synthesis completed.
+
+| Browser run | First audible proxy ms | Provider first chunk ms | Full synthesis ms | Audio seconds |
+|---|---:|---:|---:|---:|
+| Buffered RU greeting | 3400.9 | 1985.3 | 2997.5 | 4.752 |
+| Streamed RU greeting | 2408.4 | 1752.2 | 2173.1 | 5.088 |
+| Streamed KK greeting | 2744.3 | 2155.5 | 2756.6 | 6.576 |
+
+The audible proxy is HTMLAudio's first `playing` event, not a hardware/audio-loopback
+measurement. These are single runs with variable provider output, not latency percentiles
+or subjective listening scores. RU onset was about 993 ms earlier in this experiment.
+Cancellation paused the element, removed its source and produced a safe upstream
+cancelled flag. No repeated fallback speech occurred in the prototype. Existing production
+fallback/cancellation/terminal and phone-conversion regressions passed independently.
+Production `/api/speech/tts` still buffers full MP3; progressive playback was not promoted
+because fallback/terminal/phone semantics would need further integration evidence.
+
+Reproduce candidate generation with the existing evaluator (configured API usage):
+`python scripts/evaluate_tts.py --provider openai --voice cedar --resume`, repeating for
+the other four names. Start `python -m uvicorn scripts.evaluate_tts_streaming:app --host
+127.0.0.1 --port 8011` from the root for the isolated browser experiment. Current model
+guidance: [speech API](https://developers.openai.com/api/docs/guides/text-to-speech) and
+[deprecations](https://developers.openai.com/api/docs/deprecations). Model stays configurable.
+Structured STT/phone/privacy evidence: `STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md`.
+
+## Earlier reproduction and listening handoff
 
 `data/tts/eval_samples.json` has 20 public synthetic RU/KK samples covering greetings,
 deposit rate, cashback, loan amount, insurance/date, zero-only demonstration phone number,

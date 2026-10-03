@@ -14,12 +14,21 @@ See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
+- Insurance expected fields now configure streaming STT by type, with deterministic
+  RU/KK/mixed identifiers and one conditional audio second pass. Region `ноль два`
+  maps to Almaty pricing; 01 to Astana, 03–20 to other. Recognition repair is bounded
+  separately from lookup memory. Synthetic canonical accuracy was 62% versus balanced
+  43%; five wrong accepted plates leave the production precision gate unmet.
+  See [structured speech evidence](docs/STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md).
 - Product language continuity is application-owned. Explicit «ответь на русском» /
   «қазақша жауап беріңіз» persists and repeats the pending question without advancing sales.
   Browser and phone use the same authorized response language for speech.
 - Browser speech uses private backend TTS first, then SpeechSynthesis fallback. Configure
   `TTS_PROVIDER=auto|openai|browser`, `BACKEND_TTS_MODEL` (default `gpt-4o-mini-tts`),
-  `BACKEND_TTS_VOICE` (default `cedar`) and optional `BACKEND_TTS_INSTRUCTIONS_RU/KK`.
+  `BACKEND_TTS_VOICE` (default `cedar`), optional `BACKEND_TTS_VOICE_RU/KK` overrides
+  and `BACKEND_TTS_INSTRUCTIONS_RU/KK`. The user's listening preference is cedar;
+  feminine presentation has not been approved. Five RU/KK voice comparisons and an
+  isolated streaming playback prototype are measured in the validation report.
   OpenAI uses the existing server-only key. No backend provider means browser fallback for
   web and unavailable speech for phone. Local Silero/Piper RU+KK prototypes were measured
   on Windows/Linux but still require human listening before becoming the default.

@@ -426,3 +426,24 @@ turn creates no analytics conversation. Transcripts, raw audio and provider IDs 
 SQLite. Best-effort storage/cancellation limitations still apply; runtime state/tombstones
 are process-local. See `PHONE_RUNTIME.md` for bounds and authentication, and
 `STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md` for measured offline evidence.
+
+## Expected-field speech recognition
+
+Browser and PhoneRuntime share `speech/structured/` and the streaming relay. Current
+Insurance expected slots produce bounded public TranscriptionContext; session.update
+uses medium delay for ordinary turns and high for structured fields. The relay retains
+structured PCM transiently, validates candidates and runs at most one 20-second
+gpt-transcribe second pass if the first transcript is invalid/ambiguous. Raw displayed
+text remains separate from the private canonical value.
+
+MessageService owns one-use receipts bound to session/turn/slot/text hash; clients forward
+the opaque token. Core applies source-validated values while blocking model digit repairs.
+Recognition counters are separate from lookup memory: one targeted repair, then an existing
+alternative or prepared handoff. Region 01/02/03–20 use current astana/almaty/other pricing.
+No runtime/database/agent architecture replacement or pricing change occurred.
+
+Only safe recognition flags/timings enter trace; identifier public history is redacted.
+SQLite schema, Risk, codecs and terminal/cancellation guards are unchanged. Per-language
+TTS voices fall back to the legacy choice; production MP3 remains buffered. A separate
+synthetic-only script investigates progressive playback. Wrong accepted plates leave the
+production precision gate open; see `STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md`.

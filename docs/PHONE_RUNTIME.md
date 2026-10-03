@@ -152,3 +152,28 @@ fresh application start. Its `runtime` events are confined to a temporary DB and
 inserted into the persistent demo volume. No fixture is an automatic failure fallback.
 
 See `STAGE6_LIVE_TELEPHONY_CHECKLIST.md` for the later credentials/live gate.
+
+## Structured speech update (2026-10-03)
+
+PhoneRuntime obtains expected-slot context from current MessageService. Twilio/Vonage
+still decode to PCM24; shared streaming STT applies context, the deterministic parser
+and optional single bounded second pass. No provider-specific parser exists.
+OpenAIStreamingSTT.run_with_context adds context/receipts; run-only fixture adapters
+remain supported. AgentBridge forwards a receipt to the same voice-channel core turn.
+
+STREAMING_STT_MODEL defaults to gpt-live-transcribe; STRUCTURED_STT_MODEL to gpt-transcribe.
+Ordinary delay stays medium; structured delay is high. Prompts contain formats/prefixes
+only. PCM keeps the 120-second bound, remains memory-only and clears on final/cancellation.
+A valid first candidate skips the second call. Recognition failure does not consume a
+business lookup attempt: one RU/KK repair, then an alternative or prepared handoff.
+Phone replies never offer keyboard input. Source formats/synthetic IIN policy are unchanged.
+
+BACKEND_TTS_VOICE_RU/KK optionally override BACKEND_TTS_VOICE; unknown/mixed language
+retains the legacy choice. Buffered MP3 still feeds existing phone conversion/acknowledgement;
+streaming playback remains an isolated browser experiment.
+
+Offline codec→PCM→STT fixture→parser→core tests and all four Stage 6 smokes were run.
+Provider admission, SQLite and Risk remain covered. The 112-case synthetic cloud STT
+benchmark is transport-neutral, not a PSTN test. Five wrong accepted plates and low mixed
+accuracy leave the production precision gate unmet. Live PSTN stays pending credentials;
+no credential change/activation occurred. See `STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md`.

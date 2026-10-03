@@ -12,6 +12,19 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Structured speech refinement (Stage 6 branch):** shared expected-slot context,
+  high-delay identifier STT, deterministic RU/KK/mixed normalization and one conditional
+  bounded gpt-transcribe second pass. Region 01/02/03–20 use Astana/Almaty/other pricing.
+  Raw UI transcript stays separate; private one-use receipts feed core, safe flags feed trace.
+  Recognition repair is separate from lookup memory; phone/browser share the parser.
+  112 synthetic audio cases: canonical 62% versus balanced 43%; five wrong accepted plates
+  leave the production precision gate unmet. Five live browser fixtures progressed; local
+  Vosk/Whisper and a paired pace pilot were measured in optional environments.
+  RU/KK TTS overrides/natural instructions; user prefers existing cedar, no feminine approval.
+  Production MP3 remains buffered; streaming is an isolated prototype. Evidence/limits:
+  `docs/STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md`.
+  Full checks: 1133 backend / 97 frontend tests, TS/Vite, Ruff/format and four phone smokes.
+
 - **Product language / TTS hotfix on Stage 6 branch:** pack-local conservative RU/KK
   continuity and persistent typed explicit preference; language-control commands repeat
   the pending question without sales mutation. Typed HTTP response supports this control.
@@ -130,6 +143,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Shared STT; backend TTS factory, bounded OpenAI synthesis and deterministic RU/KK speech normalization |
+| `backend/app/speech/structured/` | Public typed context, candidate/region normalization, bounded second pass, private receipts and localized repair |
+| `data/speech/`, `scripts/build_structured_speech_dataset.py`, `scripts/evaluate_structured_speech.py` | 100-positive/12-negative synthetic corpus; text/cloud/local/pace comparisons; ignored audio/models/reports |
+| `scripts/validate_structured_browser.py`, `scripts/evaluate_tts_streaming.py` | Synthetic-only browser STT/core harness and progressive MP3 experiment, separate ports 8012/8011 |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
 | `backend/app/speech/audio.py`, `speech/conversion.py` | Canonical PCM24 contract and bounded PyAV TTS conversion |
 | `scripts/smoke_*runtime.py`, `scripts/smoke_stage6_integration.py` | Explicit offline provider fixtures and current core/Risk/SQLite/API smoke |
@@ -260,6 +276,8 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - `POST /api/message`: `{session_id, text}`; nonblank string ID up to 128 characters,
   text up to 10,000 characters, whitespace trimmed. Reuse the ID for later turns.
   Optional `scenario_mode` selects one of the five packs; `channel=text|voice` defaults to text.
+  Optional voice-only `recognition_id` is an opaque one-use STT result; session/turn/slot/text
+  binding rejects stale/replayed/mismatched receipts with a safe 422.
   Returns `{session_id, response_text, routing, state, trace, conversation_status, risk?}`.
   Invalid input 422; missing key/model 503; provider failure 502;
   timeout 504; ended/handoff session 409 (use a new ID); busy session pool 503.
@@ -281,6 +299,8 @@ Application traces expose concise reasons and measured latency, never hidden cha
   Optional `state` fields shown include active_scenario, scenario_stack and pending_scenarios.
 - `WS /api/v1/voice`: one-utterance PCM16 streaming STT; final event includes text,
   nullable language and `stt_after_commit_ms`. See `docs/VOICE_STREAMING_CONTRACT.md`.
+  Structured finals add safe `recognition` flags/timings and optional `recognition_id`,
+  with no canonical private value. Ordinary wire remains unchanged.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, conversation_signal, optional clarification_question and continuation.
   Insurance also has optional typed identifier_answer (provided/unavailable/correction/partial/
@@ -418,7 +438,9 @@ Frontend
 Streaming STT uses gpt-live-transcribe and local faster-whisper Silero VAD (voice extra).
 Browser TTS uses the backend response_language for backend synthesis and locale-safe
 OS/browser fallback. Configure `TTS_PROVIDER`, `BACKEND_TTS_MODEL`, `BACKEND_TTS_VOICE`,
+`BACKEND_TTS_VOICE_RU`, `BACKEND_TTS_VOICE_KK` (blank uses legacy voice),
 `BACKEND_TTS_INSTRUCTIONS_RU`, `BACKEND_TTS_INSTRUCTIONS_KK`; all settings stay server-side.
+STT models: `STREAMING_STT_MODEL=gpt-live-transcribe`, `STRUCTURED_STT_MODEL=gpt-transcribe`.
 
 PowerShell from repository root:
 
