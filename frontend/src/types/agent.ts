@@ -19,6 +19,7 @@ export interface AgentMessageRequest {
   text: string;
   scenario_mode?: ScenarioPackId;
   channel?: 'voice';
+  recognition_id?: string;
 }
 
 export type ScenarioPackId = 'insurance_manager' | 'product_promoter' | 'card_promoter' | 'loan_promoter' | 'fraud_security';
@@ -48,6 +49,7 @@ export interface VoiceTranscript {
   text: string;
   language?: 'ru' | 'kk' | 'mixed';
   stt_ms?: number;
+  recognition_id?: string;
 }
 
 export interface ConversationMessage {

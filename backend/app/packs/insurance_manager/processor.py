@@ -22,6 +22,9 @@ from app.packs.insurance_manager.response.lookup import IDENTIFIERS, remember
 from app.packs.insurance_manager.response.routing import RoutingReplyGenerator
 from app.packs.insurance_manager.scenarios.decision_policy import DecisionPolicy, PolicyResult
 from app.packs.insurance_manager.state import DialogState, DialogTurn, IdentificationState
+from app.speech.structured.context import SLOT_KINDS
+from app.speech.structured.normalization import pricing_region
+from app.speech.structured.repair import repair_question
 from app.tracing.models import LatencyRecord, TraceRecord
 
 
@@ -93,14 +96,17 @@ class InsuranceTurnProcessor:
         self.replies = replies
         self.composer = composer
 
-    async def process(self, previous: DialogState, text: str):
+    async def process(self, previous: DialogState, text: str, *, speech=None):
         started = perf_counter()
         session_id = previous.session_id
         router_started = perf_counter()
         routing_error = None
         # Snapshot isolation: a failed/misbehaving router cannot mutate stored state.
         try:
-            decision = await self.router.route(text, previous.model_copy(deep=True))
+            routing_text = text
+            if speech and speech.metadata.accepted and speech.kind != "region_code":
+                routing_text = "[получен ответ: " + speech.kind + "]"
+            decision = await self.router.route(routing_text, previous.model_copy(deep=True))
         except RouterOutputError as exc:
             # Do not repair, execute or invent a rejected business decision. The
             # application records a safe clarification outcome; repeated failures
@@ -145,6 +151,24 @@ class InsuranceTurnProcessor:
         decision.slots.update(alternatives)
         if alternatives:
             decision.conversation_signal = "answer"
+        if speech:
+            # Source-validated speech owns these values; no model digit repair is admitted.
+            for name in (set(SLOT_KINDS) - {"region"}) | (
+                {"region"} if speech.metadata.expected_kind == "region_code" else set()
+            ):
+                decision.slots.pop(name, None)
+            if speech.metadata.accepted:
+                name = "region" if speech.kind == "region_code" else speech.kind
+                expected_slot = (
+                    previous.conversation.expected_slot if previous.conversation else None
+                )
+                if SLOT_KINDS.get(expected_slot) == speech.kind:
+                    name = expected_slot
+                value = pricing_region(speech.value) if name == "region" else speech.value
+                definition = self.replies.slots[name]
+                if name == "region" or re.fullmatch(definition.pattern, value):
+                    decision.slots[name] = [value] if definition.type == "list" else value
+                    decision.conversation_signal = "answer"
         from app.packs.insurance_manager.agent.schemas import IdentifierAnswer
 
         unavailable = expected_unavailable(text, previous)
@@ -152,6 +176,20 @@ class InsuranceTurnProcessor:
             decision.identifier_answer = IdentifierAnswer(status="unavailable", field=unavailable)
         if decision.identifier_answer and decision.identifier_answer.status == "unavailable":
             decision.conversation_signal = "partial_answer"
+        if (
+            speech
+            and not speech.metadata.accepted
+            and not unavailable
+            and not (
+                decision.identifier_answer and decision.identifier_answer.status == "unavailable"
+            )
+            and previous.active_scenario
+            and all(
+                s.scenario_id in {previous.active_scenario, "SYS_UNCLEAR"}
+                for s in decision.scenarios
+            )
+        ):
+            return self._recognition_repair(previous, text, speech)
         duration = expected_trip_duration(text, previous)
         known_duration = duration or (
             previous.conversation.travel_duration_days if previous.conversation else None
@@ -201,6 +239,12 @@ class InsuranceTurnProcessor:
         except ValueError as exc:
             raise RouterOutputError() from exc
         state = self._transition(previous, decision, policy)
+        if state.active_scenario != previous.active_scenario and state.conversation:
+            state.conversation.recognition_attempts.clear()
+        if speech and speech.metadata.accepted and state.conversation:
+            expected_slot = previous.conversation.expected_slot if previous.conversation else None
+            if SLOT_KINDS.get(expected_slot) == speech.kind:
+                state.conversation.recognition_attempts.pop(expected_slot, None)
         if state.active_scenario and policy.outcome in {"accept", "continue"}:
             memory = state.identification
             answer = decision.identifier_answer
@@ -257,6 +301,10 @@ class InsuranceTurnProcessor:
         if reply.handoff:
             state.conversation_status = "handoff"
         response = reply.text
+        if self.composer is None and state.conversation:
+            state.conversation.expected_slot = reply.expected_slot
+            state.conversation.expected_answer_type = "slot" if reply.expected_slot else None
+            state.conversation.last_question = reply.text if reply.expected_slot else None
         business_ms = (perf_counter() - response_started) * 1000
         composer_ms, composer_error = None, None
         if self.composer is not None and state.conversation is not None:
@@ -378,6 +426,7 @@ class InsuranceTurnProcessor:
             ),
             routing_error=routing_error,
             composer_error=composer_error,
+            recognition=speech.metadata if speech else None,
             conversation_act=state.conversation.last_assistant_act if state.conversation else None,
             expected_answer_type=(
                 state.conversation.expected_answer_type if state.conversation else None
@@ -408,6 +457,93 @@ class InsuranceTurnProcessor:
             ),
         )
         return state, decision, trace, reply, completed_scenario, collected_data
+
+    def _recognition_repair(self, previous, text, speech):
+        from app.packs.insurance_manager.response.routing import RoutingReplyResult
+
+        state = previous.model_copy(deep=True)
+        meta = state.conversation
+        kind = speech.metadata.expected_kind
+        slot = meta.expected_slot
+        attempts = min(2, meta.recognition_attempts.get(slot, 0) + 1)
+        meta.recognition_attempts[slot] = attempts
+        policy = PolicyResult(
+            outcome="continue",
+            scenario_ids=[state.active_scenario],
+            consecutive_low_confidence=0,
+            reason="Structured speech recognition failed; no lookup attempted",
+        )
+        decision = RouterDecision(
+            language=state.language or state.response_language,
+            response_language=state.response_language,
+            scenarios=[
+                dict(
+                    scenario_id="SYS_UNCLEAR",
+                    confidence=0,
+                    reason="Structured speech requires repair",
+                )
+            ],
+        )
+        if attempts == 1:
+            response = repair_question(kind, state.response_language)
+            reply = RoutingReplyResult(text=response, expected_slot=slot)
+            state.conversation_status = "awaiting_user"
+        else:
+            # Recognition exhaustion excludes this field from lookup collection;
+            # failed lookup fingerprints/counters are untouched.
+            if slot in IDENTIFIERS:
+                remember(state.identification.unavailable_fields, slot)
+                reply = self.replies.generate_result(state, policy, decision)
+                state.identification = reply.identification
+            else:
+                reply = RoutingReplyResult(text="", handoff=True)
+            if not reply.expected_slot or reply.expected_slot == slot or reply.handoff:
+                response = (
+                    "Не удалось надёжно распознать данные. Подготовлю обращение для специалиста."
+                    if state.response_language == "ru"
+                    else "Деректерді сенімді тану мүмкін болмады. Маманға өтініш дайындаймын."
+                )
+                state.conversation_status = "handoff"
+                reply.handoff = True
+                reply.expected_slot = None
+                from app.packs.insurance_manager.tools.capabilities import ManagerSummary
+
+                reply.manager_summary = reply.manager_summary or ManagerSummary(
+                    reason="specialist_required",
+                    scenario=state.active_scenario,
+                    collected_fields=sorted(state.slots),
+                    unavailable_fields=list(state.identification.unavailable_fields),
+                    known_client=bool(state.client_id),
+                    next_required_action="verify_spoken_identifier",
+                )
+                state.manager_summary = reply.manager_summary
+            else:
+                response = (
+                    "Этот номер не удалось распознать. "
+                    if state.response_language == "ru"
+                    else "Бұл нөмірді тану мүмкін болмады. "
+                ) + reply.text
+                state.conversation_status = "awaiting_user"
+        reply.text = response
+        meta.last_question = response if not reply.handoff else None
+        meta.expected_slot = reply.expected_slot
+        meta.expected_answer_type = "slot" if reply.expected_slot else None
+        meta.last_assistant_act = "handoff" if reply.handoff else "ask_slot"
+        meta.phase = "handoff" if reply.handoff else "collect"
+        state = append_turn(state, DialogTurn(role="user", text=text))
+        state = append_turn(state, DialogTurn(role="assistant", text=response))
+        trace = TraceRecord(
+            turn=state.turn_number,
+            transcript=text,
+            recognition=speech.metadata,
+            expected_slot=meta.expected_slot,
+            conversation_act=meta.last_assistant_act,
+            conversation_status=state.conversation_status,
+            handoff=reply.handoff,
+            reason=policy.reason,
+            active_scenario=state.active_scenario,
+        )
+        return state, decision, trace, reply, None, dict(state.slots)
 
     def _transition(
         self, previous: DialogState, decision: RouterDecision, policy: PolicyResult

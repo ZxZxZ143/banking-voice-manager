@@ -244,7 +244,20 @@ class PhoneRuntime:
             if vonage:
                 logger.info("phone stt_stream_started call_id=%s", call.session.call_id)
             async with asyncio.timeout(150):
-                await self.stt.run(capture.queue.get, emit)
+                messages = self.agent.messages
+                contextual = getattr(self.stt, "run_with_context", None)
+                snapshot = getattr(messages, "transcription_snapshot", None)
+                if contextual and snapshot:
+                    context, turn, slot = snapshot(call.session.session_id)
+
+                    def record(text, outcome):
+                        return messages.record_recognition(
+                            call.session.session_id, turn, slot, text, outcome
+                        )
+
+                    await contextual(capture.queue.get, emit, context, record)
+                else:
+                    await self.stt.run(capture.queue.get, emit)
         except asyncio.CancelledError:
             raise
         except Exception as error:
@@ -317,7 +330,7 @@ class PhoneRuntime:
         language = event.get("language")
         if language in ("ru", "kk", "mixed"):
             call.session.language = language
-        task = asyncio.create_task(self._turn(call, text, timing))
+        task = asyncio.create_task(self._turn(call, text, timing, event.get("recognition_id")))
         call.turn_task = task
 
         def clear_turn(done: asyncio.Task) -> None:
@@ -349,7 +362,7 @@ class PhoneRuntime:
         # Adapter fallback only; no language classification or business routing.
         return session.language if session.language in ("ru", "kk", "mixed") else "ru"
 
-    async def _turn(self, call: _Call, text: str, timing: _TurnTiming) -> None:
+    async def _turn(self, call: _Call, text: str, timing: _TurnTiming, recognition_id=None) -> None:
         started = timing.final_at
         try:
             async with asyncio.timeout(self.turn_timeout_seconds):
@@ -362,7 +375,7 @@ class PhoneRuntime:
                     (agent_started - started) * 1000,
                     "stt_final",
                 )
-                response = await self.agent.respond(call.session.session_id, text)
+                response = await self.agent.respond(call.session.session_id, text, recognition_id)
                 agent_done = perf_counter()
                 if not self._current(call):
                     return

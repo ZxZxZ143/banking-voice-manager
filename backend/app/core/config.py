@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_router_model: str | None = None
     openai_response_model: str | None = None
+    streaming_stt_model: str = Field(default="gpt-live-transcribe", min_length=1, max_length=100)
+    structured_stt_model: str = Field(default="gpt-transcribe", min_length=1, max_length=100)
     demo_test_phone: SecretStr | None = None
     router_timeout_seconds: float = Field(default=45.0, gt=0, le=120)
     risk_timeout_seconds: float = Field(default=8.0, gt=0, le=15)
@@ -39,18 +41,22 @@ class Settings(BaseSettings):
     tts_provider: Literal["auto", "openai", "browser"] = "auto"
     backend_tts_model: str | None = "gpt-4o-mini-tts"
     backend_tts_voice: str | None = "cedar"
+    backend_tts_voice_ru: str | None = Field(default=None, max_length=100)
+    backend_tts_voice_kk: str | None = Field(default=None, max_length=100)
     backend_tts_instructions_ru: str = Field(
         default=(
-            "Говорите по-русски, как спокойный профессиональный консультант. "
-            "Естественный разговорный темп, короткие паузы, чёткие числа и проценты. "
+            "Говорите по-русски, как спокойная профессиональная консультантка банка и страховой. "
+            "Тёплая разговорная подача, мягкий тембр, естественный ритм, умеренный темп. "
+            "Короткие естественные паузы; числа произносите ясно, без преувеличенной артикуляции. "
             "Без дикторской подачи и преувеличенных эмоций."
         ),
         max_length=1000,
     )
     backend_tts_instructions_kk: str = Field(
         default=(
-            "Қазақ тілінде сабырлы кәсіби кеңесші ретінде сөйлеңіз. "
-            "Табиғи қарқын, қысқа үзілістер, сандар мен пайыздарды анық айтыңыз. "
+            "Қазақ тілінде банк пен сақтандырудың сабырлы кәсіби кеңесшісі ретінде сөйлеңіз. "
+            "Жылы әңгімелесу мәнері, жұмсақ әйелге тән үн, табиғи сөйлем ырғағы, орташа қарқын. "
+            "Қысқа табиғи үзілістер; сандарды анық, бірақ шамадан тыс буындамай айтыңыз. "
             "Дикторлық мәнер мен әсіре эмоциясыз."
         ),
         max_length=1000,

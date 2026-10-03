@@ -35,9 +35,10 @@ class AgentBridge:
     def __init__(self, messages: AgentProcessor):
         self.messages = messages
 
-    async def respond(self, session_id: str, text: str) -> AgentResponse:
+    async def respond(self, session_id: str, text: str, recognition_id=None) -> AgentResponse:
         # The same MessageService.process used by POST /api/message, without HTTP loopback.
-        value = await self.messages.process(session_id, text, channel="voice")
+        options = {"recognition_id": recognition_id} if recognition_id else {}
+        value = await self.messages.process(session_id, text, channel="voice", **options)
         if isinstance(value, BaseModel):
             value = value.model_dump(mode="json")
         response = AgentResponse.model_validate(value)

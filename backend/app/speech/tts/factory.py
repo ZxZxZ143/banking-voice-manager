@@ -16,6 +16,8 @@ def build_tts_provider(settings):
         api_key=settings.openai_api_key.get_secret_value(),
         model=settings.backend_tts_model,
         voice=settings.backend_tts_voice,
+        voice_ru=settings.backend_tts_voice_ru,
+        voice_kk=settings.backend_tts_voice_kk,
         instructions_ru=settings.backend_tts_instructions_ru,
         instructions_kk=settings.backend_tts_instructions_kk,
     )

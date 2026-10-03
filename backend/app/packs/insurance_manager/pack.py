@@ -32,6 +32,8 @@ from app.packs.insurance_manager.state import (
 )
 from app.packs.insurance_manager.tools.capabilities import ActionCapabilities, ManagerSummary
 from app.packs.insurance_manager.tools.registry import ActionRegistry
+from app.speech.structured.context import context_for_slot
+from app.speech.structured.recognition import resolve_recognition
 from app.tracing.models import TraceRecord
 
 INSURANCE_MANIFEST = ScenarioManifest(
@@ -156,6 +158,8 @@ class InsuranceManagerPack:
     @staticmethod
     def redact_trace(trace, slots=None):
         trace.transcript = redact_text(trace.transcript, slots)
+        if trace.recognition and trace.recognition.expected_kind not in {"none", "region_code"}:
+            trace.transcript = "[произнесённый номер скрыт]"
         trace.reason = redact_text(trace.reason, slots)
         trace.slots = safe_slots(trace.slots)
         trace.source_keys = [redact_text(key, slots) for key in trace.source_keys]
@@ -168,6 +172,14 @@ class InsuranceManagerPack:
         if type(context) is not InsuranceScenarioContext:
             raise ValueError("Insurance Manager requires its own scenario context")
         previous = context.to_dialog(global_context)
+        speech = global_context.speech_answer
+        if speech is None and global_context.channel == "voice":
+            stt_context = context_for_slot(
+                previous.conversation.expected_slot if previous.conversation else None,
+                previous.response_language,
+            )
+            if stt_context.expected_kind != "none":
+                speech = await resolve_recognition(text, b"", stt_context)
         (
             state,
             decision,
@@ -175,7 +187,7 @@ class InsuranceManagerPack:
             reply,
             completed_flow,
             collected_data,
-        ) = await self.processor.process(previous, text)
+        ) = await self.processor.process(previous, text, speech=speech)
         result = InsuranceResult(
             scenario_id=(
                 decision.scenarios[0].scenario_id
@@ -202,6 +214,11 @@ class InsuranceManagerPack:
         }
         for item in public_state.history:
             item.text = redact_text(item.text, state.slots)
+        if speech and speech.metadata.expected_kind not in {"none", "region_code"}:
+            for item in reversed(public_state.history):
+                if item.role == "user":
+                    item.text = "[произнесённый номер скрыт]"
+                    break
         public_decision = decision.model_copy(deep=True)
         public_decision.slots = safe_slots(decision.slots)
         for item in public_decision.scenarios:

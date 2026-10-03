@@ -17,6 +17,8 @@ from app.risk.guard import guidance_turn
 from app.risk.models import RiskAssessment, RiskContext
 from app.risk.privacy import redact_authentication
 from app.risk.service import RiskIntelligence, RiskRun
+from app.speech.structured.context import context_for_slot
+from app.speech.structured.recognition import RecognitionReceipts
 from app.tracing.collector import TraceCollector
 from app.tracing.models import PackSwitch, TraceRecord
 
@@ -26,6 +28,10 @@ class SessionClosedError(Exception):
 
 
 class ScenarioOpeningError(Exception):
+    pass
+
+
+class SpeechReceiptError(Exception):
     pass
 
 
@@ -57,6 +63,24 @@ class MessageService:
         self.selector = None
         self.risk = risk
         self.events = events
+        self.recognitions = RecognitionReceipts()
+
+    def transcription_snapshot(self, session_id):
+        conversation = self.dialogs.get_conversation(session_id)
+        if (
+            conversation
+            and conversation.active_scenario_pack == "insurance_manager"
+            and conversation.global_context.conversation_status not in {"ended", "handoff"}
+        ):
+            entry = conversation.scenario_contexts.get("insurance_manager")
+            meta = getattr(entry.state, "conversation", None) if entry else None
+            slot = meta.expected_slot if meta else None
+            language = getattr(entry.state, "response_language", None) if entry else None
+            return context_for_slot(slot, language), conversation.global_context.turn_number, slot
+        return context_for_slot(None), 0, None
+
+    def record_recognition(self, session_id, turn, slot, text, outcome):
+        return self.recognitions.put(session_id, turn, slot, text, outcome)
 
     async def end_session(self, session_id: str) -> None:
         """Close a transport session without inventing another customer/Agent turn."""
@@ -80,6 +104,7 @@ class MessageService:
         *,
         start_scenario: bool = False,
         channel: str = "text",
+        recognition_id: str | None = None,
     ) -> MessageResult:
         started = perf_counter()
         if scenario_mode is not None:
@@ -93,12 +118,23 @@ class MessageService:
                 raise SessionClosedError("Session is closed; use a new session_id")
             previous_pack = conversation.active_scenario_pack
             pack = self.registry.get(scenario_mode or previous_pack)
+            speech_answer = None
+            if recognition_id:
+                _, expected_turn, expected_slot = self.transcription_snapshot(session_id)
+                if channel != "voice" or pack.manifest.id != "insurance_manager":
+                    raise SpeechReceiptError()
+                speech_answer = self.recognitions.take(
+                    recognition_id, session_id, expected_turn, expected_slot, text
+                )
+                if speech_answer is None:
+                    raise SpeechReceiptError()
             switch_source = "explicit"
             routed_text = redact_authentication(text)[:10000]
             global_context.channel = channel
             # Assistant changes require explicit API/UI selection. Never forward a turn.
             conversation.pending_switch = None
             entry = self.lifecycle.activate(conversation, pack.manifest.id, preserve_completed=True)
+            global_context.speech_answer = speech_answer
             own_risk_context = getattr(entry.state, "risk_context", None)
             if own_risk_context:
                 routed_text = redact_authentication(
@@ -149,6 +185,7 @@ class MessageService:
             if type(turn.result) is not pack.output_schema:
                 raise ValueError("Scenario returned an invalid result schema")
             entry.state = turn.context.model_copy(deep=True)
+            global_context.speech_answer = None
             entry.result = turn.result.model_copy(deep=True)
             entry.public_state = turn.public_state.model_copy(deep=True)
             if self.risk:
@@ -174,6 +211,8 @@ class MessageService:
             if turn.complete_pack or turn.result.status in ("handoff", "ended"):
                 self.lifecycle.complete(conversation)
             trace = turn.trace.model_copy(deep=True)
+            if speech_answer:
+                trace.recognition = speech_answer.metadata
             trace.session_id = session_id
             trace.turn = global_context.turn_number
             trace.turn_number = global_context.turn_number

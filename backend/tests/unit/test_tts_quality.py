@@ -63,9 +63,10 @@ def test_backend_selection_never_substitutes_mock_or_unvalidated_local(provider,
     assert isinstance(actual, OpenAITTSProvider) is expected
 
 
-@pytest.mark.parametrize("language", ["ru", "kk"])
+@pytest.mark.parametrize("language", ["ru", "kk", "mixed"])
+@pytest.mark.parametrize("overrides", [False, True])
 def test_openai_receives_normalized_text_and_configured_language_instructions(
-    monkeypatch, language
+    monkeypatch, language, overrides
 ):
     client = MagicMock()
     client.__aenter__ = AsyncMock(return_value=client)
@@ -87,6 +88,8 @@ def test_openai_receives_normalized_text_and_configured_language_instructions(
         api_key="fixture",
         model="gpt-4o-mini-tts",
         voice="marin",
+        voice_ru="nova" if overrides else None,
+        voice_kk="shimmer" if overrides else None,
         instructions_ru="RU configuration",
         instructions_kk="KK configuration",
     )
@@ -94,9 +97,26 @@ def test_openai_receives_normalized_text_and_configured_language_instructions(
     assert result.language == language
     kwargs = client.audio.speech.with_streaming_response.create.call_args.kwargs
     assert kwargs["input"] == prepare_speech("10,47%", language)
-    assert kwargs["instructions"] == f"{language.upper()} configuration"
-    assert kwargs["voice"] == "marin"
+    if language != "mixed":
+        assert kwargs["instructions"] == f"{language.upper()} configuration"
+    expected_voice = (
+        {"ru": "nova", "kk": "shimmer"}.get(language, "marin") if overrides else "marin"
+    )
+    assert kwargs["voice"] == expected_voice
     assert provider._active == 0
+
+
+def test_tts_factory_passes_language_voices_and_blank_uses_legacy():
+    provider = build_tts_provider(
+        Settings(
+            _env_file=None,
+            openai_api_key="fixture",
+            backend_tts_voice="coral",
+            backend_tts_voice_ru="nova",
+            backend_tts_voice_kk="",
+        )
+    )
+    assert provider._voices == {"ru": "nova", "kk": "coral"}
 
 
 def test_provider_cancellation_closes_client_and_releases_capacity(monkeypatch):

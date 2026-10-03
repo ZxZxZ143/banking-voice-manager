@@ -18,6 +18,8 @@ class OpenAITTSProvider:
         api_key: str | None,
         model: str,
         voice: str,
+        voice_ru: str | None = None,
+        voice_kk: str | None = None,
         timeout_seconds: float = 30.0,
         max_retries: int = 1,
         instructions_ru: str | None = None,
@@ -32,6 +34,10 @@ class OpenAITTSProvider:
         self._api_key = api_key
         self._model = model
         self._voice = voice
+        self._voices = {
+            "ru": (voice_ru or "").strip() or voice,
+            "kk": (voice_kk or "").strip() or voice,
+        }
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._instructions = {"ru": instructions_ru, "kk": instructions_kk}
@@ -68,7 +74,7 @@ class OpenAITTSProvider:
                     # Speech follows the input text. The API has no language argument.
                     async with client.audio.speech.with_streaming_response.create(
                         model=self._model,
-                        voice=self._voice,
+                        voice=self._voices.get(request.language, self._voice),
                         input=speech_text,
                         response_format="mp3",
                         **options,

@@ -6,11 +6,14 @@ import json
 from websockets.asyncio.client import connect
 
 from app.speech.audio import PCM_SAMPLE_RATE
+from app.speech.structured.context import TranscriptionContext
+from app.speech.structured.recognition import BoundedTranscriber
 from app.speech.stt.endpointing import SpeechEndDetector
 from app.speech.stt.streaming import EmitEvent, ReceiveInput, relay_stream
 
 
-async def configure_transcription(upstream):
+async def configure_transcription(upstream, context=None, model="gpt-live-transcribe"):
+    context = context or TranscriptionContext()
     await upstream.send(
         json.dumps(
             {
@@ -21,13 +24,11 @@ async def configure_transcription(upstream):
                         "input": {
                             "format": {"type": "audio/pcm", "rate": PCM_SAMPLE_RATE},
                             "transcription": {
-                                "model": "gpt-live-transcribe",
+                                "model": model,
                                 "languages": ["kk", "ru"],
-                                "delay": "medium",
-                                "prompt": (
-                                    "Insurance customer speech in Kazakh "
-                                    "and Russian, sometimes mixed."
-                                ),
+                                "delay": context.accuracy_mode,
+                                "prompt": context.prompt,
+                                "keywords": list(context.keywords),
                             },
                             "turn_detection": None,
                         }
@@ -46,15 +47,27 @@ async def configure_transcription(upstream):
 
 
 class OpenAIStreamingSTT:
-    def __init__(self, *, api_key: str, pause_ms: int = 2500):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        pause_ms: int = 2500,
+        model: str = "gpt-live-transcribe",
+        second_pass_model: str = "gpt-transcribe",
+    ):
         if not api_key.strip():
             raise ValueError("Streaming STT requires a server API key.")
         if type(pause_ms) is not int or not 500 <= pause_ms <= 5000:
             raise ValueError("pause_ms must be between 500 and 5000.")
         self._api_key = api_key
         self._pause_ms = pause_ms
+        self._model = model
+        self._second_pass = BoundedTranscriber(api_key, second_pass_model)
 
     async def run(self, receive: ReceiveInput, emit: EmitEvent) -> None:
+        await self.run_with_context(receive, emit, TranscriptionContext())
+
+    async def run_with_context(self, receive, emit, context, record_recognition=None):
         async with asyncio.timeout(150):
             detector = await asyncio.to_thread(SpeechEndDetector, self._pause_ms)
             async with connect(
@@ -64,5 +77,14 @@ class OpenAIStreamingSTT:
                 close_timeout=3,
                 max_size=2_000_000,
             ) as upstream:
-                await configure_transcription(upstream)
-                await relay_stream(receive, emit, upstream, detector, phone_timing=True)
+                await configure_transcription(upstream, context, self._model)
+                await relay_stream(
+                    receive,
+                    emit,
+                    upstream,
+                    detector,
+                    phone_timing=True,
+                    context=context,
+                    second_pass=self._second_pass,
+                    record_recognition=record_recognition,
+                )

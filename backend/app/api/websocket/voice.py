@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from websockets.asyncio.client import connect
 
 from app.speech.audio import PCM_CHANNELS, PCM_SAMPLE_RATE
+from app.speech.structured.recognition import BoundedTranscriber
 from app.speech.stt.endpointing import SpeechEndDetector
 from app.speech.stt.streaming import StreamInput, relay_stream
 from app.speech.stt.streaming_provider import configure_transcription
@@ -15,7 +17,7 @@ from app.speech.stt.streaming_provider import configure_transcription
 router = APIRouter()
 
 
-async def relay(websocket: WebSocket, upstream, detector: SpeechEndDetector):
+async def relay(websocket: WebSocket, upstream, detector: SpeechEndDetector, **options):
     async def receive():
         message = await websocket.receive()
         if message["type"] == "websocket.disconnect":
@@ -30,7 +32,7 @@ async def relay(websocket: WebSocket, upstream, detector: SpeechEndDetector):
             raise ValueError("Unknown control message")
         return StreamInput(kind)
 
-    await relay_stream(receive, websocket.send_json, upstream, detector)
+    await relay_stream(receive, websocket.send_json, upstream, detector, **options)
 
 
 @router.websocket("/api/v1/voice")
@@ -75,6 +77,12 @@ async def voice(websocket: WebSocket) -> None:
             ):
                 raise ValueError("Invalid stream configuration")
             detector = await asyncio.to_thread(SpeechEndDetector, pause)
+            messages = websocket.app.state.services.messages
+            context, turn, slot = messages.transcription_snapshot(config["session_id"])
+
+            def record(text, outcome):
+                return messages.record_recognition(config["session_id"], turn, slot, text, outcome)
+
             async with connect(
                 "wss://api.openai.com/v1/realtime?intent=transcription",
                 additional_headers={
@@ -84,9 +92,18 @@ async def voice(websocket: WebSocket) -> None:
                 close_timeout=3,
                 max_size=2_000_000,
             ) as upstream:
-                await configure_transcription(upstream)
+                await configure_transcription(upstream, context, settings.streaming_stt_model)
                 await websocket.send_json({"type": "ready", "pause_ms": pause})
-                await relay(websocket, upstream, detector)
+                await relay(
+                    websocket,
+                    upstream,
+                    detector,
+                    context=context,
+                    second_pass=BoundedTranscriber(
+                        settings.openai_api_key.get_secret_value(), settings.structured_stt_model
+                    ),
+                    record_recognition=record,
+                )
     except WebSocketDisconnect:
         pass
     except ImportError:
@@ -103,7 +120,8 @@ async def voice(websocket: WebSocket) -> None:
             )
         except Exception:
             pass
-    except Exception:
+    except Exception as error:
+        logging.getLogger(__name__).warning("voice_failed exception_type=%s", type(error).__name__)
         try:
             await websocket.send_json(
                 {

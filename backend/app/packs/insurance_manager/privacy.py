@@ -2,6 +2,8 @@
 
 import re
 
+from app.speech.structured.normalization import HUNDREDS, LETTERS, NUMBERS, TENS
+
 SENSITIVE_SLOTS = {
     "phone",
     "iin",
@@ -31,6 +33,18 @@ def redact_local_phone(value, phone):
 
 
 def redact_text(text: str, slots: dict | None = None) -> str:
+    tokens = re.findall(r"\w+", text.casefold())
+    number_lexicon = {**NUMBERS, **TENS, **HUNDREDS, "жүз": 100}
+    spoken_size = sum(len(str(number_lexicon[word])) for word in tokens if word in number_lexicon)
+    literal_size = sum(len(word) for word in tokens if word.isascii() and word.isdigit())
+    letter_count = sum(
+        1 if word in LETTERS else len(word) if re.fullmatch(r"[a-zавсенкмортху]{1,3}", word) else 0
+        for word in tokens
+    )
+    if spoken_size and spoken_size + literal_size >= 3 and letter_count >= 2:
+        return "[произнесённый номер скрыт]"
+    if spoken_size >= 6 or (spoken_size and spoken_size + literal_size >= 6):
+        return "[произнесённый номер скрыт]"
     number_words = {
         "ноль",
         "нуль",
@@ -64,8 +78,8 @@ def redact_text(text: str, slots: dict | None = None) -> str:
                 if isinstance(item, str) and item:
                     text = re.sub(re.escape(item), "[номер скрыт]", text, flags=re.I)
     text = re.sub(r"(?<!\d)(?:\+?\d[\s()-]*){10,12}(?!\d)", "[номер скрыт]", text)
-    text = re.sub(r"\b\d{3}[A-ZА-Я]{3}\d{2}\b", "[номер скрыт]", text, flags=re.I)
-    return re.sub(r"\b[A-Z]{2,}(?:-[A-Z]+)*-\d{3,}\b", "[номер скрыт]", text, flags=re.I)
+    text = re.sub(r"\b\d{3}(?:[\s-]*[A-ZА-Я]){2,3}[\s-]*\d{2}\b", "[номер скрыт]", text, flags=re.I)
+    return re.sub(r"\b[A-Z]{2,}(?:[\s-]+[A-Z]+)*[\s-]+\d{3,}\b", "[номер скрыт]", text, flags=re.I)
 
 
 def safe_slots(slots: dict) -> dict:

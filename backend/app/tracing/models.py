@@ -5,6 +5,7 @@ from pydantic import Field, JsonValue
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
 from app.risk.models import RiskAssessment
+from app.speech.structured.recognition import RecognitionMetadata
 from app.tracing.selections import ScenarioScore, ScenarioSelection
 
 Milliseconds = Annotated[float, Field(ge=0, allow_inf_nan=False)]
@@ -46,6 +47,7 @@ class TraceRecord(Contract):
     reason: str = Field(default="", max_length=500)
     routing_error: str | None = None
     composer_error: str | None = None
+    recognition: RecognitionMetadata | None = Field(default=None, exclude_if=lambda v: v is None)
     conversation_act: str | None = None
     expected_answer_type: str | None = None
     expected_slot: str | None = None

@@ -4,6 +4,30 @@ import { createVoiceInputController, finalVoiceTranscript } from '../src/compone
 import { ConversationRuntime } from '../src/runtime/ConversationRuntime.ts';
 import { MockAgentClient } from '../src/services/agentClient.ts';
 
+test('voice receipts preserve the raw transcript and are omitted from text requests', async () => {
+  const requests = [];
+  const runtime = new ConversationRuntime({ sendMessage: async request => {
+    requests.push(request);
+    return { response_text: 'Ответ', conversation_status: 'awaiting_user' };
+  } }, { speak: async () => ({}), stop() {} });
+  await runtime.startConversation();
+  const receipt = 'a2f1d892-25ac-4a8c-b9dd-e395f84bb951';
+  const raw = 'регион ноль два';
+  const transcript = finalVoiceTranscript({ type: 'utterance.final', text: raw,
+    recognition_id: receipt, recognition: { accepted: true, value: 'untrusted' } });
+  assert.equal(transcript.text, raw);
+  assert.equal(transcript.recognition_id, receipt);
+  await runtime.handleTranscript(transcript);
+  assert.equal(requests.at(-1).text, raw);
+  assert.equal(requests.at(-1).recognition_id, receipt);
+  assert.equal(requests.at(-1).channel, 'voice');
+  await runtime.sendText('Регион Алматы');
+  assert.equal(requests.at(-1).recognition_id, undefined);
+  assert.equal(finalVoiceTranscript({ type: 'utterance.final', text: raw,
+    recognition_id: 'injected-private-value' }).recognition_id, undefined);
+  runtime.dispose();
+});
+
 test('only a nonempty final event becomes a runtime transcript', () => {
   assert.equal(finalVoiceTranscript({ type: 'transcript.partial', text: 'часть' }), null);
   assert.equal(finalVoiceTranscript({ type: 'empty' }), null);

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 
 from app.agent.errors import RouterConfigurationError, RouterError
-from app.conversation.service import ScenarioOpeningError, SessionClosedError
+from app.conversation.service import ScenarioOpeningError, SessionClosedError, SpeechReceiptError
 from app.conversation.store import SessionCapacityError
 from app.conversation.wire import PlatformMessageResponse
 from app.core.contracts import Contract
@@ -49,6 +49,7 @@ class MessageRequest(Contract):
     text: str = Field(min_length=1, max_length=10000)
     scenario_mode: str | None = Field(default=None, min_length=1, max_length=64)
     channel: Literal["text", "voice"] = "text"
+    recognition_id: str | None = Field(default=None, pattern=r"^[0-9a-f-]{36}$")
 
     @field_validator("session_id", "text")
     @classmethod
@@ -69,7 +70,12 @@ class MessageRequest(Contract):
 )
 async def message(payload: MessageRequest, request: Request):
     return await _process(
-        request, payload.session_id, payload.text, payload.scenario_mode, channel=payload.channel
+        request,
+        payload.session_id,
+        payload.text,
+        payload.scenario_mode,
+        channel=payload.channel,
+        recognition_id=payload.recognition_id,
     )
 
 
@@ -97,11 +103,35 @@ async def start_scenario(payload: ScenarioStartRequest, request: Request):
 
 
 async def _process(
-    request, session_id, text, scenario_mode, *, start_scenario=False, channel="text"
+    request,
+    session_id,
+    text,
+    scenario_mode,
+    *,
+    start_scenario=False,
+    channel="text",
+    recognition_id=None,
 ):
     try:
         return await request.app.state.services.messages.process(
-            session_id, text, scenario_mode, start_scenario=start_scenario, channel=channel
+            session_id,
+            text,
+            scenario_mode,
+            start_scenario=start_scenario,
+            channel=channel,
+            recognition_id=recognition_id,
+        )
+    except SpeechReceiptError:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": {
+                    "code": "speech_receipt_invalid",
+                    "message": (
+                        "Recognition expired or conversation changed. Repeat or type the answer."
+                    ),
+                }
+            },
         )
     except ScenarioOpeningError as exc:
         return JSONResponse(

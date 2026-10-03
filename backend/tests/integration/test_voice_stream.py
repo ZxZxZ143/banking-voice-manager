@@ -25,12 +25,15 @@ class FixtureDetector:
 
 
 class FixtureUpstream:
-    def __init__(self, *, complete=True, provider_error=False):
+    def __init__(
+        self, *, complete=True, provider_error=False, transcript="Test transcript fixture"
+    ):
         self.sent = []
         self.events = asyncio.Queue()
         self.complete = complete
         self.provider_error = provider_error
         self.closed = False
+        self.transcript = transcript
 
     async def send(self, raw):
         event = json.loads(raw)
@@ -50,7 +53,7 @@ class FixtureUpstream:
             self.events.put_nowait(
                 {
                     "type": "conversation.item.input_audio_transcription.completed",
-                    "transcript": "Test transcript fixture",
+                    "transcript": self.transcript,
                     "item_id": "offline-item",
                 }
             )
@@ -150,6 +153,93 @@ def test_stream_configuration_partial_commit_and_final_do_not_route(monkeypatch,
     assert config["transcription"]["languages"] == ["kk", "ru"]
     assert config["turn_detection"] is None
     assert sum(event["type"] == "input_audio_buffer.commit" for event in upstream.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "slot,text,canonical,scenario",
+    [
+        ("region", "регион ноль два", "almaty", "SC01"),
+        (
+            "phone",
+            "восемь семь семь семь ноль ноль ноль один два три четыре",
+            "+77770001234",
+            "SC25",
+        ),
+        (
+            "iin",
+            "ноль ноль ноль один ноль один три ноль ноль ноль ноль ноль",
+            "000101300000",
+            "SC25",
+        ),
+        ("policy_number", "эс кью о гэ пэ о ноль ноль ноль один два три", "SQ-OGPO-000123", "SC25"),
+        ("vehicle_plate", "сто двадцать три эй би си ноль два", "123ABC02", "SC01"),
+    ],
+)
+def test_voice_receipt_reaches_correct_slot_and_progresses(
+    monkeypatch, slot, text, canonical, scenario
+):
+    from app.packs.insurance_manager.agent.schemas import RouterDecision
+    from app.packs.insurance_manager.state import ConversationState, DialogState
+
+    class RouterFixture:
+        async def route(self, text, state):
+            return RouterDecision(
+                language="ru",
+                scenarios=[
+                    dict(scenario_id=state.active_scenario, confidence=0.95, reason="Fixture")
+                ],
+            )
+
+    config = Settings(_env_file=None, openai_api_key="fixture", enable_dev_stand=False)
+    upstream, _ = patch_provider(monkeypatch, FixtureUpstream(transcript=text))
+    session_id = str(uuid4())
+    with TestClient(create_app(config, router_override=RouterFixture())) as client:
+        services = client.app.state.services
+        services.dialogs.save(
+            DialogState(
+                session_id=session_id,
+                active_scenario=scenario,
+                slots={"vehicle_type": "car"},
+                conversation=ConversationState(expected_slot=slot),
+            )
+        )
+        with client.websocket_connect(
+            "/api/v1/voice", headers={"origin": "http://localhost:5173"}
+        ) as socket:
+            start(socket, session_id=session_id)
+            assert socket.receive_json()["type"] == "ready"
+            socket.send_bytes(bytes(4800))
+            receive_until(socket, "transcript.partial")
+            socket.send_json({"type": "finish"})
+            final = receive_until(socket, "utterance.final")[-1]
+            assert final["text"] == text
+            assert final["recognition"]["accepted"]
+            assert not final["recognition"]["second_pass_used"]
+        response = client.post(
+            "/api/message",
+            json={
+                "session_id": session_id,
+                "text": text,
+                "channel": "voice",
+                "recognition_id": final["recognition_id"],
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert services.dialogs.get(session_id).slots[slot] == canonical
+        assert services.dialogs.get(session_id).conversation.expected_slot != slot
+        assert response.json()["trace"]["recognition"]["accepted"]
+        replay = client.post(
+            "/api/message",
+            json={
+                "session_id": session_id,
+                "text": text,
+                "channel": "voice",
+                "recognition_id": final["recognition_id"],
+            },
+        )
+        assert replay.status_code == 422
+        assert "value" not in final["recognition"]
+        assert upstream.sent[0]["session"]["audio"]["input"]["transcription"]["delay"] == "high"
 
 
 def test_manual_finish_without_speech_is_empty_and_never_commits(monkeypatch, client):

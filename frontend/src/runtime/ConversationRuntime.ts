@@ -233,6 +233,7 @@ export class ConversationRuntime {
           scenario_mode: requestedPack ?? this.snapshot.activePack})
         : this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text,
         ...(voice ? { channel: 'voice' as const } : {}),
+        ...(voice && transcript.recognition_id ? { recognition_id: transcript.recognition_id } : {}),
         ...(requestedPack ? { scenario_mode: requestedPack } : {}),
       })).then(value => ({value}), error => ({error}));
       let spokenPrecaution = '';

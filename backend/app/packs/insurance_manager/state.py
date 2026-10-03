@@ -40,6 +40,7 @@ class ConversationState(Contract):
     expected_answer_type: str | None = None
     expected_slot: str | None = None
     repair_attempts: int = Field(default=0, ge=0)
+    recognition_attempts: dict[str, int] = Field(default_factory=dict, max_length=9)
     phase: Literal["discover", "collect", "resolve", "confirm", "handoff"] = "discover"
     acknowledged_information: list[str] = Field(default_factory=list, max_length=8)
     travel_duration_days: int | None = Field(default=None, ge=1, le=365)

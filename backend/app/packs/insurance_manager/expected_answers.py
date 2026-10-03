@@ -2,6 +2,9 @@
 
 import re
 
+from app.speech.structured.context import SLOT_KINDS
+from app.speech.structured.normalization import normalize_spoken, pricing_region
+
 _DIGITS = {
     "ноль": "0",
     "нуль": "0",
@@ -50,11 +53,19 @@ def expected_trip_duration(text: str, state) -> int | None:
     return days if 1 <= days <= 365 else None
 
 
-def expected_identifier(text: str, state, definitions) -> tuple[str, str] | None:
+def expected_identifier(text: str, state, definitions) -> tuple[str, str | list[str]] | None:
     name = state.conversation.expected_slot if state.conversation else None
-    if name not in {"phone", "iin", "policy_number", "claim_number", "vehicle_plate"}:
+    if name not in SLOT_KINDS:
         return None
     definition = definitions[name]
+    parsed = normalize_spoken(
+        text, SLOT_KINDS[name], definition.pattern if name != "region" else None
+    )
+    if parsed.accepted:
+        value = pricing_region(parsed.value) if name == "region" else parsed.value
+        return name, [value] if definition.type == "list" else value
+    if parsed.overflow or parsed.candidates or name == "region":
+        return None
     candidates = []
     if name in {"phone", "iin"}:
         candidates = [re.sub(r"[\s()+-]", "", item) for item in re.findall(r"\+?\d[\d ()-]*", text)]
