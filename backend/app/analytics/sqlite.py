@@ -197,6 +197,29 @@ class SQLiteEventStore:
     def get_recent_events(self, limit: int = 100) -> EventPage:
         return self.query_events(EventQuery(limit=limit))
 
+    def analytics_snapshot(self, query: EventQuery) -> list[ConversationEvent]:
+        """Internal aggregate input, one snapshot. Never exposed as an unbounded API."""
+        self.initialize()
+        where, values = self._where(query)
+        with self._connection() as db:
+            rows = db.execute(
+                f"SELECT * FROM events WHERE {where} "
+                "ORDER BY session_id, turn_number, sequence, created_at, event_id",
+                values,
+            ).fetchall()
+        return [self._event(row) for row in rows]
+
+    def source_history_starts(self, query: EventQuery) -> dict[str, datetime]:
+        self.initialize()
+        scope = query.model_copy(update={"from_time": None, "to_time": None})
+        where, values = self._where(scope)
+        with self._connection() as db:
+            rows = db.execute(
+                f"SELECT source, min(created_at) FROM events WHERE {where} GROUP BY source",
+                values,
+            ).fetchall()
+        return {row[0]: datetime.fromisoformat(row[1]) for row in rows}
+
     def summary(self, query: EventQuery) -> AnalyticsSummary:
         self.initialize()
         where, values = self._where(query)

@@ -34,3 +34,7 @@ class Settings(BaseSettings):
     product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"
     security_policy_path: Path = PROJECT_ROOT / "data" / "security" / "policy.json"
     event_db_path: Path = PROJECT_ROOT / "data" / "runtime" / "veyra_events.db"
+    analytics_window_seconds: int = Field(default=3600, ge=60, le=86400)
+    analytics_baseline_windows: int = Field(default=6, ge=2, le=48)
+    analytics_min_volume: int = Field(default=5, ge=2, le=10000)
+    analytics_anomaly_multiplier: float = Field(default=3, gt=1, le=100)

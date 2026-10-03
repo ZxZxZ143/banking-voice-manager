@@ -99,15 +99,76 @@ def synthetic_events():
     return events
 
 
+def anomaly_events(as_of: datetime):
+    """Extend the same seed with six hourly baselines and a recent OTP signal spike."""
+    start = as_of - timedelta(hours=7)
+    events = []
+    # One event per baseline window; eighteen events in the current window.
+    for index in range(24):
+        timestamp = (
+            start + timedelta(hours=index)
+            if index < 6
+            else as_of - timedelta(minutes=10, seconds=index)
+        )
+        session_id = (
+            f"synthetic-anomaly-v1-{as_of.strftime('%Y%m%d%H%M%S')}-{index:02d}"
+        )
+        for sequence, kind, payload in (
+            (
+                0,
+                "conversation_started",
+                {"kind": "conversation_started", "assistant_initiated": False},
+            ),
+            (
+                1,
+                "risk_signal",
+                {
+                    "kind": "risk_signal",
+                    "analysis_status": "analyzed",
+                    "recommended_action": "security_review",
+                },
+            ),
+        ):
+            events.append(
+                make_event(
+                    created_at=timestamp,
+                    session_id=session_id,
+                    turn_number=1,
+                    sequence=sequence,
+                    channel="voice",
+                    assistant_id="fraud_security",
+                    event_type=kind,
+                    conversation_status="awaiting_user",
+                    source="synthetic_demo",
+                    risk_level="high" if kind == "risk_signal" else None,
+                    risk_signals=[RiskSignal.OTP_REQUESTED]
+                    if kind == "risk_signal"
+                    else [],
+                    payload=payload,
+                )
+            )
+    return events
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db-path", type=Path)
     parser.add_argument("--reset", action="store_true")
+    parser.add_argument("--with-anomaly", action="store_true")
+    parser.add_argument(
+        "--as-of", help="Timezone-aware ISO timestamp; defaults to current UTC"
+    )
     args = parser.parse_args()
     store = SQLiteEventStore(args.db_path or Settings().event_db_path)
     if args.reset:
         print(f"Removed synthetic events: {store.reset_synthetic()}")
-    inserted = store.append_many(synthetic_events())
+    events = synthetic_events()
+    if args.with_anomaly:
+        as_of = datetime.fromisoformat(args.as_of) if args.as_of else datetime.now(UTC)
+        if as_of.tzinfo is None:
+            parser.error("--as-of must include a timezone")
+        events += anomaly_events(as_of.astimezone(UTC))
+    inserted = store.append_many(events)
     summary = store.summary(EventQuery(source="synthetic_demo"))
     print(f"Inserted events: {inserted}")
     print(f"Synthetic conversations: {summary.conversations}")

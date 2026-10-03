@@ -4,6 +4,7 @@ from dataclasses import dataclass, replace
 
 from pydantic import SecretStr
 
+from app.analytics.dashboard import AnalyticsService
 from app.analytics.recorder import EventRecorder
 from app.analytics.sqlite import SQLiteEventStore
 from app.core.config import Settings
@@ -44,6 +45,7 @@ class Services:
     triage: TriageService
     risk: RiskIntelligence | None = None
     events: EventRecorder | None = None
+    analytics: AnalyticsService | None = None
 
     @property
     def insurance(self):
@@ -162,5 +164,12 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         events=events,
     )
     return Services(
-        registry, dialogs, traces, messages, TriageService(), risk=intelligence, events=events
+        registry,
+        dialogs,
+        traces,
+        messages,
+        TriageService(),
+        risk=intelligence,
+        events=events,
+        analytics=AnalyticsService(events.store, settings),
     )
