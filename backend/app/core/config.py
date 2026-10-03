@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,8 +36,25 @@ class Settings(BaseSettings):
     twilio_auth_token: SecretStr | None = None
     twilio_phone_number: str | None = None
     public_base_url: str | None = None
-    backend_tts_model: str | None = None
-    backend_tts_voice: str | None = None
+    tts_provider: Literal["auto", "openai", "browser"] = "auto"
+    backend_tts_model: str | None = "gpt-4o-mini-tts"
+    backend_tts_voice: str | None = "cedar"
+    backend_tts_instructions_ru: str = Field(
+        default=(
+            "Говорите по-русски, как спокойный профессиональный консультант. "
+            "Естественный разговорный темп, короткие паузы, чёткие числа и проценты. "
+            "Без дикторской подачи и преувеличенных эмоций."
+        ),
+        max_length=1000,
+    )
+    backend_tts_instructions_kk: str = Field(
+        default=(
+            "Қазақ тілінде сабырлы кәсіби кеңесші ретінде сөйлеңіз. "
+            "Табиғи қарқын, қысқа үзілістер, сандар мен пайыздарды анық айтыңыз. "
+            "Дикторлық мәнер мен әсіре эмоциясыз."
+        ),
+        max_length=1000,
+    )
     phone_endpoint_silence_ms: int = Field(default=1200, ge=800, le=5000)
     vonage_enabled: bool = False
     vonage_application_id: str | None = None

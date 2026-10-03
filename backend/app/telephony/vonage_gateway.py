@@ -12,7 +12,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.config import Settings
 from app.speech.stt.streaming_provider import OpenAIStreamingSTT
-from app.speech.tts.openai_provider import OpenAITTSProvider
+from app.speech.tts.factory import build_tts_provider
 from app.telephony.base import CallStarted, ProviderAudio, ProviderError
 from app.telephony.providers.vonage import VonageTelephonyProvider
 from app.telephony.providers.vonage_audio import CONTENT_TYPE, L16Input
@@ -302,12 +302,14 @@ class VonageGateway:
         await self.runtime.shutdown()
 
 
-def build_vonage_gateway(settings: Settings, messages) -> VonageGateway | None:
+def build_vonage_gateway(settings: Settings, messages, *, tts=None) -> VonageGateway | None:
     if not settings.vonage_enabled:
         return None
+    tts = tts or build_tts_provider(settings)
     values = (settings.openai_router_model, settings.backend_tts_model, settings.backend_tts_voice)
     if (
-        not settings.openai_api_key
+        tts is None
+        or not settings.openai_api_key
         or not settings.openai_api_key.get_secret_value().strip()
         or not all(isinstance(value, str) and value.strip() for value in values)
     ):
@@ -320,9 +322,7 @@ def build_vonage_gateway(settings: Settings, messages) -> VonageGateway | None:
         runtime = PhoneRuntime(
             messages,
             OpenAIStreamingSTT(api_key=key, pause_ms=settings.phone_endpoint_silence_ms),
-            OpenAITTSProvider(
-                api_key=key, model=settings.backend_tts_model, voice=settings.backend_tts_voice
-            ),
+            tts,
             provider,
         )
         return VonageGateway(settings, runtime, provider)

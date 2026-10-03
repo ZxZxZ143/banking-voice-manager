@@ -5,7 +5,7 @@ import { TracePanel } from "../trace/TracePanel";
 import { createTraceViewModel } from "../trace/traceViewModel";
 import { TtsDebugPanel } from "../voice/TtsDebugPanel";
 import type { ConversationRuntime } from "../../runtime/ConversationRuntime";
-import type { BrowserTtsService } from "../../services/tts/BrowserTtsService";
+import type { TtsService } from "../../services/tts";
 import { Badge } from "../ui/badge";
 export function ConversationDemo({
   runtime,
@@ -13,7 +13,7 @@ export function ConversationDemo({
   mockMode,
 }: {
   runtime: ConversationRuntime;
-  tts: BrowserTtsService;
+  tts: TtsService & { readonly lastSelectedVoice?: string };
   mockMode: boolean;
 }) {
   const snapshot = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot);
@@ -28,9 +28,13 @@ export function ConversationDemo({
           </p>
         </div>
         <Badge variant="outline">
-          {mockMode ? "MOCK AGENT" : "HTTP AGENT"} · Browser TTS
+          {mockMode ? "MOCK AGENT" : "HTTP AGENT"} · {tts.lastSelectedVoice}
         </Badge>
       </div>
+      <p className="muted">
+        Голос синтезирован ИИ. При недоступности backend используется голос
+        браузера.
+      </p>
       <div className="workspace">
         <ConversationPanel
           runtime={runtime}

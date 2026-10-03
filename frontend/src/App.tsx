@@ -15,7 +15,7 @@ import { AnalyticsClient } from "./analytics/client";
 import type { Filters, Session } from "./analytics/types";
 import { ConversationRuntime } from "./runtime/ConversationRuntime";
 import { HttpAgentClient, MockAgentClient } from "./services/agentClient";
-import { BrowserTtsService } from "./services/tts/BrowserTtsService";
+import { BackendTtsService } from "./services/tts/BackendTtsService";
 import { useHealth } from "./hooks/useHealth";
 import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
@@ -58,7 +58,7 @@ export default function App() {
     () => new AnalyticsClient(undefined, 12000, source),
     [source],
   );
-  const [tts] = useState(() => new BrowserTtsService());
+  const [tts] = useState(() => new BackendTtsService());
   const [runtime] = useState(
     () =>
       new ConversationRuntime(

@@ -13,7 +13,7 @@ from twilio.twiml.voice_response import VoiceResponse
 from app.core.config import Settings
 from app.speech.errors import SpeechConfigurationError
 from app.speech.stt.streaming_provider import OpenAIStreamingSTT
-from app.speech.tts.openai_provider import OpenAITTSProvider
+from app.speech.tts.factory import build_tts_provider
 from app.telephony.base import CallStarted, ProviderAudio, ProviderError
 from app.telephony.providers.twilio import TwilioTelephonyProvider
 from app.telephony.providers.twilio_audio import MulawInput
@@ -216,9 +216,10 @@ class TwilioGateway:
         await self.runtime.shutdown()
 
 
-def build_twilio_gateway(settings: Settings, messages) -> TwilioGateway | None:
+def build_twilio_gateway(settings: Settings, messages, *, tts=None) -> TwilioGateway | None:
     if not settings.twilio_enabled:
         return None
+    tts = tts or build_tts_provider(settings)
     required = (
         settings.openai_api_key,
         settings.openai_router_model,
@@ -226,7 +227,8 @@ def build_twilio_gateway(settings: Settings, messages) -> TwilioGateway | None:
         settings.backend_tts_voice,
     )
     if (
-        not all(required)
+        tts is None
+        or not all(required)
         or any(isinstance(value, str) and not value.strip() for value in required)
         or (settings.openai_api_key and not settings.openai_api_key.get_secret_value().strip())
     ):
@@ -238,9 +240,7 @@ def build_twilio_gateway(settings: Settings, messages) -> TwilioGateway | None:
         runtime = PhoneRuntime(
             messages,
             OpenAIStreamingSTT(api_key=key, pause_ms=settings.phone_endpoint_silence_ms),
-            OpenAITTSProvider(
-                api_key=key, model=settings.backend_tts_model, voice=settings.backend_tts_voice
-            ),
+            tts,
             provider,
         )
         return TwilioGateway(settings, runtime, provider)
