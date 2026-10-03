@@ -157,3 +157,26 @@ states, count semantics, errors and the Stage 5B checklist. Seed with
 `python scripts/seed_analytics_demo.py` in the backend environment; source=synthetic_demo
 separates fixtures from runtime. Analytics persists through Docker down/up; in-memory
 conversation state does not. Use new opaque conversation IDs after backend restart.
+
+
+## Stage 5B dashboard integration
+
+The teammate Veyra dashboard is now integrated with current persistent analytics. The
+historical Stage 5A handoff above remains a record of that stage. See `FINANCE_DASHBOARD.md`
+for the final seven-screen contract, same-origin local proxy boundary, unavailable fields,
+source filters and polling. `/api/analytics/sessions/{id}/detail` adds richer detail while
+the original event-page session endpoint remains backward compatible. No old backend,
+PSTN provider metadata, token proxy or analytics LLM is imported.
+
+Normal startup remains `docker compose up --build`. To populate Docker with the compatible
+seed and current anomaly pattern in PowerShell:
+
+```powershell
+Get-Content -Raw scripts/seed_analytics_demo.py | docker compose exec -T backend python - --with-anomaly
+```
+
+The source selector distinguishes runtime/synthetic_demo. Overview shows actual source
+counts and demo badges; session rows/details use their explicit source. The mounted
+Conversation Demo preserves current Insurance/Sales/Fraud/Risk/voice/TTS functionality.
+Check `ANALYTICS_API_CONTRACT.md` and backend OpenAPI for typed aggregate/page contracts;
+run `npm test`, `npm run build` and backend pytest for the integration regressions.

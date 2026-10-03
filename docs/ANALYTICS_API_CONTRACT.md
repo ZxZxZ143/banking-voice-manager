@@ -262,12 +262,59 @@ synthetic counts into operational metrics accidentally.
 - Summary endpoint: `GET /api/analytics/summary` with period/filter parameters.
 - Events endpoint: `GET /api/analytics/events` with limit/offset and filters.
 - Session/journey endpoint: `GET /api/analytics/sessions/{encoded_session_id}`.
-- Risk endpoint: none; use events `event_type=risk_signal` and summary.risk.
+- Risk endpoint: `GET /api/analytics/risk` (Stage 5B); event/summary endpoints remain available.
 - Enums: use the documented values/OpenAPI; display unknown future schema versions safely.
 - Date format: ISO 8601 with timezone, events in UTC Z; from inclusive/to exclusive.
 - Pagination: default 100, max 500, next_offset/null; journey also paginated.
 - Empty responses: render zero scalars, missing count-map keys as zero, [] and nullable channel.
 - Synthetic seed command: `python scripts/seed_analytics_demo.py` in the installed backend
   environment; optional `--reset` or `--db-path`. Select source=synthetic_demo.
-- Show read errors/degraded storage honestly. Preserve teammate frontend ownership; merging,
-  mock replacement, charts/navigation/design and wiring belong to Stage 5B.
+- Show read errors/degraded storage honestly. Integrated dashboard: `FINANCE_DASHBOARD.md`.
+
+## Stage 5B additive dashboard contract
+
+The three Stage 5A endpoints and their response models remain unchanged. New read-only
+routes are implemented in `backend/app/api/routes/dashboard.py`, models in
+`analytics/dashboard_models.py`, deterministic reads in `analytics/dashboard.py`, using
+EventStore snapshot/history methods implemented by SQLiteEventStore.
+
+| GET /api/analytics suffix | Response |
+|---|---|
+| `/overview` | DashboardOverview: full selected sessions, recency, channels, assistant/status/source counts, handoffs, RiskAnalytics, sales outcomes, completed Insurance results; unavailable latency/clarification null |
+| `/sessions` | SessionPage: `sessions,total,limit,offset,next_offset` |
+| `/sessions/{session_id}/detail` | DashboardSessionDetail: full `summary`, bounded raw safe `timeline`, meaningful `journey` from that event page, pagination |
+| `/sessions/{session_id}/journey` | JourneyPage: bounded `stages`, pagination; unchanged event ordering |
+| `/risk` | RiskAnalytics: levels unknown/none/low/medium/high/critical, high-risk sessions, unique-session signals/associated assistants, latest case types |
+| `/scenarios` | RankedCount[]: unique session count per observed assistant ID (five bounded catalog keys) |
+| `/anomalies` | AnomalyPage: `anomalies,history_status,as_of`, pagination |
+
+Session aggregates group the full retained source/session history before applying
+`assistant_id` (any observed assistant), channel (latest turn), risk_level (highest analyzed
+level), active and from/to (latest event time inclusive/exclusive). `session_id` is exact.
+These endpoints accept source/runtime/synthetic_demo, aware `as_of`, bounded limit/offset.
+The aggregate endpoints ignore page size when calculating totals. `scenarios` is the
+dashboard's legacy field name for **assistant IDs**; approved Insurance scenario IDs are
+separate `scenario_ids` in session summaries. The frontend's scenario filter maps to
+validated `assistant_id`, not guessed intent strings.
+
+Detail/journey accept source, as_of, limit, offset and encoded path session ID. Unknown
+detail → typed 404 `analytics_session_not_found`; unknown journey → empty page. Original
+`/sessions/{session_id}` remains SessionEvents, including its prior empty 200 behavior.
+Anomalies accept source/assistant/channel/session/as_of/limit/offset. They reject from/to,
+active and risk_level with 422 because the comparison uses configured equal windows.
+The existing event endpoint retains event_type filtering; no unused dashboard event-type
+control was added. Invalid enums/ranges/naive timestamps → 422. Store failure → the same
+typed 503 `analytics_storage_unavailable`, never a fabricated aggregate.
+
+Session summaries include start/latest/end, collapsed assistant sequence, latest assistant,
+source runtime/synthetic_demo/mixed, final status, highest **analyzed** risk or unknown,
+safe signals, handoff, normal-ended flag, max committed turn, latest result per
+assistant/type, and partial_history when the start event is missing. Active requires no
+terminal event and activity in the previous five minutes. Duration uses stored timestamps;
+same-turn timestamps can legitimately give zero. None means analyzed/no observed signal;
+unknown means no analyzed risk event. Risk categories remain advisory. A result's completed
+flag is not a real policy write, sale, verified incident or operator transfer.
+
+Anomaly settings, cold-start and count semantics, seed extension and restart commands:
+`FINANCE_DASHBOARD.md`. Source baselines are always separate. Public pages remain bounded;
+internal aggregates materialize the full selected safe history at current local demo scale.

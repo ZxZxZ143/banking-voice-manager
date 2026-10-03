@@ -12,12 +12,22 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Stage 5B implemented, browser/push verification pending:** teammate Veyra dashboard
+  navigation, shadcn views, responsive styles and polling now consume persisted Stage 5A
+  events through one same-origin analytics client. Additive AnalyticsService provides
+  overview, session summaries/detail, journeys, risk/assistant aggregates and deterministic
+  equal-window anomalies with separate source baselines/cold-start protection. Current
+  Conversation Demo/runtime/security/voice components remain; conversation CSS is scoped.
+  Source labels are explicit; unavailable transcripts/provider/latency fields stay absent/null.
+  Contract/runbook: `ANALYTICS_API_CONTRACT.md`, `FINANCE_DASHBOARD.md`; evidence:
+  `STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md`.
+
 - **Stage 5A:** `app/analytics/` contains typed privacy-safe ConversationEvents,
   deterministic result mapping, post-commit best-effort recorder, EventStore protocol
   and SQLite implementation. Atomic turn batches, unique idempotency, deterministic
   sequence, indexed read filters and typed event/session/summary APIs. Docker named
   analytics_data volume preserves events; conversation state/traces remain in-memory.
-  No dashboard/frontend code was changed or integrated. Contract:
+  Stage 5A itself did not change dashboard/frontend; Stage 5B integrates it above. Contract:
   `ANALYTICS_API_CONTRACT.md`; evidence: `STAGE5A_STORAGE_VALIDATION.md`.
 
 - **Stage 4:** five manually selected assistants, with `fraud_security` producing
@@ -94,8 +104,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
 | `backend/app/analytics/` | Safe event models/mapping, best-effort recorder, EventStore and SQLite queries |
-| `backend/app/api/routes/analytics.py` | Typed read-only events, session journey and summary APIs |
-| `scripts/seed_analytics_demo.py`, `benchmark_analytics.py`, `stage5a_storage_smoke.py` | Deterministic synthetic seed/reset, timings and real API/restart checks |
+| `backend/app/api/routes/analytics.py`, `dashboard.py` | Backward-compatible event/session/summary routes; additive dashboard read models |
+| `backend/app/analytics/dashboard.py`, `dashboard_models.py` | Persistent deterministic sessions/journeys/risk/overview/anomalies and typed contracts |
+| `scripts/seed_analytics_demo.py`, `benchmark_analytics.py`, `stage5a_storage_smoke.py`, `stage5b_dashboard_smoke.py` | Compatible synthetic seed/anomaly extension, timings and real API/restart checks |
 | `docs/ANALYTICS_API_CONTRACT.md`, `STAGE5A_STORAGE_VALIDATION.md` | Teammate integration schemas/checklist and storage evidence |
 | `backend/app/risk/` | Shared input firewall, candidate gate, typed Risk Agent, source policy and business-state-preserving guidance |
 | `backend/app/packs/fraud_security/` | Manually selected consultative security pack, safe facts/questions and FraudCaseResult |
@@ -114,7 +125,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
-| `frontend/src/main.tsx`, `App.tsx` | UI startup, live health and conversation/trace shell |
+| `frontend/src/main.tsx`, `App.tsx` | Veyra dashboard navigation/source scope and retained live Conversation Demo/runtime |
+| `frontend/src/analytics/`, `components/dashboard/`, `components/ui/` | One typed same-origin client, safe parsers, cancellation/polling and teammate dashboard/shadcn views |
+| `frontend/src/styles.css`, `conversation.css`, `lib/shadcn-tailwind.css` | Preserved dashboard styling, scoped current conversation CSS and licensed shadcn variants |
 | `frontend/src/runtime/ConversationRuntime.ts` | Session lifecycle, transcript/text turn loop, voice input bridge |
 | `frontend/src/services/agentClient.ts`, `tts.ts`, `tts/BrowserTtsService.ts` | HTTP/mock agent, TTS contract and browser playback |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
@@ -258,6 +271,17 @@ Application traces expose concise reasons and measured latency, never hidden cha
 - Engine inspection and awaiting_confirmation do not authorize execution. Irreversible
   action registration/execution is blocked. No supervisor endpoint/authorization exists yet.
 
+Stage 5B analytics adds `GET /api/analytics/overview`, `/sessions`, `/risk`, `/scenarios`,
+`/anomalies`, `/sessions/{session_id}/detail` and `/sessions/{session_id}/journey`.
+Original Stage 5A `/events`, `/summary`, `/sessions/{session_id}` retain their schemas.
+Lists use bounded limit/offset; aggregates read full safe retained session histories through
+EventStore. Detail/journey use source and pagination. Session filters apply to latest
+activity/highest analyzed risk/any observed assistant; time is inclusive/exclusive. Unknown
+risk differs from analyzed none. Anomalies compare one rolling hour with six prior equal
+windows per source, require observed baseline coverage/positive average/minimum volume,
+and produce advisory volume messages. No new model calls, in-memory store or credentials.
+Full contracts and errors are in `ANALYTICS_API_CONTRACT.md` and backend OpenAPI.
+
 ## Data, state and evaluation
 
 `data/starter_kit/` contains scenarios.json (40 + 3 system intents), slots.json (43),
@@ -316,7 +340,9 @@ Names: OPENAI_API_KEY, OPENAI_ROUTER_MODEL, optional OPENAI_RESPONSE_MODEL (Rout
 ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACKEND_PORT, FRONTEND_ORIGIN,
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH,
-EVENT_DB_PATH (repository data/runtime/veyra_events.db; Docker /app/data/runtime/veyra_events.db).
+EVENT_DB_PATH (repository data/runtime/veyra_events.db; Docker /app/data/runtime/veyra_events.db),
+ANALYTICS_WINDOW_SECONDS (3600), ANALYTICS_BASELINE_WINDOWS (6),
+ANALYTICS_MIN_VOLUME (5), ANALYTICS_ANOMALY_MULTIPLIER (3).
 Root .env.example contains no credentials/personal phone; .env is ignored. Optional
 `DEMO_TEST_PHONE` seeds a generated local overlay via `data/demo_profile.py`;
 `python scripts/show_demo_profile.py` prints only that synthetic profile. Canonical data is untouched.
@@ -347,7 +373,7 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/message -ContentTy
 
 Frontend (second terminal, repository root): `cd frontend`, `npm ci`, `npm run dev`.
 Keep `VITE_USE_MOCK_AGENT=false` for the full live stand; true is for isolated dev fixtures only.
-Frontend checks: `npm run typecheck`, `npm run build`, `npm run test:runtime`,
+Frontend checks: `npm test`, `npm run test:dashboard`, `npm run format:dashboard`, `npm run typecheck`, `npm run build`, `npm run test:runtime`,
 `npm run test:tts`, `npm run test:trace`, `npm run test:integration`,
 `npm run test:voice-bridge`, `npm run test:packs`. Browser speech needs a supported browser and an installed voice;
 Kazakh uses an exact/prefix voice when available, otherwise the browser default.
@@ -372,7 +398,9 @@ identity verification, then implement one preview/confirmation workflow when nee
 SQLite safe event storage is implemented; actual insurer/bank writes remain disabled. Product turns use one bounded
 structured agent. Assistant/campaign selection is explicit registry lookup, never a model call.
 
-Stage 5B next: integrate the separately owned teammate dashboard using the analytics API
-contract; anomaly detection remains deferred. Preserve measured O11 backlog: card campaign
+Stage 5B follow-up: finish real browser verification, then merge/push the verified integration.
+Backend/frontend offline suites, Docker runtime/API/WS boundary, privacy and restart checks pass.
+Next scale work requires measured need: current aggregate reads materialize retained safe events.
+Best-effort recording can lose events; no auth/retention/backups/outbox/production-scale claim. Preserve measured O11 backlog: card campaign
 → deposit request can be interpreted as decline instead of out_of_scope. No routing/model
-prompt changes were made in Stage 5A; prior model variability remains documented.
+prompt changes were made in Stage 5B; prior model variability remains documented.

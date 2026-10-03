@@ -345,3 +345,33 @@ Summary deduplicates evolving results by session/assistant within the filtered p
 Historical queries support future time-window anomaly analysis; detection is deferred.
 The teammate owns dashboard/frontend work. No frontend files or integration were changed.
 See `ANALYTICS_API_CONTRACT.md` for schemas, count semantics, seeding and Stage 5B checklist.
+
+
+## Stage 5B persistent dashboard
+
+The teammate Finance Dashboard's React shell/components/styles are selectively integrated,
+without its historical phone backend, process-local store, runtime or token proxy. Current
+conversation/runtime/assistant/voice code remains. App owns one lasting ConversationRuntime
+and BrowserTtsService; dashboard navigation hides the mounted demo and stops capture on exit.
+Scoped conversation CSS prevents collisions with Tailwind/shadcn dashboard styles.
+
+The existing loopback Vite/Nginx `/api` proxy serves one `/api/analytics` namespace. Additive
+`api/routes/dashboard.py` invokes AnalyticsService, which reads validated safe event snapshots
+through EventStore. SQLiteEventStore owns SQL/connections; no route queries SQLite directly.
+No stored transcript, free-text explanation, provider ID or customer data is recreated.
+Nullable excluded metrics stay unavailable. The old event/session/summary APIs are unchanged;
+the richer detail route has `/detail` to preserve the original session response.
+
+Session summaries/overview/risk operate on complete retained source/session histories with
+filters applied after grouping. Latest results are snapshots per assistant/type. Journey
+stages come from meaningful event enums in original turn/sequence order. Anomalies query
+indexed time history and compare a rolling window to N previous equal windows per source,
+with minimum volume, positive baseline and earliest-history coverage. They report observed
+increases for review, not confirmed incidents; no LLM is involved. Cold starts are explicit.
+
+The frontend client validates required contract fields and source/risk/channel identity,
+uses backend totals and page metadata, and retains labelled stale data on read errors.
+Polling cancels obsolete requests, avoids overlap and pauses while hidden. Aggregates
+materialize safe retained events in application memory at demo scale; large-volume storage
+queries/capacity work require future measurement. Persistence retains its best-effort gap
+limitation. See `FINANCE_DASHBOARD.md` and `STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md`.

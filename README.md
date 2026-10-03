@@ -282,3 +282,28 @@ For real microphone testing, allow microphone access and speak an insurance ques
 - Routing is measured, not perfect. Consult the validation report for actual confusion pairs and invalid-output counts.
 
 Architecture/navigation: [PROJECT_MAP](docs/PROJECT_MAP.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [INTEGRATION](docs/INTEGRATION.md). The older three-hour implementation plan and earlier evaluation reports are historical references.
+
+
+## Finance Supervisor Dashboard
+
+Stage 5B integrates the teammate Veyra dashboard with persistent SQLite analytics:
+Overview, recent voice sessions, Sessions/detail, Risk & Fraud, Anomalies, Journeys and
+the current Conversation Demo. Startup remains `docker compose up --build`; open
+`http://127.0.0.1:5173`. Populate its actual Docker volume in PowerShell:
+
+```powershell
+Get-Content -Raw scripts/seed_analytics_demo.py | docker compose exec -T backend python - --with-anomaly
+```
+
+The original 640-event seed remains compatible. The optional extension creates hourly
+baseline/current patterns, all explicitly labelled synthetic_demo. Runtime data is separate;
+source filters and badges make the scope visible. Persisted analytics survives backend
+restart and Compose down/up without `-v`. Conversation state remains in memory.
+The dashboard does not restore private transcripts, identifiers, provider metadata or
+free-text risk reasoning; excluded latency metrics remain unavailable. Anomalies are
+deterministic advisory volume increases with cold-start protection, without model calls.
+
+Runbook: [FINANCE_DASHBOARD](docs/FINANCE_DASHBOARD.md). Final API:
+[ANALYTICS_API_CONTRACT](docs/ANALYTICS_API_CONTRACT.md). Evidence and outstanding checks:
+[STAGE5B_DASHBOARD_INTEGRATION_VALIDATION](docs/STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md).
+Frontend checks: `npm test`, `npm run build`, `npm run format:dashboard`.
