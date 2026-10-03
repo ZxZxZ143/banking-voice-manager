@@ -2,7 +2,7 @@
 
 ## Contract mapping established before implementation
 
-Current main at cfcd73a is authoritative for assistants, voice and Stage 5A storage.
+Integration started from main at cfcd73a, authoritative for assistants, voice and Stage 5A storage.
 Dashboard source: origin/feature/finance-dashboard (2defe23), based on
 origin/feature/data-intelligence (8804d7c). Merge base with main: 5193ad7.
 Integration branch: codex/stage5b-dashboard. Import only dashboard/frontend files;
@@ -61,7 +61,7 @@ session/case types are tracked. Explanations state anomalous increase and explic
 establish cause. The same seed optionally adds baseline/current synthetic patterns; the
 original 640-event dataset remains unchanged. Repeatability uses explicit aware as_of.
 
-## Offline checks
+## Initial integration offline checks
 
 - **731 backend tests passed**, including all 700 previous tests plus 31 new cases;
   final full run 31.37 seconds. Coverage includes overview, full-history summaries,
@@ -121,7 +121,8 @@ Thirty samples per endpoint through the actual same-origin Nginx HTTP proxy, on 
 
 The three initial Overview API reads executed serially took **65.36 ms** in this HTTP
 smoke. The UI normally issues them concurrently. This is an API-read measurement, **not**
-a measured browser initial-render time. Browser render/performance verification is pending.
+a measured browser initial-render time. Browser rendering was subsequently verified below;
+initial-render latency was not instrumented and no browser performance number is claimed.
 No production-scale claim: aggregates materialize selected retained safe events; larger
 volumes need measured capacity and potentially different EventStore aggregate methods.
 
@@ -139,28 +140,112 @@ all 758 SQLite rows and DB/WAL/SHM files: **no configured private values found**
 tests independently check safe payloads and redacted error behavior. npm audit reports
 **zero vulnerabilities** after removing the unused generator CLI (components/CSS retained).
 
-## Browser verification and release gate: pending
+## Final browser release gate: passed, 2026-10-03
 
-The real browser-opening call to `http://127.0.0.1:5173` was **not executed**. Automatic
-approval review rejected it because its review connection disconnected before completion;
-it did not determine that the action was unsafe. No alternate browser surface, raw CDP,
-shell browser automation or indirect workaround was attempted. Retry guidance was requested.
+The existing branch started clean at `a7f5e33`. Real Docker images were rebuilt using
+`docker compose up --build -d`. The documented seed ran without reset, with
+`--with-anomaly --as-of 2026-10-03T06:27:43+00:00`: 48 additional events, 168 synthetic
+sessions including previously retained seed runs. No persistent volume was removed.
 
-Actual browser checks remain unverified: populated Overview, Sessions/detail/journey,
-Risk/Sales/Fraud results, advisory anomaly cards, Live Calls, Conversation Demo interaction,
-source scopes/empty/degraded states, responsive visual preservation, refresh after runtime
-activity/restart, browser initial-load time and audible voice/TTS. SSR/HTTP/offline results
-above are not substituted for these checks. The local Docker dashboard is reviewable.
+The actual Nginx application at `http://127.0.0.1:5173` was operated through the Codex
+in-app browser. The earlier browser-tool connection blocker no longer applied.
+DOM observations and screenshots were inspected at 1440×1000 and 390×844 viewports.
+The temporary viewport override was reset after validation.
 
-User's release condition is all tests/browser/Docker/security checks passing. Therefore
-integration is committed on its branch, but main remains `cfcd73a`; no merge/push is allowed
-until the browser gate passes or the user explicitly changes that requirement. Teammate
-branches remain untouched; no force push or history rewrite.
+| Browser section | Actual observed result |
+|---|---|
+| Overview | Populated cards, scenario/results counts and two anomaly summaries; missing latency remains a dash. Initial 184 sessions (16 runtime + 168 synthetic), final 189 (21 + 168). Visible DEMO + REAL DATA label and source counts. Polling picked up new runtime activity. |
+| Live Calls | Populated voice cards, source/channel/DEMO labels and detail controls; clearly describes recent browser voice activity and unavailable PSTN presence. |
+| Sessions | First page 100 rows, second page 84 of initial 184; next disabled at the end and previous restored page 1. Synthetic + text + critical filters returned 12 matching sessions. Insurance assistant filter returned 24 synthetic sessions. Runtime recent-activity filter returned five new sessions; exact-ID search selected one. Clear filters restored the list. |
+| Session detail sheet | Open/close and Summary, Journey, Safe event timeline tabs worked. Synthetic Fraud result showed needs_review and operator_handoff; no confirmed transfer claim. Runtime detail showed 11 events and four turns, with source=runtime and no entered identifiers in the persisted timeline. |
+| Risk & Fraud | Populated signal/case-type counts and high/critical sessions. Wording requires supervisor review and distinguishes unknown risk data from no observed signal. |
+| Anomalies | Two synthetic cards: high-risk frequency and third-party OTP request frequency. Each showed current 18, historical total 26, expected 4.333 per equivalent window, ratio 4.2×. Explicit anomalous increase and cause-not-established wording. Runtime-only scope honestly showed insufficient baseline/no unusual volume. |
+| Journeys | Selected synthetic Fraud conversation displayed conversation_started → assistant_selected → fraud_case → risk_signal → operator_handoff in original sequence. The detail Journey tab agreed; the Safe event timeline additionally included conversation_turn in its proper position. |
+| Conversation Demo | Real Insurance opener/text responses, all five selectors (Insurance, Fraud, deposit/Product, Card, Loan), live HIGH advisory Risk panel, browser TTS and preserved session/history when leaving and returning. Corrected identifier-memory flow reached bounded handoff. |
 
-Implementation commits on the integration branch: `5fcf5eb` (persistent read models,
-anomalies, backend regression/seed/HTTP smoke) and `4a7828e` (teammate dashboard/client,
-current demo reconciliation, source/page adaptations and frontend tests). Documentation
-commit and final branch/working-tree status are reported in the task response.
+Narrow layouts were visually checked across every section, including the detail sheet.
+Controls/cards stacked readably, navigation and wide tables used contained scrolling,
+and document scrollWidth equalled clientWidth in measured narrow views (375 CSS px with
+scrollbar, or 390 without). Desktop Overview and the other sections remained usable.
+No unsafe/private analytics fields appeared in inspected summaries, results or timelines;
+the data projection and scanner checks below supplement these manual observations.
+
+Empty/error states were exercised against the actual application:
+
+- A nonexistent exact session ID produced No sessions found, zero results and disabled
+  pagination; runtime-only Anomalies produced the insufficient-history empty state.
+- An ignored temporary Compose override pointed EVENT_DB_PATH at the existing runtime
+  directory, without touching the DB file. Health reported analytics degraded and the
+  analytics API returned typed HTTP 503 analytics_storage_unavailable.
+- Refresh showed Analytics unavailable · showing previous data with actionable storage
+  guidance. A cold reload showed Analytics unavailable without fabricated zero metrics.
+  Restoring standard Compose configuration and refreshing recovered the populated UI.
+
+### Browser defects and bounded fixes
+
+1. Two source-count separators in Overview rendered as replacement characters. They now
+   render as middle dots; the rebuilt Docker UI was rechecked.
+2. The required Insurance-memory check exposed a release blocker: a new IIN was combined
+   with an already-failed phone and incorrectly asked for that phone again. Client lookup
+   now excludes individually failed values by their existing fingerprint. Corrected values
+   remain eligible, and simultaneously supplied conflicting identities remain rejected.
+   No prompt, routing selection, schema, sales-campaign behavior or telephony changes were made.
+   Three new deterministic cases failed before the fix and passed afterward: RU/KK
+   exhaustion and successful alternative IIN. The 77-test focused suite also preserved
+   conflicting-identity and correction behavior.
+3. Ruff found two existing hotfix formatting deviations in composer.py and
+   test_message_v2.py. Formatting was normalized; both Python ASTs were checked unchanged.
+
+On the final image, real browser session `35928564-58aa-4f9d-8178-2a812dd2e24f`
+progressed unavailable policy → unknown synthetic phone → unknown synthetic IIN →
+lookup_exhausted. It retained renewal, unavailable policy, failed phone/IIN, collected
+field names and operator_review; transcript identifiers were masked in the trace and
+terminal input was disabled. No repeated policy/phone request or unsupported plate lookup.
+Leaving/returning preserved the same session and history. Source=runtime and its 11
+events were then inspected through the dashboard already open before the conversation.
+
+A separate live Insurance security question produced HIGH with bank-impersonation and
+third-party-code signals and explicit advisory wording. It preserved the Insurance
+assistant. Microsoft Irina (ru-RU) browser TTS reported firstAudioMs=737 and totalMs=5199
+for the manual voice sample; normal replies transitioned speaking → awaiting text.
+These are real browser playback events, not an independent acoustic-quality measurement.
+One live routing request timed out with an honest HTTP 504 error. Reset and repeat passed;
+no provider-success claim is made for the timed-out attempt.
+
+### Final persistence, checks and security
+
+After the browser was already open, the existing HTTP smoke created an additional real
+opener + office-hours conversation (six runtime events). Overview polling displayed
+**189 sessions: 168 synthetic + 21 runtime; 928 total events**. The smoke also verified
+the Nginx voice WebSocket's existing safe rejection before external STT connection.
+
+`docker compose restart backend` completed. The browser reloaded the populated dashboard.
+All **928 event IDs** and exact fixed-clock Overview/Risk/Anomalies results matched the
+pre-restart manifest. The same comparison passed again after restoring the temporary
+storage-failure configuration. Both services finished healthy on loopback 8000/5173;
+the original analytics_data volume and standard database path remain in use.
+
+Final checks on the release changes:
+
+- **757 backend tests passed**, 36.44 seconds (754 existing + three new regressions).
+- **80 frontend tests passed**, 1.73 seconds, no failures/skips.
+- TypeScript, Vite production build, dashboard Prettier, Ruff lint, Ruff formatting
+  (172 files), and git diff --check passed.
+- No expensive LLM evaluation dataset was rerun. The bounded lookup fix was checked by
+  deterministic regressions, the full backend suite and the actual browser reproduction;
+  Router/Composer prompts were unchanged. Earlier model-evaluation limitations remain.
+- Focused security review covered typed safe projections, bounded validated GET routes,
+  parameterized SQLite reads, frontend allowlists/React rendering and loopback proxy access.
+  No release-blocking security findings. Runtime secrets remain server-side; no auth/RBAC
+  or production-readiness claim was added.
+- Final privacy scan passed across **326 source/build files**, backend logs, both image
+  configurations, **928 SQLite rows** and DB/WAL/SHM files. No configured private values
+  found; values were never printed. npm audit: **zero vulnerabilities**.
+
+All required release gates passed. Release proceeds by a normal fast-forward of main
+from `cfcd73a`, preserving `5fcf5eb`, `4a7828e`, `5cf444c` and Insurance hotfix `a7f5e33`
+plus the documented gate fixes. The actual final main/origin hashes and clean-tree check
+are reported after the push; no force or discarded branch work is permitted.
 
 ## Remaining limits and skills
 
@@ -171,4 +256,6 @@ language and clarification metrics are unavailable. The synthetic anomaly is tim
 Known **O11**: card-campaign deposit request can be interpreted as decline instead of
 out_of_scope; no Product tuning was mixed into this integration.
 
-Skills actually read/used: agent-debugging, security-review, demo-readiness and computer-use.
+Initial integration skills: agent-debugging, security-review, demo-readiness and computer-use.
+Final release-gate skills actually used: demo-readiness, security-review, agent-debugging,
+agents-sdk and agent-evals (the latter three for the browser-discovered lookup blocker).

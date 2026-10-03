@@ -17,10 +17,12 @@ Business specification: `data/starter_kit/README.ru.md`.
   Owned policy/claim lookup is bounded; unavailable or failed paths end in prepared
   `lookup_exhausted` handoff with retained private context and a safe ManagerSummary.
   No policy lookup by vehicle plate is offered. Validation and measured live limitations:
-  `docs/INSURANCE_LOOKUP_MEMORY_VALIDATION.md` (754 backend / 80 frontend tests; live RU/KK
-  lookup 8/8; real browser and synthetic-STT runtime checked).
+  `docs/INSURANCE_LOOKUP_MEMORY_VALIDATION.md` (original 754 backend / 80 frontend tests;
+  live RU/KK lookup 8/8; real browser and synthetic-STT runtime checked). Stage 5B release
+  validation additionally excludes individually failed lookup values from subsequent
+  alternative-identifier queries; 757 backend tests and the actual browser flow pass.
 
-- **Stage 5B implemented, browser/push verification pending:** teammate Veyra dashboard
+- **Stage 5B release validated:** teammate Veyra dashboard
   navigation, shadcn views, responsive styles and polling now consume persisted Stage 5A
   events through one same-origin analytics client. Additive AnalyticsService provides
   overview, session summaries/detail, journeys, risk/assistant aggregates and deterministic
@@ -28,7 +30,9 @@ Business specification: `data/starter_kit/README.ru.md`.
   Conversation Demo/runtime/security/voice components remain; conversation CSS is scoped.
   Source labels are explicit; unavailable transcripts/provider/latency fields stay absent/null.
   Contract/runbook: `ANALYTICS_API_CONTRACT.md`, `FINANCE_DASHBOARD.md`; evidence:
-  `STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md`.
+  `STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md`. All eight browser sections, desktop/narrow
+  layouts, live runtime ingestion/TTS, real storage error/recovery and backend restart
+  passed; 928 stored events and fixed-clock aggregates survived restart/recovery.
 
 - **Stage 5A:** `app/analytics/` contains typed privacy-safe ConversationEvents,
   deterministic result mapping, post-commit best-effort recorder, EventStore protocol
@@ -412,8 +416,8 @@ identity verification, then implement one preview/confirmation workflow when nee
 SQLite safe event storage is implemented; actual insurer/bank writes remain disabled. Product turns use one bounded
 structured agent. Assistant/campaign selection is explicit registry lookup, never a model call.
 
-Stage 5B follow-up: finish real browser verification, then merge/push the verified integration.
-Backend/frontend offline suites, Docker runtime/API/WS boundary, privacy and restart checks pass.
+Stage 5B final release gates passed: 757 backend / 80 frontend tests, all eight browser
+sections, Docker runtime/API/WS boundary, privacy, degraded-state recovery and restart.
 Next scale work requires measured need: current aggregate reads materialize retained safe events.
 Best-effort recording can lose events; no auth/retention/backups/outbox/production-scale claim. Preserve measured O11 backlog: card campaign
 → deposit request can be interpreted as decline instead of out_of_scope. No routing/model
