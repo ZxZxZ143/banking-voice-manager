@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from time import perf_counter
 
 from app.agent.errors import RouterError, RouterOutputError
+from app.conversation.language import stable_response_language
 from app.risk.language import security_language
 from app.risk.models import RiskAssessment, RiskContext, RiskInput, SecurityDecision
 from app.risk.models import RiskSignal as S
@@ -117,6 +118,12 @@ class RiskIntelligence:
             decision.response_language = security_language(
                 text, decision.language, decision.response_language
             )
+            if decision.intent in ("goodbye", "operator_request") and decision.language != "mixed":
+                # Short terminal controls must not replace the established reply language
+                # with a fresh model/default label. Keep mixed-language presentation unchanged.
+                decision.response_language = stable_response_language(
+                    text, context.response_language, None
+                )
             assessment = RiskAssessment(
                 risk_relevant=decision.risk_relevant,
                 level=decision.level,

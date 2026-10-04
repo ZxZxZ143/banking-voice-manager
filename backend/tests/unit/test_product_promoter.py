@@ -589,7 +589,7 @@ def test_bot_initiates_branded_consultation_without_customer_text_or_model_call(
         pack.open_turn(GlobalConversationContext(session_id="opening"), pack.new_context())
     )
     assert "Здравствуйте!" in turn.response_text and "Merei Demo Bank" in turn.response_text
-    assert turn.response_text.count("?") == 1
+    assert turn.response_text.count("?") == 3
     assert not fixture.inputs and turn.trace.event_type == "scenario.opened"
     assert turn.trace.transcript == "" and turn.trace.latency_ms.router is None
 

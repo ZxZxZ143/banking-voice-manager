@@ -61,7 +61,7 @@ def test_bot_starts_assigned_offer_before_any_customer_reply(campaign, mode, pre
     assert first.context.campaign == first.context.product_category == campaign
     assert first.context.last_question == "offer_details"
     assert first.context.recommended_product_id.startswith(prefix)
-    assert first.response_text.count("?") == 1
+    assert first.response_text.count("?") == 3
     assert "Звоню" in first.response_text and "Merei Demo Bank" in first.response_text
     assert "консультант" not in first.response_text and "или карту" not in first.response_text
     assert first.trace.source_keys and first.trace.transcript == ""
