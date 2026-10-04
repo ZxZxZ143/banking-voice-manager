@@ -10,6 +10,7 @@ from websockets.asyncio.client import connect
 
 from app.speech.audio import PCM_CHANNELS, PCM_SAMPLE_RATE
 from app.speech.structured.recognition import BoundedTranscriber
+from app.speech.stt.adaptive_endpoint import AdaptiveEndpoint
 from app.speech.stt.endpointing import SpeechEndDetector
 from app.speech.stt.streaming import StreamInput, relay_stream
 from app.speech.stt.streaming_provider import configure_transcription
@@ -67,18 +68,19 @@ async def voice(websocket: WebSocket) -> None:
                 raise ValueError("Start message too large")
             config = json.loads(raw)
             UUID(config["session_id"])
-            pause = config.get("pause_ms", 2500)
+            pause = config.get("pause_ms")
             if (
                 config.get("type") != "start"
                 or config.get("sample_rate") != PCM_SAMPLE_RATE
                 or config.get("channels") != PCM_CHANNELS
-                or type(pause) is not int
-                or not 500 <= pause <= 5000
+                or (pause is not None and (type(pause) is not int or not 500 <= pause <= 5000))
             ):
                 raise ValueError("Invalid stream configuration")
-            detector = await asyncio.to_thread(SpeechEndDetector, pause)
             messages = websocket.app.state.services.messages
             context, turn, slot = messages.transcription_snapshot(config["session_id"])
+            adaptive = AdaptiveEndpoint(context) if pause is None else None
+            pause = adaptive.base_ms if adaptive else pause
+            detector = await asyncio.to_thread(SpeechEndDetector, pause)
 
             def record(text, outcome):
                 return messages.record_recognition(config["session_id"], turn, slot, text, outcome)
@@ -93,7 +95,13 @@ async def voice(websocket: WebSocket) -> None:
                 max_size=2_000_000,
             ) as upstream:
                 await configure_transcription(upstream, context, settings.streaming_stt_model)
-                await websocket.send_json({"type": "ready", "pause_ms": pause})
+                await websocket.send_json(
+                    {
+                        "type": "ready",
+                        "pause_ms": pause,
+                        **({"endpoint_profile": adaptive.profile} if adaptive else {}),
+                    }
+                )
                 await relay(
                     websocket,
                     upstream,
@@ -103,6 +111,7 @@ async def voice(websocket: WebSocket) -> None:
                         settings.openai_api_key.get_secret_value(), settings.structured_stt_model
                     ),
                     record_recognition=record,
+                    adaptive_endpoint=adaptive,
                 )
     except WebSocketDisconnect:
         pass

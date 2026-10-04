@@ -218,7 +218,11 @@ class InsuranceManagerPack:
             completed_flow,
             collected_data,
         ) = await self.processor.process(
-            previous, text, speech=speech, channel=global_context.channel
+            previous,
+            text,
+            speech=speech,
+            channel=global_context.channel,
+            manual_input_available=global_context.manual_input_available,
         )
         capture = state.conversation.structured_capture if state.conversation else None
         if capture and (

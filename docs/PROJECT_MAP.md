@@ -12,6 +12,18 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Voice correction/latency release (after 5e850d3):** private typed RU/KK minimal edits,
+  full corrected read-back and final confirmation; two correction cycles/one clarification,
+  browser keyboard fallback and phone handoff. Whole-field STT races to pending read-back,
+  cancels an unnecessary loser, and never auto-admits sensitive data. Browser adaptive local
+  endpointing, mic/socket prewarm during TTS, 400 ms RAM pre-roll and bounded echo rejection;
+  immediate hardware cancellation even during pending readiness. Cedar/phone half-duplex and
+  completion architecture retained; barge-in/production TTS streaming deferred. Verified
+  1265 backend / 106 frontend tests. Actual synthetic-mic Chrome matrix: 26/30 full passes,
+  provider/ASR failures safe, final repetition 10/10; TTS-end→active p50 1.8 / p95 4.2 ms.
+  Acoustic/recognition limits and release evidence: `VOICE_LATENCY_AND_CORRECTION_VALIDATION.md`.
+  Twilio/Vonage live PSTN remains **NOT RUN / pending_credentials**.
+
 - **Insurance completion/context (Part D, Stage 6 branch):** resolved read-only and standalone
   Risk answers enter `conversation.phase=wrap_up`, offer RU/KK further help, acknowledge without
   restarting discovery, and end on no-more-questions. Direct new requests route normally.
@@ -165,8 +177,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Shared STT; backend TTS factory, bounded OpenAI synthesis and deterministic RU/KK speech normalization |
-| `backend/app/speech/structured/` | Typed recognition policy/hypotheses/accepted values, context/segment normalization, concurrent bounded pass, private receipts and repair |
-| `backend/app/packs/insurance_manager/speech_capture.py` | Bounded private confirmation/segmented capture before business slots; separate from completion and lookup memory |
+| `backend/app/speech/structured/` | Typed admission policy, RU/KK correction grammar, context/segment normalization, pending read-back race, private receipts and repair |
+| `backend/app/speech/stt/adaptive_endpoint.py` | Browser local silence profiles with stable partial completeness guard; explicit manual pause remains |
+| `backend/app/packs/insurance_manager/speech_capture.py` | Bounded private correction/confirmation/segmented capture before business slots; keyboard capability versus phone handoff |
 | `data/speech/`, `scripts/build_structured_speech_dataset.py`, `scripts/evaluate_structured_speech.py` | 100-positive/12-negative synthetic corpus; text/cloud/local/pace comparisons; ignored audio/models/reports |
 | `scripts/validate_structured_browser.py`, `scripts/evaluate_tts_streaming.py` | Synthetic-only browser STT/core harness and progressive MP3 experiment, separate ports 8012/8011 |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
@@ -210,6 +223,9 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `data/tts/eval_samples.json`, `scripts/evaluate_tts.py` | Synthetic RU/KK TTS comparison; ignored audio/metrics/listening sheets under `work/tts-eval/` |
 | `frontend/src/components/voice/TtsDebugPanel.tsx` | Manual Russian/Kazakh browser voice check and playback timings |
 | `frontend/src/components/voice/VoiceControls.tsx`, `voiceRuntimeBridge.ts` | Streaming mic/file capture UI and final-transcript bridge to runtime |
+| `frontend/src/components/voice/BrowserVoiceInput.ts`, `NearEndBuffer.ts` | Per-conversation microphone reuse, prepared/active input, bounded RAM pre-roll and playback-reference echo gate |
+| `frontend/src/runtime/voiceTiming.ts` | Bounded content-free monotonic browser timings |
+| `scripts/validate_voice_latency.py`, `validate_voice_latency.mjs`, `measure_voice_startup.mjs` | Development-only synthetic session/audio harness, real Conversation Demo overlap gate and baseline/prototype timing |
 | `frontend/src/components/trace/traceViewModel.ts`, `TracePanel.tsx` | Defensive view of supplied scenarios, context, clarification, handoff and latency |
 | `frontend/src/api/`, `hooks/`, `types/`, `components/` | Client, health hook, contracts and UI modules |
 | `frontend/vite.config.ts` | Local /health and /api proxy to backend port 8000 |
@@ -264,12 +280,15 @@ The extended Insurance schema/prompt have a separate unchanged 104-case live reg
 
 The browser fetches real health through Vite. The frontend runtime creates one session ID,
 accepts text through `sendText()` or only `utterance.final` through `handleTranscript()`, sends
-`POST /api/message` (or either assistant-only start request), displays the reply, awaits TTS playback, then resumes listening unless
+`POST /api/message` (or either assistant-only start request), displays the reply, prepares input during TTS, then activates listening unless
 the API says `handoff` or `ended`. Browser playback uses backend MP3/WAV (`onplaying`/
 `onended`) with `speechSynthesis` (`onstart`/`onend`) fallback. A bounded watchdog rejects stalled
 speech. Successful handoff/ended states survive TTS failure. A no-audio adapter remains for tests.
-Voice controller start/stop calls are serialized so a delayed start is stopped on reset/end.
-VoiceControls opens one WebSocket per utterance using that same session ID; partials stay
+The prepared controller cancels hardware/readiness immediately on reset/end/disable/dispose;
+legacy controller operations retain serialization. Near-end capture uses a 400 ms private
+ring and decoded TTS echo reference; PCM transmission starts only after playback ends.
+VoiceControls opens one WebSocket per utterance using that same session ID, reusing the
+microphone/AudioContext during an active voice conversation; partials stay
 in the voice UI. Real HTTP mode is the default; no key enters the frontend.
 The voice check panel has Russian/Kazakh samples, selected voice and playback timings.
 The conversation panel shows runtime and backend conversation status. The trace panel

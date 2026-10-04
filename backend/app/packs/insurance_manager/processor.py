@@ -108,10 +108,20 @@ class InsuranceTurnProcessor:
         self.replies = replies
         self.composer = composer
 
-    async def process(self, previous: DialogState, text: str, *, speech=None, channel="text"):
+    async def process(
+        self,
+        previous: DialogState,
+        text: str,
+        *,
+        speech=None,
+        channel="text",
+        manual_input_available=False,
+    ):
         started = perf_counter()
         verifying = bool(previous.conversation and previous.conversation.structured_capture)
-        capture = advance_capture(previous, text, speech, channel)
+        capture = advance_capture(
+            previous, text, speech, channel, manual_input_available=manual_input_available
+        )
         if capture:
             if capture.question:
                 return self._capture_reply(capture, text)
@@ -235,7 +245,14 @@ class InsuranceTurnProcessor:
                 for s in decision.scenarios
             )
         ):
-            capture = advance_capture(previous, text, speech, channel, allow_unrecognized=True)
+            capture = advance_capture(
+                previous,
+                text,
+                speech,
+                channel,
+                allow_unrecognized=True,
+                manual_input_available=manual_input_available,
+            )
             if capture:
                 if capture.question:
                     return self._capture_reply(capture, text)

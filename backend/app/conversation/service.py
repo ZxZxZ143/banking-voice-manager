@@ -112,6 +112,7 @@ class MessageService:
         start_scenario: bool = False,
         channel: str = "text",
         recognition_id: str | None = None,
+        manual_input_available: bool = False,
     ) -> MessageResult:
         started = perf_counter()
         if scenario_mode is not None:
@@ -138,6 +139,7 @@ class MessageService:
             switch_source = "explicit"
             routed_text = redact_authentication(text)[:10000]
             global_context.channel = channel
+            global_context.manual_input_available = manual_input_available
             # Assistant changes require explicit API/UI selection. Never forward a turn.
             conversation.pending_switch = None
             entry = self.lifecycle.activate(conversation, pack.manifest.id, preserve_completed=True)

@@ -1,13 +1,27 @@
 import type {
-  AgentMessageResponse, ConversationMessage, ConversationStatus, RuntimeStatus, VoiceTranscript, ScenarioPackId,
-} from '../types/agent';
-import type { AgentClient } from '../services/agentClient';
-import type { TtsService } from '../services/tts';
-import { isScenarioPack, isSalesPack, scenarioPackNames } from '../types/agent.ts';
-import { redactAuthentication } from './privacy.ts';
-import { mayNeedPrecaution } from './securityCue.ts';
+  AgentMessageResponse,
+  ConversationMessage,
+  ConversationStatus,
+  RuntimeStatus,
+  VoiceTranscript,
+  ScenarioPackId,
+} from "../types/agent";
+import type { AgentClient } from "../services/agentClient";
+import type { TtsService } from "../services/tts";
+import {
+  isScenarioPack,
+  isSalesPack,
+  scenarioPackNames,
+} from "../types/agent.ts";
+import { redactAuthentication } from "./privacy.ts";
+import { mayNeedPrecaution } from "./securityCue.ts";
+import { voiceTiming } from "./voiceTiming.ts";
 
 export interface VoiceInputController {
+  prepareListening?(): Promise<void> | void;
+  playbackReference?(blob: Blob): Promise<void> | void;
+  armNearEnd?(seconds: number): void;
+  pauseListening?(): Promise<void> | void;
   startListening(): Promise<void> | void;
   stopListening(): Promise<void> | void;
 }
@@ -31,11 +45,11 @@ export interface ConversationSnapshot {
 }
 
 const initialSnapshot = (): ConversationSnapshot => ({
-  activePack: 'insurance_manager',
+  activePack: "insurance_manager",
   requestedPack: null,
   packNotice: null,
   sessionId: null,
-  runtimeStatus: 'idle',
+  runtimeStatus: "idle",
   voiceInputEnabled: true,
   conversationStatus: null,
   messages: [],
@@ -52,12 +66,24 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function replyLanguage(response: AgentMessageResponse, transcript: VoiceTranscript): string | undefined {
-  const guard = typeof response.routing === 'object' && response.routing !== null
-    && 'kind' in response.routing && response.routing.kind === 'security_guidance';
-  for (const context of guard ? [response.routing, response.state] : [response.state, response.routing]) {
-    if (typeof context === 'object' && context !== null && 'response_language' in context
-      && (context.response_language === 'ru' || context.response_language === 'kk')) {
+function replyLanguage(
+  response: AgentMessageResponse,
+  transcript: VoiceTranscript,
+): string | undefined {
+  const guard =
+    typeof response.routing === "object" &&
+    response.routing !== null &&
+    "kind" in response.routing &&
+    response.routing.kind === "security_guidance";
+  for (const context of guard
+    ? [response.routing, response.state]
+    : [response.state, response.routing]) {
+    if (
+      typeof context === "object" &&
+      context !== null &&
+      "response_language" in context &&
+      (context.response_language === "ru" || context.response_language === "kk")
+    ) {
       return context.response_language;
     }
   }
@@ -80,7 +106,9 @@ export class ConversationRuntime {
   getSnapshot = (): ConversationSnapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
 
   attachVoiceInput(controller: VoiceInputController | null): void {
@@ -88,16 +116,32 @@ export class ConversationRuntime {
   }
 
   selectScenarioPack(pack: ScenarioPackId): void {
-    if (this.disposed || !['idle', 'listening', 'error'].includes(this.snapshot.runtimeStatus)
-      || this.snapshot.conversationStatus === 'handoff' || this.snapshot.conversationStatus === 'ended') return;
+    if (
+      this.disposed ||
+      !["idle", "listening", "error"].includes(this.snapshot.runtimeStatus) ||
+      this.snapshot.conversationStatus === "handoff" ||
+      this.snapshot.conversationStatus === "ended"
+    )
+      return;
     if (!isScenarioPack(pack)) return;
     // Campaign selection belongs to the operator before a sales call starts.
-    if (isSalesPack(pack) && isSalesPack(this.snapshot.activePack)
-      && this.snapshot.sessionId && pack !== this.snapshot.activePack) return;
-    this.update({ requestedPack: pack === this.snapshot.activePack ? null : pack });
-    if (isSalesPack(pack) && pack !== this.snapshot.activePack
-      && this.snapshot.runtimeStatus === 'listening' && this.agentClient.startScenario) {
-      void this.processTranscript({ text: '' }, true);
+    if (
+      isSalesPack(pack) &&
+      isSalesPack(this.snapshot.activePack) &&
+      this.snapshot.sessionId &&
+      pack !== this.snapshot.activePack
+    )
+      return;
+    this.update({
+      requestedPack: pack === this.snapshot.activePack ? null : pack,
+    });
+    if (
+      isSalesPack(pack) &&
+      pack !== this.snapshot.activePack &&
+      this.snapshot.runtimeStatus === "listening" &&
+      this.agentClient.startScenario
+    ) {
+      void this.processTranscript({ text: "" }, true);
     }
   }
 
@@ -106,22 +150,51 @@ export class ConversationRuntime {
     this.update({ voiceInputEnabled: enabled });
     const generation = this.generation;
     try {
-      if (!enabled) await this.runVoiceOperation('stopListening');
-      else if (this.snapshot.runtimeStatus === 'listening') await this.runVoiceOperation('startListening');
+      if (!enabled) await this.runVoiceOperation("stopListening");
+      else if (this.snapshot.runtimeStatus === "listening")
+        await this.runVoiceOperation("startListening");
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
   }
 
-  private runVoiceOperation(method: 'startListening' | 'stopListening'): Promise<void> {
+  private runVoiceOperation(
+    method: "startListening" | "stopListening" | "pauseListening",
+  ): Promise<void> {
     const controller = this.voiceInput;
     const generation = this.generation;
     if (!controller) return Promise.resolve();
+    if (method === "stopListening" && controller.prepareListening) {
+      // The prepared controller can cancel its own pending permission/handshake.
+      // Releasing hardware must never wait behind startListening's readiness promise.
+      try {
+        return Promise.resolve(controller.stopListening());
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
     const operation = this.voiceOperation.then(() => {
-      if (method === 'startListening' && (!this.isCurrent(generation)
-        || !this.snapshot.voiceInputEnabled || this.snapshot.runtimeStatus !== 'listening'
-        || this.snapshot.conversationStatus === 'handoff' || this.snapshot.conversationStatus === 'ended')) return;
-      return controller[method]();
+      if (
+        method === "startListening" &&
+        (!this.isCurrent(generation) ||
+          !this.snapshot.voiceInputEnabled ||
+          this.snapshot.runtimeStatus !== "listening" ||
+          this.snapshot.conversationStatus === "handoff" ||
+          this.snapshot.conversationStatus === "ended")
+      )
+        return;
+      return Promise.resolve(
+        (controller[method] ?? controller.stopListening).call(controller),
+      ).catch((error) => {
+        if (
+          method === "startListening" &&
+          (!this.isCurrent(generation) ||
+            !this.snapshot.voiceInputEnabled ||
+            this.snapshot.runtimeStatus !== "listening")
+        )
+          return;
+        throw error;
+      });
     });
     // A failed controller call is reported to its caller without blocking later stop/start calls.
     this.voiceOperation = operation.catch(() => {});
@@ -137,13 +210,18 @@ export class ConversationRuntime {
   private fail(cause: unknown): void {
     // A playback/controller failure cannot undo a successful terminal API turn.
     const terminal = this.snapshot.conversationStatus;
-    if (terminal === 'handoff' || terminal === 'ended') {
+    if (terminal === "handoff" || terminal === "ended") {
       this.update({ runtimeStatus: terminal, error: null });
-      try { this.tts.stop(); } catch { /* The terminal reply remains visible. */ }
-      void this.runVoiceOperation('stopListening').catch(() => {});
+      try {
+        this.tts.stop();
+      } catch {
+        /* The terminal reply remains visible. */
+      }
+      void this.runVoiceOperation("stopListening").catch(() => {});
       return;
     }
-    this.update({ runtimeStatus: 'error', error: errorMessage(cause) });
+    this.update({ runtimeStatus: "error", error: errorMessage(cause) });
+    void this.runVoiceOperation("stopListening").catch(() => {});
   }
 
   private isCurrent(generation: number): boolean {
@@ -151,17 +229,26 @@ export class ConversationRuntime {
   }
 
   async startConversation(): Promise<void> {
-    if (this.disposed || !['idle', 'error'].includes(this.snapshot.runtimeStatus)) return;
-    if (this.snapshot.conversationStatus === 'ended' || this.snapshot.conversationStatus === 'handoff') return;
+    if (
+      this.disposed ||
+      !["idle", "error"].includes(this.snapshot.runtimeStatus)
+    )
+      return;
+    if (
+      this.snapshot.conversationStatus === "ended" ||
+      this.snapshot.conversationStatus === "handoff"
+    )
+      return;
     const generation = this.generation;
     this.update({
       sessionId: this.snapshot.sessionId ?? crypto.randomUUID(),
-      runtimeStatus: 'listening',
+      runtimeStatus: "listening",
       error: null,
     });
     try {
-      if (this.agentClient.startScenario) await this.processTranscript({ text: '' }, true);
-      else await this.runVoiceOperation('startListening');
+      if (this.agentClient.startScenario)
+        await this.processTranscript({ text: "" }, true);
+      else await this.runVoiceOperation("startListening");
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -173,10 +260,13 @@ export class ConversationRuntime {
     const generation = this.generation;
     // Stopping local capture/playback does not close the Agent Core session.
     const terminal = this.snapshot.conversationStatus;
-    this.update({ runtimeStatus: terminal === 'handoff' ? 'handoff' : 'ended', error: null });
+    this.update({
+      runtimeStatus: terminal === "handoff" ? "handoff" : "ended",
+      error: null,
+    });
     try {
       this.tts.stop();
-      await this.runVoiceOperation('stopListening');
+      await this.runVoiceOperation("stopListening");
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -186,13 +276,17 @@ export class ConversationRuntime {
     if (this.disposed) return;
     this.generation += 1;
     const generation = this.generation;
-    const selectedPack = this.snapshot.requestedPack ?? this.snapshot.activePack;
-    this.update({ ...initialSnapshot(), voiceInputEnabled: this.snapshot.voiceInputEnabled,
-      requestedPack: selectedPack === 'insurance_manager' ? null : selectedPack,
-      sessionId: crypto.randomUUID() });
+    const selectedPack =
+      this.snapshot.requestedPack ?? this.snapshot.activePack;
+    this.update({
+      ...initialSnapshot(),
+      voiceInputEnabled: this.snapshot.voiceInputEnabled,
+      requestedPack: selectedPack === "insurance_manager" ? null : selectedPack,
+      sessionId: crypto.randomUUID(),
+    });
     try {
       this.tts.stop();
-      await this.runVoiceOperation('stopListening');
+      await this.runVoiceOperation("stopListening");
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -208,89 +302,211 @@ export class ConversationRuntime {
     await this.processTranscript(transcript, false, true);
   }
 
-  private async processTranscript(transcript: VoiceTranscript, opening = false, voice = false): Promise<void> {
+  private async processTranscript(
+    transcript: VoiceTranscript,
+    opening = false,
+    voice = false,
+  ): Promise<void> {
     const state = this.snapshot.latestState;
-    const question = typeof state === 'object' && state !== null && 'pending_question' in state ? state.pending_question : null;
-    const text = redactAuthentication(transcript.text.trim(), question).slice(0, 10_000);
-    if ((!text && !opening) || this.disposed || this.snapshot.runtimeStatus !== 'listening' || !this.snapshot.sessionId) return;
+    const question =
+      typeof state === "object" && state !== null && "pending_question" in state
+        ? state.pending_question
+        : null;
+    const text = redactAuthentication(transcript.text.trim(), question).slice(
+      0,
+      10_000,
+    );
+    if (
+      (!text && !opening) ||
+      this.disposed ||
+      this.snapshot.runtimeStatus !== "listening" ||
+      !this.snapshot.sessionId
+    )
+      return;
 
     const generation = this.generation;
     const turnStarted = performance.now();
-    this.update({ runtimeStatus: 'processing', error: null, sttLatencyMs: transcript.stt_ms ?? null, ttsFirstAudioMs: null, safetyFirstAudioMs: null });
+    this.update({
+      runtimeStatus: "processing",
+      error: null,
+      sttLatencyMs: transcript.stt_ms ?? null,
+      ttsFirstAudioMs: null,
+      safetyFirstAudioMs: null,
+    });
     try {
-      await this.runVoiceOperation('stopListening');
+      await this.runVoiceOperation("pauseListening");
       if (!this.isCurrent(generation)) return;
-      if (!opening) this.update({
-        messages: [...this.snapshot.messages, {
-          id: crypto.randomUUID(), role: 'user', text, timestamp: Date.now(),
-        }],
-      });
+      if (!opening)
+        this.update({
+          messages: [
+            ...this.snapshot.messages,
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              text,
+              timestamp: Date.now(),
+            },
+          ],
+        });
       const requestedPack = this.snapshot.requestedPack;
       // Keep one authoritative message request. Attach handlers immediately so a
       // provider error while early advice is spoken cannot become an unhandled rejection.
-      const pendingResponse = (opening && this.agentClient.startScenario
-        ? this.agentClient.startScenario({session_id: this.snapshot.sessionId,
-          scenario_mode: requestedPack ?? this.snapshot.activePack})
-        : this.agentClient.sendMessage({ session_id: this.snapshot.sessionId, text,
-        ...(voice ? { channel: 'voice' as const } : {}),
-        ...(voice && transcript.recognition_id ? { recognition_id: transcript.recognition_id } : {}),
-        ...(requestedPack ? { scenario_mode: requestedPack } : {}),
-      })).then(value => ({value}), error => ({error}));
-      let spokenPrecaution = '';
+      const pendingResponse = (
+        opening && this.agentClient.startScenario
+          ? this.agentClient.startScenario({
+              session_id: this.snapshot.sessionId,
+              scenario_mode: requestedPack ?? this.snapshot.activePack,
+            })
+          : this.agentClient.sendMessage({
+              session_id: this.snapshot.sessionId,
+              text,
+              ...(voice ? { channel: "voice" as const } : {}),
+              ...(voice && transcript.recognition_id
+                ? { recognition_id: transcript.recognition_id }
+                : {}),
+              ...(requestedPack ? { scenario_mode: requestedPack } : {}),
+            })
+      ).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+      let spokenPrecaution = "";
       let precautionAudioMs: number | null = null;
-      if (!opening && this.agentClient.securityPrecaution && mayNeedPrecaution(text)) {
+      if (
+        !opening &&
+        this.agentClient.securityPrecaution &&
+        mayNeedPrecaution(text)
+      ) {
         try {
-          const language = typeof state === 'object' && state !== null && 'response_language' in state
-            && state.response_language === 'kk' ? 'kk' : 'ru';
-          const cue = await this.agentClient.securityPrecaution({text, response_language: language});
+          const language =
+            typeof state === "object" &&
+            state !== null &&
+            "response_language" in state &&
+            state.response_language === "kk"
+              ? "kk"
+              : "ru";
+          const cue = await this.agentClient.securityPrecaution({
+            text,
+            response_language: language,
+          });
           if (!this.isCurrent(generation)) return;
           if (cue.response_text) {
-            this.update({runtimeStatus: 'speaking'});
+            this.update({ runtimeStatus: "speaking" });
             const cueStarted = performance.now();
-            const audio = await this.tts.speak(cue.response_text, cue.response_language);
+            const audio = await this.tts.speak(
+              cue.response_text,
+              cue.response_language,
+            );
             if (!this.isCurrent(generation)) return;
             spokenPrecaution = cue.response_text;
             precautionAudioMs = audio.firstAudioMs ?? null;
-            this.update({safetyFirstAudioMs: audio.firstAudioMs === undefined ? null : cueStarted - turnStarted + audio.firstAudioMs});
+            this.update({
+              safetyFirstAudioMs:
+                audio.firstAudioMs === undefined
+                  ? null
+                  : cueStarted - turnStarted + audio.firstAudioMs,
+            });
           }
-        } catch { /* Optional early advice failure leaves the authoritative turn intact. */ }
+        } catch {
+          /* Optional early advice failure leaves the authoritative turn intact. */
+        }
         if (!this.isCurrent(generation)) return;
-        this.update({runtimeStatus: 'processing'});
+        this.update({ runtimeStatus: "processing" });
       }
       const settled = await pendingResponse;
-      if ('error' in settled) throw settled.error;
+      if ("error" in settled) throw settled.error;
       const response = settled.value;
       if (!this.isCurrent(generation)) return;
       const trace = response.trace as Record<string, unknown> | undefined;
       const returnedPack = trace?.scenario_pack_id;
       const activePack = isScenarioPack(returnedPack)
-        ? returnedPack : this.snapshot.activePack;
+        ? returnedPack
+        : this.snapshot.activePack;
       this.update({
-        activePack, requestedPack: null,
-        packNotice: activePack !== this.snapshot.activePack
-          ? `Переключено: ${scenarioPackNames[activePack]}`
-          : this.snapshot.packNotice,
-        messages: [...this.snapshot.messages, {
-          id: crypto.randomUUID(), role: 'assistant', text: response.response_text, timestamp: Date.now(),
-        }],
+        activePack,
+        requestedPack: null,
+        packNotice:
+          activePack !== this.snapshot.activePack
+            ? `Переключено: ${scenarioPackNames[activePack]}`
+            : this.snapshot.packNotice,
+        messages: [
+          ...this.snapshot.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: response.response_text,
+            timestamp: Date.now(),
+          },
+        ],
         lastResponse: response,
         latestTrace: response.trace ?? null,
         latestState: response.state ?? null,
         conversationStatus: response.conversation_status,
-        runtimeStatus: 'speaking',
+        runtimeStatus: "speaking",
       });
-      const remaining = spokenPrecaution && response.response_text.includes(spokenPrecaution)
-        ? response.response_text.replace(spokenPrecaution, '').trim() : response.response_text;
+      const remaining =
+        spokenPrecaution && response.response_text.includes(spokenPrecaution)
+          ? response.response_text.replace(spokenPrecaution, "").trim()
+          : response.response_text;
+      const mayListen = () =>
+        this.isCurrent(generation) &&
+        this.snapshot.voiceInputEnabled &&
+        this.snapshot.runtimeStatus === "speaking" &&
+        response.conversation_status !== "handoff" &&
+        response.conversation_status !== "ended" &&
+        (trace?.recognition as { outcome?: string } | undefined)?.outcome !==
+          "manual_fallback";
+      if (mayListen()) {
+        // Preparation must not serialize stop/reset behind a network handshake.
+        // The input controller owns cancellation and late-permission cleanup.
+        try {
+          void Promise.resolve(this.voiceInput?.prepareListening?.()).catch(
+            () => {},
+          );
+        } catch {
+          /* startListening reports actionable preparation failures. */
+        }
+      }
       const ttsResult = remaining
-        ? await this.tts.speak(remaining, replyLanguage(response, transcript)) : {};
+        ? await this.tts.speak(remaining, replyLanguage(response, transcript), {
+            onAudio: (blob) => {
+              if (mayListen()) void this.voiceInput?.playbackReference?.(blob);
+            },
+            onNearEnd: (seconds) => {
+              if (mayListen()) this.voiceInput?.armNearEnd?.(seconds);
+            },
+            onFirstAudio: () =>
+              voiceTiming(
+                trace?.conversation_act === "verify_identifier"
+                  ? "readback.first_audio"
+                  : "agent.first_audio",
+              ),
+          })
+        : {};
       if (!this.isCurrent(generation)) return;
-      this.update({ ttsFirstAudioMs: precautionAudioMs ?? ttsResult.firstAudioMs ?? null });
-      if (response.conversation_status === 'handoff' || response.conversation_status === 'ended') {
+      this.update({
+        ttsFirstAudioMs: precautionAudioMs ?? ttsResult.firstAudioMs ?? null,
+      });
+      const recognition = trace?.recognition as
+        { outcome?: string } | undefined;
+      if (
+        recognition?.outcome === "manual_fallback" &&
+        response.conversation_status === "awaiting_user"
+      ) {
+        this.update({ voiceInputEnabled: false });
+        await this.runVoiceOperation("stopListening");
+      }
+      if (
+        response.conversation_status === "handoff" ||
+        response.conversation_status === "ended"
+      ) {
         this.update({ runtimeStatus: response.conversation_status });
+        if (this.voiceInput?.pauseListening)
+          await this.runVoiceOperation("stopListening");
         return;
       }
-      this.update({ runtimeStatus: 'listening' });
-      await this.runVoiceOperation('startListening');
+      this.update({ runtimeStatus: "listening" });
+      await this.runVoiceOperation("startListening");
     } catch (cause) {
       if (this.isCurrent(generation)) this.fail(cause);
     }
@@ -303,7 +519,7 @@ export class ConversationRuntime {
     this.listeners.clear();
     try {
       this.tts.stop();
-      void this.runVoiceOperation('stopListening').catch(() => {});
+      void this.runVoiceOperation("stopListening").catch(() => {});
     } catch {
       // Teardown must not crash an unmounting UI.
     }

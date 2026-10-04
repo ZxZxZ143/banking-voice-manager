@@ -49,6 +49,7 @@ class TranscriptionContext(BaseModel):
     prompt: str = Field(default=_PROMPTS["none"], max_length=500)
     keywords: tuple[str, ...] = Field(default=(), max_length=10)
     accuracy_mode: Literal["medium", "high"] = "medium"
+    confirmation_kind: ExpectedKind = "none"
     capture_part: Literal[
         "whole", "first", "middle", "last", "prefix", "digits", "letters", "region"
     ] = "whole"
@@ -96,6 +97,17 @@ def context_for_capture(slot, language, capture=None, contact_field=None):
             }
         )
     if capture and capture.slot == slot and capture.phase == "confirmation":
-        # Yes/no needs no identifier hints and no second paid transcription.
-        return context_for_slot(None, language)
+        # No private value in cloud hints. A correction still needs exact digits/
+        # letters; yes/no and local edits do not require a second paid ASR call.
+        return context_for_slot(None, language).model_copy(
+            update={
+                "confirmation_kind": capture.kind,
+                "accuracy_mode": "high",
+                "prompt": (
+                    f"The caller is confirming or correcting a {capture.kind}. "
+                    "Preserve yes/no, corrected digit or Latin letter and its position exactly. "
+                    "Russian/Kazakh or mixed speech. Do not invent omitted characters."
+                ),
+            }
+        )
     return context

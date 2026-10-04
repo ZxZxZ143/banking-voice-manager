@@ -383,6 +383,8 @@ def test_unrelated_question_cannot_leave_old_confirmation_authority_active():
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_bounded_starts_at_commit_before_realtime_final_and_cancellation_releases_it(cancel):
+    # Segmented repair still requires both recognizers. Whole identifiers have a
+    # separately tested race to read-back, without any acceptance authority.
     async def run():
         queue, upstream_events = asyncio.Queue(), asyncio.Queue()
         queue.put_nowait(StreamInput("audio", bytes(4800)))
@@ -399,7 +401,7 @@ def test_bounded_starts_at_commit_before_realtime_final_and_cancellation_release
                 try:
                     if cancel:
                         await asyncio.Future()
-                    return "123ABC02"
+                    return "ABC"
                 finally:
                     released.set()
 
@@ -414,7 +416,7 @@ def test_bounded_starts_at_commit_before_realtime_final_and_cancellation_release
                             json.dumps(
                                 {
                                     "type": "input_audio_transcription.completed",
-                                    "transcript": "123ABC02",
+                                    "transcript": "ABC",
                                 }
                             )
                         )
@@ -445,7 +447,9 @@ def test_bounded_starts_at_commit_before_realtime_final_and_cancellation_release
                 emit,
                 Upstream(),
                 Detector(),
-                context=context_for_slot("vehicle_plate"),
+                context=context_for_slot("vehicle_plate").model_copy(
+                    update={"capture_part": "letters"}
+                ),
                 second_pass=provider,
                 record_recognition=record,
             ),

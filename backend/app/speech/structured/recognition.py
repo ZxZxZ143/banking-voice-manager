@@ -43,6 +43,11 @@ class RecognitionMetadata(BaseModel):
     first_pass_ms: float = Field(default=0, ge=0, allow_inf_nan=False)
     second_pass_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     second_pass_wait_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    candidate_ready_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    realtime_final_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    bounded_final_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    readback_source: Literal["realtime", "bounded"] | None = None
+    loser_cancelled: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,11 +103,13 @@ class BoundedHypothesis:
     hypothesis: RecognitionHypothesis = field(repr=False)
     failed: bool
     elapsed_ms: float
+    text: str = field(default="", repr=False)
 
 
 async def bounded_hypothesis(pcm, context, second_pass):
     """One attempt; the deadline starts at launch, even while Realtime is pending."""
     started = perf_counter()
+    text = ""
     try:
         async with asyncio.timeout(20):
             text = await second_pass.transcribe(pcm, context)
@@ -114,7 +121,53 @@ async def bounded_hypothesis(pcm, context, second_pass):
         hypothesis = RecognitionHypothesis(
             "bounded", context.expected_kind, None, False, "unavailable"
         )
-    return BoundedHypothesis(hypothesis, failed, (perf_counter() - started) * 1000)
+    return BoundedHypothesis(hypothesis, failed, (perf_counter() - started) * 1000, text)
+
+
+def pending_readback(
+    hypothesis, *, elapsed_ms, first=None, second=None, second_used=False, first_final_ms=None
+):
+    """Race winner authorizes a full read-back only. Never business-slot admission.
+
+    A completed loser can corroborate metadata but cannot replace the winner. A
+    pending loser is cancelled by the relay: another paid result cannot supersede
+    what the customer heard and adds no acceptance authority.
+    """
+    decision = StructuredRecognitionPolicy().decide(hypothesis.kind, hypothesis)
+    if decision.outcome != RecognitionOutcome.confirmation_required:
+        raise ValueError("Read-back race requires one unique sensitive hypothesis")
+    corroborated = bool(
+        first
+        and second
+        and first.valid_schema
+        and second.hypothesis.valid_schema
+        and first.kind == second.hypothesis.kind
+        and first.canonical_candidate == second.hypothesis.canonical_candidate
+    )
+    return RecognitionResult(
+        RecognitionMetadata(
+            mode="structured",
+            expected_kind=hypothesis.kind,
+            first_pass_valid=bool(first and first.valid_schema),
+            second_pass_used=second_used,
+            second_pass_failed=bool(second and second.failed),
+            candidate_count=1,
+            accepted=False,
+            outcome=decision.outcome,
+            risk=decision.risk,
+            consensus=corroborated,
+            candidate_ready_ms=elapsed_ms,
+            realtime_final_ms=first_final_ms,
+            bounded_final_ms=second.elapsed_ms if second else None,
+            first_pass_ms=first_final_ms or 0,
+            second_pass_ms=second.elapsed_ms if second else None,
+            second_pass_wait_ms=0,
+            readback_source=hypothesis.source,
+            loser_cancelled=not (first and second),
+        ),
+        kind=hypothesis.kind,
+        candidate=hypothesis,
+    )
 
 
 async def resolve_recognition(

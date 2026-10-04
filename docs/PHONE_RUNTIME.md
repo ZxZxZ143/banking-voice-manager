@@ -5,6 +5,15 @@ This is a selective integration of the teammate's implementation, most recently 
 Both providers are **disabled by default**. Live PSTN status: **pending_credentials**.
 The inherited outbound trial trigger and its SDK dependencies are intentionally excluded.
 
+The final interaction polish retains phone half-duplex and its existing endpoint setting.
+Browser prewarm, near-end buffering and keyboard fallback do not change phone playback.
+Shared structured STT now races to a pending full read-back; sensitive values still need
+explicit confirmation. RU/KK corrections edit private pending state and read the full
+corrected value again. Exhausted phone corrections prepare specialist handoff, with no
+business lookup on a recognition failure. See
+[voice release validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
+**Twilio LIVE PSTN = NOT RUN / pending_credentials; Vonage LIVE PSTN = NOT RUN / pending_credentials.**
+
 ## One application core
 
 ```text

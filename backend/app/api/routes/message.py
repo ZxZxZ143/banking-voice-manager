@@ -120,6 +120,7 @@ async def _process(
             start_scenario=start_scenario,
             channel=channel,
             recognition_id=recognition_id,
+            manual_input_available=True,
         )
     except SpeechReceiptError:
         return JSONResponse(

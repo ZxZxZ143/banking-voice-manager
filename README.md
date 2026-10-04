@@ -14,12 +14,17 @@ See [the architecture](docs/ARCHITECTURE.md).
 
 ## What works
 
-- Insurance expected fields now configure streaming STT by type, with deterministic
-  RU/KK/mixed identifiers and one conditional audio second pass. Region `ноль два`
-  maps to Almaty pricing; 01 to Astana, 03–20 to other. Recognition repair is bounded
-  separately from lookup memory. Synthetic canonical accuracy was 62% versus balanced
-  43%; five wrong accepted plates leave the production precision gate unmet.
-  See [structured speech evidence](docs/STRUCTURED_SPEECH_RECOGNITION_VALIDATION.md).
+- Sensitive spoken identifiers require full read-back and explicit confirmation. Natural
+  RU/KK partial corrections update only an unambiguous digit/letter/region, then repeat
+  the full value. Correction/repair attempts are bounded; keyboard input or specialist
+  handoff remains available. A fast STT candidate can start read-back without admission.
+  Browser voice prewarms input during Cedar playback, uses adaptive local endpointing and
+  a bounded RAM-only near-end buffer with echo protection. See
+  [correction, latency and release evidence](docs/VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
+- Expected fields configure RU/KK/mixed normalization. Region `ноль два` maps to Almaty
+  pricing; 01 to Astana, 03–20 to other. Earlier synthetic canonical accuracy was 62%;
+  ASR errors are why the current [precision gate](docs/STRUCTURED_SPEECH_PRECISION_GATE.md)
+  requires confirmation for every sensitive field.
 - Product language continuity is application-owned. Explicit «ответь на русском» /
   «қазақша жауап беріңіз» persists and repeats the pending question without advancing sales.
   Browser and phone use the same authorized response language for speech.

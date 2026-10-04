@@ -1,5 +1,23 @@
 # Product language and TTS quality validation
 
+Current 2026-10-04 decision: retain the configured `gpt-4o-mini-tts` alias and the user's
+preferred **cedar**, including `BACKEND_TTS_VOICE_RU`, `BACKEND_TTS_VOICE_KK` and default
+override names. No dated snapshot or silent voice migration was introduced.
+[Official deprecations](https://developers.openai.com/api/docs/deprecations) now list
+the dated mini-TTS snapshots for removal on **2027-01-06**, recommending
+`gpt-realtime-2.1-mini`; the [model page](https://developers.openai.com/api/docs/models/gpt-4o-mini-tts)
+also marks the family deprecated. The alias is not a promise of continued availability.
+A separate migration must verify Cedar RU/KK quality, cancellation, phone conversion
+and the read-back/echo contract before replacing this implementation.
+
+Fresh real-Chrome prototype measurements: RU buffered first-audio 3732/1919/1758 ms;
+RU streaming 1966/1476/1693 ms; KK streaming 1782 ms (one sample). Streaming cancellation
+stopped playback. These small samples do not establish a network SLA. Production stays
+buffered for this release: the new near-end echo gate needs a decoded playback reference,
+and incremental reference alignment/cancellation would require a separate acoustic gate.
+Full details: [voice latency and correction validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
+The historical quality/listening results below remain unchanged.
+
 Date: 2026-10-03. Branch: `codex/stage6-telephony-integration`; starting commit
 `7bb0f35`. This hotfix preserves Stage 6. No main merge, public tunnel, outbound call,
 live PSTN test, new credentials or O11 campaign-routing tuning is included.

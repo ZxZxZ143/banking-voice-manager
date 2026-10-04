@@ -17,7 +17,9 @@ in the ignored root `.env`. Start the backend:
 
 In another terminal: `cd frontend`, `npm ci`, keep `VITE_USE_MOCK_AGENT=false`, then
 `npm run dev`. Open http://127.0.0.1:5173. Click «Начать разговор», permit the microphone,
-wait for «Говорите», then speak. Runtime resumes capture after browser TTS finishes.
+wait for «Говорите», then speak. Runtime prepares input during TTS and activates
+transmission after playback finishes. With backend HTMLAudio, a protected near-end
+RAM buffer can preserve an answer beginning in the last 400 ms of playback.
 Each WebSocket run handles one utterance and uses the same conversation session ID.
 Alternatively choose an M4A recording and click «Проверить файл». File replay is
 paced in real time and appends synthetic silence (configured pause + 1 second).
@@ -28,22 +30,26 @@ The JSON download includes source name, transcript and measured timings.
 First browser message:
 
 ```json
-{"type":"start","session_id":"<UUID>","sample_rate":24000,"channels":1,"pause_ms":2500}
+{"type":"start","session_id":"<UUID>","sample_rate":24000,"channels":1}
 ```
 
-Wait for `ready`, then send mono signed little-endian PCM16 binary frames at 24 kHz,
+Omitted/null `pause_ms` selects the server's expected-context adaptive profile. An
+explicit integer 500–5000 retains manual silence selection. Wait for `ready` **and
+runtime activation after TTS**, then send mono signed little-endian PCM16 frames at 24 kHz,
 up to 100 ms / 4,800 bytes each. AudioContext performs rate conversion; an
 AudioWorklet emits microphone frames. Never relabel a 48 kHz stream or send WebM
 fragments as PCM. `finish` manually commits; `cancel` or disconnect stops the session.
 
 Server events:
 
-- `ready`: provider connected, selected pause_ms.
+- `ready`: provider connected, selected `pause_ms`; adaptive mode adds `endpoint_profile`.
 - `activity`: speech, has_speech, silence_ms, audio_ms from local Silero VAD.
+- `speech.started`: first local speech detection in adaptive browser mode.
 - `transcript.partial`: append delta to this utterance; includes provider item_id.
-- `committed`: stop sending audio, await final transcript.
+- `committed`: stop sending audio, await final transcript; adaptive mode adds `silence_ms`.
 - `utterance.final`: text, item_id, language=null, stt_after_commit_ms,
-  endpoint_silence_ms and audio_ms.
+  endpoint_silence_ms, audio_ms and `timing` with nullable `realtime_final_ms` /
+  `bounded_final_ms` measured from commit/second-pass launch, respectively.
 - `empty`: no speech detected; no client turn is created.
 - `error`: safe code/message, without API credentials or provider headers.
 
@@ -56,31 +62,48 @@ return detected language labels; `language: null` is omitted at the runtime boun
 
 Structured expected-slot turns additionally emit safe `recognition` metadata and an opaque,
 one-use `recognition_id` forwarded to `/api/message`. Sensitive fields launch a bounded
-transcription at `committed`, in parallel with the Realtime final. A valid candidate, even
-with two-model agreement, returns `confirmation_required`; it cannot update business slots.
+transcription at `committed`, in parallel with the Realtime final. The first unique valid
+whole-field result returns `confirmation_required` immediately; it cannot update business
+slots. Invalid first results wait for the other recognizer. An unfinished loser is cancelled;
+a completed loser can corroborate metadata but cannot replace the value being read back.
 The same conversation reply asks for full read-back confirmation or bounded segmented repair.
-Ordinary confirmation replies need no second transcription. Region codes retain low-risk
+Natural RU/KK minimal corrections repeat the entire corrected value and still require
+explicit confirmation. Correction context contains only field kind, never private values.
+Confirmation/correction replies need no second transcription. Region codes retain low-risk
 schema acceptance. Added metadata: `outcome`, `risk`, `consensus`, `verification_method`,
-`second_pass_wait_ms`; no candidate value or bounded transcript is public. Raw `text` stays
-the Realtime transcript. See [precision gate](STRUCTURED_SPEECH_PRECISION_GATE.md).
+`second_pass_wait_ms`, `candidate_ready_ms`, `realtime_final_ms`, `bounded_final_ms`,
+`readback_source` and `loser_cancelled`; no candidate value or alternate transcript is in
+metadata. Raw `text` is the winning transcript (Realtime or bounded), bound to the private
+receipt. See [precision gate](STRUCTURED_SPEECH_PRECISION_GATE.md) and
+[correction/latency validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
 
 ## Automatic end of utterance (VAD)
 
 Silero VAD runs locally using the small ONNX model shipped with faster-whisper;
 no Whisper transcription model is loaded. After speech is detected, continued
-silence for 2,500 ms commits the utterance. Resumed speech resets that timer.
-The UI permits 500–5,000 ms. This is acoustic endpointing, not semantic proof of
+silence for the selected profile commits the utterance. Browser defaults: confirmation
+750 ms, recognized correction 900 ms, region 900 ms, sensitive identifier 1300 ms and
+ordinary dialogue 1600 ms. A complete normalized partial stable for at least 400 ms can
+shorten these to 650/800/750/1100 ms respectively, always with local VAD silence.
+A transient valid regex match alone cannot commit. Resumed speech resets the timer.
+The UI also permits a manual 500–5,000 ms. This is acoustic endpointing, not semantic proof of
 completion: longer hesitations can still be cut off and background speech can
 prolong capture. OpenAI turn_detection is null because this model requires
 application-side commit. Silence alone returns empty after 15 seconds or manual finish.
 
 ## Latency and validation
 
+Current browser measurements, prewarm/echo bounds, synthetic overlap limitations and
+release checks are in [the 2026-10-04 report](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
+`voiceTiming.ts` emits bounded content-free monotonic browser events. The prepared mic
+does not send PCM; the 400 ms ring is memory only and clears per turn/cancel. Tracks fully
+stop on disable/end/reset/dispose, including cancellation during a pending handshake.
+
 `stt_after_commit_ms` measures final transcript receipt minus commit time.
 `endpoint_silence_ms` is VAD silence measured on the audio timeline; neither includes
 LLM/TTS. Connection setup is also separate. Do not describe STT alone as agent latency.
 
-Live checks on 2026-09-23:
+Historical checks on 2026-09-23 (fixed 2500 ms profile):
 - A20_ru_pause_20 through the backend and Vite WS proxy: final transcript,
   endpoint silence 2,592 ms, STT after commit 912 ms.
 - A23_mixed_pause through the browser file picker: final transcript,

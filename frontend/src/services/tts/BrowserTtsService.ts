@@ -1,4 +1,5 @@
-import type { TtsPlaybackResult, TtsService } from "../tts";
+import type { TtsPlaybackHooks, TtsPlaybackResult, TtsService } from "../tts";
+import { voiceTiming } from "../../runtime/voiceTiming.ts";
 
 export function localeForLanguage(language?: string): string {
   return language?.toLowerCase().startsWith("kk") ? "kk-KZ" : "ru-RU";
@@ -83,7 +84,11 @@ export class BrowserTtsService implements TtsService {
     });
   }
 
-  speak(text: string, language?: string): Promise<TtsPlaybackResult> {
+  speak(
+    text: string,
+    language?: string,
+    hooks?: TtsPlaybackHooks,
+  ): Promise<TtsPlaybackResult> {
     const startedAt = performance.now();
     if (!text.trim()) return Promise.reject(new Error("TTS text is empty."));
     if (
@@ -170,6 +175,8 @@ export class BrowserTtsService implements TtsService {
             utterance.pitch = 1;
             utterance.volume = 1;
             utterance.onstart = () => {
+              voiceTiming("tts.first_audio");
+              hooks?.onFirstAudio?.();
               firstAudioMs = Math.max(0, performance.now() - startedAt);
             };
             utterance.onend = () => {
@@ -180,6 +187,7 @@ export class BrowserTtsService implements TtsService {
                   ),
                 );
               } else {
+                voiceTiming("tts.end");
                 finish();
               }
             };

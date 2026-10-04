@@ -36,6 +36,7 @@ class GlobalConversationContext(Contract):
     channel: Literal["text", "voice"] = "text"
     conversation_status: ConversationStatus = "active"
     speech_answer: RecognitionResult | None = Field(default=None, exclude=True, repr=False)
+    manual_input_available: bool = Field(default=False, exclude=True)
 
 
 class ScenarioResult(Contract):

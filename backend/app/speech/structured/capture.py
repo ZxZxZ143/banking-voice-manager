@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Literal
 
+from app.speech.structured.correction import IdentifierCorrection
 from app.speech.structured.normalization import (
     FILLERS,
     PATTERNS,
@@ -47,6 +48,10 @@ class StructuredCapture:
     parts: list[str] = field(default_factory=list, repr=False)
     repair_used: bool = False
     confirmation_attempts: int = 0
+    correction_cycles: int = 0
+    clarification_used: bool = False
+    pending_edit: IdentifierCorrection | None = field(default=None, repr=False)
+    manual_requested: bool = False
     expires_at: float = field(default_factory=lambda: monotonic() + 180, repr=False)
 
 

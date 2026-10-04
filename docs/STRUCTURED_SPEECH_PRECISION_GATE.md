@@ -1,5 +1,31 @@
 # Structured speech precision gate
 
+## Current interaction gate (2026-10-04)
+
+The follow-up [correction and latency validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md)
+adds a race to **pending full read-back**, private RU/KK minimal corrections, adaptive
+browser endpointing and prewarmed input. This supersedes the timing/repair rules below:
+the first unique sensitive hypothesis may be read back even if the other recognizer
+fails or disagrees. It is never accepted automatically. The pending value cannot be
+replaced by a later recognizer result. The unused recognizer is cancelled; completed
+results contribute only safe corroboration metadata. Segmented repair still waits for
+both recognizers, and low-risk region admission is unchanged.
+
+`StructuredConfirmationResponse` and `IdentifierCorrection` are local, typed private
+objects. Corrections are resolved by position/segment or a unique old fragment, checked
+against the original schema, fully read back and confirmed again. No Router, Composer
+or lookup runs for a correction-only turn. There are at most two meaningful corrected
+read-backs and one narrow ambiguity clarification. Browser exhaustion offers working
+keyboard input and disables automatic voice capture; phone exhaustion prepares handoff.
+Confirmation STT now receives structural correction hints without the pending value;
+it retains no second-pass PCM and makes no additional bounded transcription call.
+
+The original `545dc10` completion behavior and `5e850d3` admission rules remain covered
+by the existing suites. Release evidence and current lifecycle limits are in the new
+report. All original measurements below are historical, not a post-correction score.
+
+## Original 5e850d3 validation
+
 Implemented on `codex/stage6-telephony-integration`, based on completion hotfix
 `545dc10`. No main merge, PSTN activation, credential changes, dashboard changes,
 new business stage, or canonical routing tuning.

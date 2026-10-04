@@ -1,4 +1,5 @@
-import type { TtsPlaybackResult, TtsService } from "../tts";
+import type { TtsPlaybackHooks, TtsPlaybackResult, TtsService } from "../tts";
+import { voiceTiming } from "../../runtime/voiceTiming.ts";
 import { BrowserTtsService, localeForLanguage } from "./BrowserTtsService.ts";
 
 /** Backend audio first; explicit browser fallback only before any backend playback. */
@@ -19,12 +20,17 @@ export class BackendTtsService implements TtsService {
     return this.selectedVoice;
   }
 
-  async speak(text: string, language?: string): Promise<TtsPlaybackResult> {
+  async speak(
+    text: string,
+    language?: string,
+    hooks?: TtsPlaybackHooks,
+  ): Promise<TtsPlaybackResult> {
     if (!text.trim() || text.length > 4000)
       throw new Error("Speech text is empty or too long.");
     this.stop();
     const generation = this.generation;
     const started = performance.now();
+    voiceTiming("tts.request");
     const controller = new AbortController();
     const languageCode = localeForLanguage(language).startsWith("kk")
       ? "kk"
@@ -64,17 +70,31 @@ export class BackendTtsService implements TtsService {
       if (generation !== this.generation)
         throw new DOMException("Cancelled", "AbortError");
       clearTimeout(timer);
+      hooks?.onAudio?.(blob);
       url = URL.createObjectURL(blob);
       audio = new Audio(url);
       this.selectedVoice = `Backend TTS (${languageCode})`;
       return await new Promise<TtsPlaybackResult>((resolve, reject) => {
         let firstAudioMs: number | undefined;
+        const nearEndTimer = setInterval(() => {
+          if (
+            played &&
+            audio &&
+            !audio.paused &&
+            Number.isFinite(audio.duration) &&
+            audio.duration > 0 &&
+            audio.duration - audio.currentTime <= 0.4
+          ) {
+            hooks?.onNearEnd?.(audio.currentTime);
+          }
+        }, 25);
         const playbackTimer = setTimeout(() => {
           audio?.pause();
           finish(new Error("Speech playback timed out."));
         }, 180_000);
         const finish = (error?: unknown) => {
           clearTimeout(playbackTimer);
+          clearInterval(nearEndTimer);
           rejectPlayback = null;
           if (audio) {
             audio.onplaying = null;
@@ -82,10 +102,17 @@ export class BackendTtsService implements TtsService {
             audio.onerror = null;
           }
           if (error) reject(error);
-          else resolve({ firstAudioMs, totalMs: performance.now() - started });
+          else {
+            voiceTiming("tts.end");
+            resolve({ firstAudioMs, totalMs: performance.now() - started });
+          }
         };
         rejectPlayback = finish;
         audio!.onplaying = () => {
+          if (!played) {
+            voiceTiming("tts.first_audio");
+            hooks?.onFirstAudio?.();
+          }
           played = true;
           firstAudioMs ??= performance.now() - started;
         };
@@ -109,7 +136,7 @@ export class BackendTtsService implements TtsService {
       this.selectedVoice = timedOut
         ? "Browser fallback · backend timeout"
         : "Browser fallback · backend unavailable";
-      const result = await this.fallback.speak(text, languageCode);
+      const result = await this.fallback.speak(text, languageCode, hooks);
       if (generation !== this.generation)
         throw new DOMException("Speech playback cancelled.", "AbortError");
       this.selectedVoice = `Browser fallback: ${this.fallback.lastSelectedVoice ?? languageCode}`;
