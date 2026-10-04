@@ -1,3 +1,4 @@
+from app.conversation.opening import BILINGUAL_OPENING
 from app.conversation.terminal import terminal_reply
 from app.packs.contracts import InteractionMode, PackTurn, ScenarioManifest
 from app.packs.fraud_security.models import FraudCaseResult, FraudContext, FraudPublicState
@@ -37,8 +38,8 @@ class FraudSecurityPack:
 
     async def open_turn(self, global_context, context):
         reply = (
-            "Здравствуйте! Я виртуальный помощник по безопасности Merei Demo Bank. "
-            "Что случилось? Секретные коды и данные карты не называйте."
+            BILINGUAL_OPENING + " Я виртуальный помощник по безопасности Merei Demo Bank. "
+            "Секретные коды и данные карты не называйте."
         )
         return self._turn(
             global_context, context, None, reply, "active", "open", None, "scenario.opening"

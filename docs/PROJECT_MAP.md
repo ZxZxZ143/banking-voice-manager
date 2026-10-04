@@ -206,6 +206,7 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/analytics/dashboard.py`, `dashboard_models.py` | Persistent deterministic sessions/journeys/risk/overview/anomalies and typed contracts |
 | `scripts/seed_analytics_demo.py`, `benchmark_analytics.py`, `stage5a_storage_smoke.py`, `stage5b_dashboard_smoke.py` | Compatible synthetic seed/anomaly extension, timings and real API/restart checks |
 | `docs/ANALYTICS_API_CONTRACT.md`, `STAGE5A_STORAGE_VALIDATION.md` | Teammate integration schemas/checklist and storage evidence |
+| `backend/app/conversation/opening.py` | Shared KK-first/RU-second unsolicited help greeting for Insurance, Fraud and all sales campaigns; customer-turn language policy remains pack-owned and dynamic |
 | `backend/app/risk/` | Shared input firewall, candidate gate, typed Risk Agent, source policy and business-state-preserving guidance |
 | `backend/app/packs/fraud_security/` | Manually selected consultative security pack, safe facts/questions and FraudCaseResult |
 | `frontend/src/components/security/` | Allowlisted reusable Risk panel and Fraud case view |
