@@ -1,4 +1,4 @@
-"""One streaming result and at most one bounded second pass. Audio never persists."""
+"""Two bounded hypotheses and an application-owned admission decision. No audio persists."""
 
 import asyncio
 import io
@@ -14,8 +14,15 @@ from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.speech.audio import PCM_BYTES_PER_SECOND, PCM_SAMPLE_RATE
+from app.speech.structured.capture import recognize_context
 from app.speech.structured.context import ExpectedKind, TranscriptionContext
-from app.speech.structured.normalization import recognize_expected
+from app.speech.structured.policy import (
+    AcceptedStructuredValue,
+    RecognitionHypothesis,
+    RecognitionOutcome,
+    RecognitionRisk,
+    StructuredRecognitionPolicy,
+)
 
 
 class RecognitionMetadata(BaseModel):
@@ -27,15 +34,36 @@ class RecognitionMetadata(BaseModel):
     second_pass_failed: bool = False
     candidate_count: int = Field(ge=0, le=65)
     accepted: bool
+    outcome: RecognitionOutcome = RecognitionOutcome.repair_required
+    risk: RecognitionRisk = RecognitionRisk.low
+    consensus: bool = False
+    verification_method: (
+        Literal["low_risk_schema", "customer_confirmation", "manual_entry"] | None
+    ) = None
     first_pass_ms: float = Field(default=0, ge=0, allow_inf_nan=False)
     second_pass_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    second_pass_wait_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 @dataclass(frozen=True)
-class RecognitionOutcome:
+class RecognitionResult:
     metadata: RecognitionMetadata
     kind: str
-    value: str | None = field(default=None, repr=False)
+    accepted_value: AcceptedStructuredValue | None = field(default=None, repr=False)
+    candidate: RecognitionHypothesis | None = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.metadata.accepted != (self.accepted_value is not None):
+            raise ValueError("Acceptance requires a typed verified value")
+        if self.accepted_value and (
+            self.accepted_value.kind != self.kind
+            or self.metadata.outcome != RecognitionOutcome.accepted
+        ):
+            raise ValueError("Inconsistent recognition verification")
+
+    @property
+    def value(self):
+        return self.accepted_value.canonical_value if self.accepted_value else None
 
 
 class BoundedTranscriber:
@@ -65,42 +93,78 @@ class BoundedTranscriber:
         return result.text
 
 
-async def resolve_recognition(text, pcm, context, second_pass=None, first_pass_ms=0):
-    first = recognize_expected(text, context.expected_kind)
-    final = first
-    used = False
+@dataclass(frozen=True)
+class BoundedHypothesis:
+    hypothesis: RecognitionHypothesis = field(repr=False)
+    failed: bool
+    elapsed_ms: float
+
+
+async def bounded_hypothesis(pcm, context, second_pass):
+    """One attempt; the deadline starts at launch, even while Realtime is pending."""
+    started = perf_counter()
+    try:
+        async with asyncio.timeout(20):
+            text = await second_pass.transcribe(pcm, context)
+        parsed = recognize_context(text, context)
+        hypothesis = RecognitionHypothesis.from_normalized("bounded", parsed)
+        failed = False
+    except (OpenAIError, TimeoutError, ValueError):
+        failed = True
+        hypothesis = RecognitionHypothesis(
+            "bounded", context.expected_kind, None, False, "unavailable"
+        )
+    return BoundedHypothesis(hypothesis, failed, (perf_counter() - started) * 1000)
+
+
+async def resolve_recognition(
+    text, pcm, context, second_pass=None, first_pass_ms=0, *, second_task=None
+):
+    first = recognize_context(text, context)
+    hypothesis = RecognitionHypothesis.from_normalized("realtime", first)
+    policy = StructuredRecognitionPolicy()
+    second = None
+    used = second_task is not None
     failed = False
     second_ms = None
-    if context.expected_kind != "none" and not first.accepted and pcm and second_pass:
+    waited_ms = None
+    if (
+        second_task is None
+        and context.expected_kind != "none"
+        and pcm
+        and second_pass
+        and (policy.requires_consensus(context.expected_kind) or not first.accepted)
+    ):
+        second_task = asyncio.create_task(bounded_hypothesis(pcm, context, second_pass))
+    if second_task is not None:
         used = True
-        started = perf_counter()
-        try:
-            async with asyncio.timeout(20):
-                second_text = await second_pass.transcribe(pcm, context)
-            second = recognize_expected(second_text, context.expected_kind)
-            # A second pass may resolve an invalid length, but cannot override an
-            # explicit ambiguity with an unrelated valid-looking identifier.
-            if first.candidates and second.accepted and second.value not in first.candidates:
-                final = first
-            else:
-                final = second
-        except (OpenAIError, TimeoutError, ValueError):
-            failed = True  # Allowlisted failure flag; never provider payload/audio.
-        second_ms = (perf_counter() - started) * 1000
-    return RecognitionOutcome(
+        wait_started = perf_counter()
+        result = await second_task
+        waited_ms = (perf_counter() - wait_started) * 1000
+        second, failed, second_ms = result.hypothesis, result.failed, result.elapsed_ms
+    decision = policy.decide(context.expected_kind, hypothesis, second)
+    return RecognitionResult(
         RecognitionMetadata(
             mode="streaming" if context.expected_kind == "none" else "structured",
             expected_kind=context.expected_kind,
             first_pass_valid=first.accepted,
             second_pass_used=used,
             second_pass_failed=failed,
-            candidate_count=65 if final.overflow else len(final.candidates),
-            accepted=final.accepted,
+            candidate_count=65 if first.overflow else len(first.candidates),
+            accepted=decision.accepted_value is not None,
+            outcome=decision.outcome,
+            risk=decision.risk,
+            consensus=decision.consensus,
+            verification_method=(
+                decision.accepted_value.verification_method if decision.accepted_value else None
+            ),
             first_pass_ms=first_pass_ms,
             second_pass_ms=second_ms,
+            second_pass_wait_ms=waited_ms,
         ),
-        kind=final.kind,
-        value=final.value,
+        kind=(decision.accepted_value or decision.candidate or hypothesis).kind,
+        accepted_value=decision.accepted_value,
+        candidate=decision.candidate,
     )
 
 
@@ -110,7 +174,7 @@ class _Receipt:
     turn: int
     expected_slot: str
     text_hash: str
-    outcome: RecognitionOutcome
+    outcome: RecognitionResult
     expires: float
 
 

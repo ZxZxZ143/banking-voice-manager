@@ -32,7 +32,7 @@ from app.packs.insurance_manager.state import (
 )
 from app.packs.insurance_manager.tools.capabilities import ActionCapabilities, ManagerSummary
 from app.packs.insurance_manager.tools.registry import ActionRegistry
-from app.speech.structured.context import context_for_slot
+from app.speech.structured.context import context_for_capture
 from app.speech.structured.recognition import resolve_recognition
 from app.tracing.models import TraceRecord
 
@@ -177,6 +177,9 @@ class InsuranceManagerPack:
             enter_wrap_up(context.conversation, language)
             followup = more_questions(language)
         public.conversation = context.conversation.model_copy(deep=True)
+        if public.conversation.structured_capture:
+            public.conversation.last_question = "[проверка произнесённого номера]"
+            public.conversation.structured_capture = None
         public.response_language = language
         return context, public, followup
 
@@ -199,9 +202,11 @@ class InsuranceManagerPack:
         previous = context.to_dialog(global_context)
         speech = global_context.speech_answer
         if speech is None and global_context.channel == "voice":
-            stt_context = context_for_slot(
+            stt_context = context_for_capture(
                 previous.conversation.expected_slot if previous.conversation else None,
                 previous.response_language,
+                previous.conversation.structured_capture if previous.conversation else None,
+                previous.slots.get("contact_field"),
             )
             if stt_context.expected_kind != "none":
                 speech = await resolve_recognition(text, b"", stt_context)
@@ -212,7 +217,18 @@ class InsuranceManagerPack:
             reply,
             completed_flow,
             collected_data,
-        ) = await self.processor.process(previous, text, speech=speech)
+        ) = await self.processor.process(
+            previous, text, speech=speech, channel=global_context.channel
+        )
+        capture = state.conversation.structured_capture if state.conversation else None
+        if capture and (
+            capture.slot != state.conversation.expected_slot
+            or capture.scenario != state.active_scenario
+            or state.conversation_status in {"ended", "handoff"}
+            or state.conversation.phase == "wrap_up"
+            or state.conversation.last_question != capture.prompt
+        ):
+            state.conversation.structured_capture = None
         selected = decision.scenarios[0].scenario_id if decision.scenarios else None
         result = InsuranceResult(
             scenario_id=(
@@ -229,6 +245,9 @@ class InsuranceManagerPack:
             handoff=state.conversation_status == "handoff",
         )
         public_state = state.model_copy(deep=True)
+        if public_state.conversation and public_state.conversation.structured_capture:
+            public_state.conversation.last_question = "[проверка произнесённого номера]"
+            public_state.conversation.structured_capture = None
         public_state.identification.failed_attempts = []
         public_state.identification.provided_values = {}
         for memory in public_state.scenario_identification.values():
@@ -256,7 +275,15 @@ class InsuranceManagerPack:
         return PackTurn(
             context=InsuranceScenarioContext.from_dialog(state),
             language=state.language,
-            response_text=state.history[-1].text,
+            response_text=(
+                reply.text
+                if trace.conversation_act == "verify_identifier"
+                or (
+                    trace.recognition
+                    and trace.recognition.outcome in {"manual_fallback", "exhausted"}
+                )
+                else state.history[-1].text
+            ),
             routing=public_decision,
             public_state=public_state,
             trace=trace,

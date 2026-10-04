@@ -23,7 +23,18 @@ Business specification: `data/starter_kit/README.ru.md`.
   Verified: 1160 backend / 97 frontend tests; 14 live RU/KK dialogues (34 turns), zero unnecessary
   classification questions; canonical routing 95.2% primary / 94.2% full, with known remaining errors.
 
-- **Structured speech refinement (Stage 6 branch):** shared expected-slot context,
+- **Structured speech precision gate (after 545dc10):** application-owned typed risk/outcome
+  separates ASR hypotheses from accepted values. All five sensitive fields require explicit
+  full read-back confirmation, even when two recognizers agree. Bounded STT starts at audio
+  commit in parallel with Realtime; one segmented repair sequence then safe handoff, private
+  pending state and no lookup before acceptance. Low-risk regions retain the fast path.
+  Completion/Router/Composer rules remain unchanged. Verified: 1216 backend / 97 frontend;
+  fresh 112-audio run had 9 correct automatic region accepts, 56 pending confirmations,
+  36 repairs, 11 provider failures. One wrong plate had consensus, so confirmation remains
+  mandatory. Human-confirmed sensitive precision is unmeasured. See
+  `STRUCTURED_SPEECH_PRECISION_GATE.md` for limits, regression and timing evidence.
+
+- **Prior structured speech refinement (Stage 6 branch):** shared expected-slot context,
   high-delay identifier STT, deterministic RU/KK/mixed normalization and one conditional
   bounded gpt-transcribe second pass. Region 01/02/03–20 use Astana/Almaty/other pricing.
   Raw UI transcript stays separate; private one-use receipts feed core, safe flags feed trace.
@@ -154,7 +165,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Shared STT; backend TTS factory, bounded OpenAI synthesis and deterministic RU/KK speech normalization |
-| `backend/app/speech/structured/` | Public typed context, candidate/region normalization, bounded second pass, private receipts and localized repair |
+| `backend/app/speech/structured/` | Typed recognition policy/hypotheses/accepted values, context/segment normalization, concurrent bounded pass, private receipts and repair |
+| `backend/app/packs/insurance_manager/speech_capture.py` | Bounded private confirmation/segmented capture before business slots; separate from completion and lookup memory |
 | `data/speech/`, `scripts/build_structured_speech_dataset.py`, `scripts/evaluate_structured_speech.py` | 100-positive/12-negative synthetic corpus; text/cloud/local/pace comparisons; ignored audio/models/reports |
 | `scripts/validate_structured_browser.py`, `scripts/evaluate_tts_streaming.py` | Synthetic-only browser STT/core harness and progressive MP3 experiment, separate ports 8012/8011 |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
@@ -314,6 +326,9 @@ Application traces expose concise reasons and measured latency, never hidden cha
   nullable language and `stt_after_commit_ms`. See `docs/VOICE_STREAMING_CONTRACT.md`.
   Structured finals add safe `recognition` flags/timings and optional `recognition_id`,
   with no canonical private value. Ordinary wire remains unchanged.
+  Recognition adds typed outcome/risk, consensus, verification_method and bounded wait time.
+  All sensitive voice candidates require caller confirmation before lookup; region schema
+  acceptance stays low-risk. Private pending capture is excluded from public state and models.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, conversation_signal, optional clarification_question and continuation.
   Typed `policy_relationship` and `relationship_needed` govern contextual discovery. Signals

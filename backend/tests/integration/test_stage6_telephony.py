@@ -67,7 +67,9 @@ def test_phone_insurance_policy_unavailable_phone_iin_exhaustion_and_privacy(tmp
         1: "Хочу продлить полис",
         2: "Номера полиса нет под рукой",
         3: "87770001234",
-        4: "000000000000",
+        4: "да",
+        5: "000000000000",
+        6: "да",
     }
 
     async def run():
@@ -77,15 +79,15 @@ def test_phone_insurance_policy_unavailable_phone_iin_exhaustion_and_privacy(tmp
         for marker in texts:
             await audio_turn(runtime, session.call_id, marker)
             expected.append(services.traces.get(session.session_id)[-1].expected_slot)
-        assert expected == ["policy_number", "phone", "iin", None]
+        assert expected == ["policy_number", "phone", "phone", "iin", "iin", None]
         state = services.dialogs.get_conversation(session.session_id)
         insurance = state.scenario_contexts["insurance_manager"].state
-        assert state.global_context.turn_number == 4
+        assert state.global_context.turn_number == 6
         assert insurance.identification.unavailable_fields == ["policy_number"]
         assert insurance.identification.failed_fields == ["phone", "iin"]
         assert insurance.manager_summary.reason == "lookup_exhausted"
         assert session.status == session.conversation_status == "handoff"
-        assert len(runtime.provider.outgoing[session.call_id]) == 4
+        assert len(runtime.provider.outgoing[session.call_id]) == 6
         assert not await runtime.feed_audio(session.call_id, ProviderAudio(bytes(480)))
         assert not await runtime.handle_transcript(
             session.call_id, {"type": "utterance.final", "text": "late"}
@@ -93,7 +95,7 @@ def test_phone_insurance_policy_unavailable_phone_iin_exhaustion_and_privacy(tmp
         await services.messages.end_session(session.session_id)
         stored = events(services, session)
         assert sum(e.event_type == "operator_handoff" for e in stored) == 1
-        assert sum(e.event_type == "conversation_turn" for e in stored) == 4
+        assert sum(e.event_type == "conversation_turn" for e in stored) == 6
         assert not any(e.event_type == "conversation_ended" for e in stored)
         safe = json.dumps([e.model_dump(mode="json") for e in stored], ensure_ascii=False)
         disk = services.events.store.path.read_bytes()

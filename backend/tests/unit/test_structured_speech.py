@@ -263,7 +263,7 @@ def test_private_identifiers_remain_redacted_without_current_slot_values(raw):
     assert raw not in redact_text(raw, {"region": "almaty"})
 
 
-def test_receipt_second_pass_is_authoritative_and_private(tmp_path):
+def test_receipt_second_pass_requires_confirmation_and_is_private(tmp_path):
     built = build_services(
         Settings(_env_file=None, event_db_path=tmp_path / "events.db"),
         router_override=SameScenarioRouter(),
@@ -284,9 +284,15 @@ def test_receipt_second_pass_is_authoritative_and_private(tmp_path):
         outcome = await resolve_recognition(raw, bytes(4800), context, second)
         token = built.messages.record_recognition("private", turn, slot, raw, outcome)
         result = await built.messages.process("private", raw, channel="voice", recognition_id=token)
+        assert "iin" not in built.dialogs.get("private").slots
+        assert result.trace.actions == []
+        assert result.trace.recognition.outcome == "confirmation_required"
+        assert result.trace.recognition.second_pass_used
+        assert raw not in result.model_dump_json()
+        result = await built.messages.process("private", "да", channel="voice")
         private = built.dialogs.get("private")
         assert private.slots["iin"] == "000101300000"
-        assert result.trace.recognition.second_pass_used
+        assert result.trace.recognition.verification_method == "customer_confirmation"
         public = result.model_dump_json()
         assert "000101300000" not in public and raw not in public
         assert private.conversation.recognition_attempts == {}
@@ -546,6 +552,8 @@ def test_related_source_slots_use_same_parser_and_keep_their_business_field(
 
     async def run():
         await built.messages.process("alias", text, channel="voice")
+        assert slot not in built.dialogs.get("alias").slots
+        await built.messages.process("alias", "да", channel="voice")
         state = built.dialogs.get("alias")
         assert state.slots[slot] == value
         assert "iin" not in state.slots

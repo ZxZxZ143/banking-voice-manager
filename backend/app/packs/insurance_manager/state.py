@@ -6,6 +6,7 @@ from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language, Slots
 from app.packs.contracts import GlobalConversationContext
 from app.packs.insurance_manager.tools.capabilities import ManagerSummary
+from app.speech.structured.capture import StructuredCapture
 
 IdentifierKind = Literal["phone", "iin", "policy_number", "claim_number", "vehicle_plate"]
 PolicyRelationship = Literal["new", "existing", "not_applicable", "unknown"]
@@ -42,6 +43,7 @@ class ConversationState(Contract):
     expected_slot: str | None = None
     repair_attempts: int = Field(default=0, ge=0)
     recognition_attempts: dict[str, int] = Field(default_factory=dict, max_length=9)
+    structured_capture: StructuredCapture | None = Field(default=None, exclude=True, repr=False)
     phase: Literal["discover", "collect", "resolve", "wrap_up", "confirm", "handoff"] = "discover"
     policy_relationship: PolicyRelationship = "unknown"
     scenario_relationships: dict[str, PolicyRelationship] = Field(
@@ -106,8 +108,12 @@ class InsuranceScenarioContext(Contract):
     conversation: ConversationState | None = Field(default_factory=ConversationState)
 
     def to_dialog(self, global_context: GlobalConversationContext) -> DialogState:
+        data = self.model_dump()
+        data["conversation"] = (
+            self.conversation.model_copy(deep=True) if self.conversation else None
+        )
         return DialogState(
-            **self.model_dump(),
+            **data,
             session_id=global_context.session_id,
             turn_number=global_context.turn_number,
             language=global_context.language,

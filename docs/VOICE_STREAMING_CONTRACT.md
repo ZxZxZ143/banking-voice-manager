@@ -52,7 +52,19 @@ The final transcript populates the voice text field and calls
 which still returns 501. Partials never trigger runtime turns. The provider does not
 return detected language labels; `language: null` is omitted at the runtime boundary.
 
-## Automatic end of utterance
+## Structured recognition and confirmation
+
+Structured expected-slot turns additionally emit safe `recognition` metadata and an opaque,
+one-use `recognition_id` forwarded to `/api/message`. Sensitive fields launch a bounded
+transcription at `committed`, in parallel with the Realtime final. A valid candidate, even
+with two-model agreement, returns `confirmation_required`; it cannot update business slots.
+The same conversation reply asks for full read-back confirmation or bounded segmented repair.
+Ordinary confirmation replies need no second transcription. Region codes retain low-risk
+schema acceptance. Added metadata: `outcome`, `risk`, `consensus`, `verification_method`,
+`second_pass_wait_ms`; no candidate value or bounded transcript is public. Raw `text` stays
+the Realtime transcript. See [precision gate](STRUCTURED_SPEECH_PRECISION_GATE.md).
+
+## Automatic end of utterance (VAD)
 
 Silero VAD runs locally using the small ONNX model shipped with faster-whisper;
 no Whisper transcription model is loaded. After speech is detected, continued

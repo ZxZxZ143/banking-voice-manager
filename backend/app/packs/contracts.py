@@ -7,7 +7,7 @@ from pydantic import ConfigDict, Field, SerializeAsAny
 from app.conversation.status import ConversationStatus
 from app.core.contracts import Contract, Language
 from app.risk.models import RiskContext
-from app.speech.structured.recognition import RecognitionOutcome
+from app.speech.structured.recognition import RecognitionResult
 from app.tracing.models import TraceRecord
 
 ContextLifecycle = Literal["inactive", "active", "suspended", "resumed", "completed"]
@@ -35,7 +35,7 @@ class GlobalConversationContext(Contract):
     language: Language | None = None
     channel: Literal["text", "voice"] = "text"
     conversation_status: ConversationStatus = "active"
-    speech_answer: RecognitionOutcome | None = Field(default=None, exclude=True, repr=False)
+    speech_answer: RecognitionResult | None = Field(default=None, exclude=True, repr=False)
 
 
 class ScenarioResult(Contract):

@@ -1,5 +1,9 @@
 # Structured speech recognition validation
 
+Historical refinement evidence. The subsequent
+[Structured Speech Precision Gate](STRUCTURED_SPEECH_PRECISION_GATE.md) supersedes the
+single-hypothesis acceptance path below; original measurements remain unchanged here.
+
 ## Inspected baseline (2026-10-03)
 
 Branch: `codex/stage6-telephony-integration`. Providers remain disabled; no PSTN

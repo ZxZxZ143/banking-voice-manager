@@ -29,9 +29,48 @@ def summary(rows):
     available = [r for r in rows if not r.get("provider_failed")]
     structured_available = [r for r in available if r["kind"] != "none"]
     positive_available = [r for r in positive if not r.get("provider_failed")]
+    pending = [r for r in rows if r.get("outcome") == "confirmation_required"]
+    consensus = [r for r in pending if r.get("consensus")]
+    sensitive_accepted = [r for r in accepted if r["kind"] not in {"region_code", "none"}]
     timings = [r["latency_ms"] for r in available]
     return dict(
         cases=len(rows),
+        outcome_counts=dict(Counter(r.get("outcome", "legacy") for r in available)),
+        accepted_count=len(accepted),
+        sensitive_accepted_count=len(sensitive_accepted),
+        sensitive_accepted_precision=(
+            sum(r["correct"] for r in sensitive_accepted) / len(sensitive_accepted)
+            if sensitive_accepted
+            else None
+        ),
+        wrong_accepted_count=sum(not r["correct"] for r in accepted),
+        confirmation_candidate_accuracy=(
+            sum(r.get("candidate_correct", False) for r in pending) / len(pending)
+            if pending
+            else None
+        ),
+        consensus_candidate_accuracy=(
+            sum(r.get("candidate_correct", False) for r in consensus) / len(consensus)
+            if consensus
+            else None
+        ),
+        consensus_count=len(consensus),
+        bounded_wait_p50_ms=percentile(
+            [
+                r["second_pass_wait_ms"]
+                for r in available
+                if r.get("second_pass_wait_ms") is not None
+            ],
+            0.5,
+        ),
+        bounded_wait_p95_ms=percentile(
+            [
+                r["second_pass_wait_ms"]
+                for r in available
+                if r.get("second_pass_wait_ms") is not None
+            ],
+            0.95,
+        ),
         counts=dict(Counter(r["kind"] for r in positive)),
         canonical_accuracy=sum(r["correct"] for r in positive) / len(positive)
         if positive
@@ -52,8 +91,19 @@ def summary(rows):
         else None,
         false_acceptance_rate=sum(not r["correct"] for r in accepted) / len(accepted)
         if accepted
-        else 0,
-        repair_rate=sum(not r["accepted"] for r in structured_available) / len(structured_available)
+        else None,
+        confirmation_rate=len(pending) / len(structured_available)
+        if structured_available
+        else None,
+        repair_rate=sum(
+            r.get("outcome") == "repair_required" if "outcome" in r else not r["accepted"]
+            for r in structured_available
+        )
+        / len(structured_available)
+        if structured_available
+        else None,
+        nonacceptance_rate=sum(not r["accepted"] for r in structured_available)
+        / len(structured_available)
         if structured_available
         else None,
         provider_outage_rate=1 - len(available) / len(rows) if rows else None,
@@ -109,7 +159,14 @@ async def run(args):
         fixtures = fixtures[: args.limit]
     if args.ordinary:
         ordinary = json.loads((ROOT / "data/tts/eval_samples.json").read_text("utf-8"))
-        wanted = {"ru_greeting", "ru_deposit", "ru_risk", "kk_greeting", "kk_deposit", "kk_risk"}
+        wanted = {
+            "ru_greeting",
+            "ru_deposit",
+            "ru_risk",
+            "kk_greeting",
+            "kk_deposit",
+            "kk_risk",
+        }
         fixtures = [
             dict(
                 id=r["id"],
@@ -261,10 +318,11 @@ async def run(args):
             if args.provider == "openai":
                 from types import SimpleNamespace
 
+                from websockets.asyncio.client import connect
+
                 from app.speech.structured.recognition import BoundedTranscriber
                 from app.speech.stt.streaming import StreamInput, relay_stream
                 from app.speech.stt.streaming_provider import configure_transcription
-                from websockets.asyncio.client import connect
 
                 queue = asyncio.Queue()
                 for i in range(0, len(pcm), 4800):
@@ -383,11 +441,18 @@ async def run(args):
         accepted = (
             recognition.metadata.accepted if recognition and not args.baseline else parsed.accepted
         )
+        candidate = (
+            recognition.candidate.canonical_candidate
+            if recognition and recognition.candidate
+            else None
+        )
         item = {
             **row,
             "transcript": transcript,
             "value": value,
             "accepted": accepted,
+            "candidate": candidate,
+            "candidate_correct": candidate is not None and candidate == row["expected"],
             "correct": value == row["expected"],
             "first_correct": parsed.value == row["expected"],
             "raw_exact": transcript.strip() == row["text"].strip(),
@@ -465,10 +530,14 @@ if __name__ == "__main__":
     )
     parser.add_argument("--concurrency", type=int, choices=range(1, 5), default=3)
     parser.add_argument(
-        "--paced", action="store_true", help="24 RU/KK paired fast/slow audio pilot cases"
+        "--paced",
+        action="store_true",
+        help="24 RU/KK paired fast/slow audio pilot cases",
     )
     parser.add_argument(
-        "--ordinary", action="store_true", help="Six ordinary RU/KK TTS samples, medium delay"
+        "--ordinary",
+        action="store_true",
+        help="Six ordinary RU/KK TTS samples, medium delay",
     )
-    parser.add_argument("--report-tag", choices=["linux", "paced"])
+    parser.add_argument("--report-tag", choices=["linux", "paced", "precision"])
     asyncio.run(run(parser.parse_args()))

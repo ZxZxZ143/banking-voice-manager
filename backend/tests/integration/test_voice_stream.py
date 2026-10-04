@@ -178,6 +178,8 @@ def test_stream_configuration_partial_commit_and_final_do_not_route(monkeypatch,
 def test_voice_receipt_reaches_correct_slot_and_progresses(
     monkeypatch, slot, text, canonical, scenario
 ):
+    from unittest.mock import AsyncMock
+
     from app.packs.insurance_manager.agent.schemas import RouterDecision
     from app.packs.insurance_manager.state import ConversationState, DialogState
 
@@ -191,6 +193,10 @@ def test_voice_receipt_reaches_correct_slot_and_progresses(
             )
 
     config = Settings(_env_file=None, openai_api_key="fixture", enable_dev_stand=False)
+    monkeypatch.setattr(
+        "app.speech.structured.recognition.BoundedTranscriber.transcribe",
+        AsyncMock(return_value=text),
+    )
     upstream, _ = patch_provider(monkeypatch, FixtureUpstream(transcript=text))
     session_id = str(uuid4())
     with TestClient(create_app(config, router_override=RouterFixture())) as client:
@@ -213,8 +219,8 @@ def test_voice_receipt_reaches_correct_slot_and_progresses(
             socket.send_json({"type": "finish"})
             final = receive_until(socket, "utterance.final")[-1]
             assert final["text"] == text
-            assert final["recognition"]["accepted"]
-            assert not final["recognition"]["second_pass_used"]
+            assert final["recognition"]["accepted"] == (slot == "region")
+            assert final["recognition"]["second_pass_used"] == (slot != "region")
         response = client.post(
             "/api/message",
             json={
@@ -225,6 +231,14 @@ def test_voice_receipt_reaches_correct_slot_and_progresses(
             },
         )
         assert response.status_code == 200, response.text
+        if slot != "region":
+            assert slot not in services.dialogs.get(session_id).slots
+            assert response.json()["trace"]["actions"] == []
+            response = client.post(
+                "/api/message",
+                json={"session_id": session_id, "text": "да", "channel": "voice"},
+            )
+            assert response.status_code == 200, response.text
         assert services.dialogs.get(session_id).slots[slot] == canonical
         assert services.dialogs.get(session_id).conversation.expected_slot != slot
         assert response.json()["trace"]["recognition"]["accepted"]

@@ -17,7 +17,7 @@ from app.risk.guard import guidance_turn
 from app.risk.models import RiskAssessment, RiskContext
 from app.risk.privacy import redact_authentication
 from app.risk.service import RiskIntelligence, RiskRun
-from app.speech.structured.context import context_for_slot
+from app.speech.structured.context import context_for_capture, context_for_slot
 from app.speech.structured.recognition import RecognitionReceipts
 from app.tracing.collector import TraceCollector
 from app.tracing.models import PackSwitch, TraceRecord
@@ -76,7 +76,14 @@ class MessageService:
             meta = getattr(entry.state, "conversation", None) if entry else None
             slot = meta.expected_slot if meta else None
             language = getattr(entry.state, "response_language", None) if entry else None
-            return context_for_slot(slot, language), conversation.global_context.turn_number, slot
+            capture = meta.structured_capture if meta else None
+            return (
+                context_for_capture(
+                    slot, language, capture, entry.state.slots.get("contact_field")
+                ),
+                conversation.global_context.turn_number,
+                slot,
+            )
         return context_for_slot(None), 0, None
 
     def record_recognition(self, session_id, turn, slot, text, outcome):
@@ -211,7 +218,7 @@ class MessageService:
             if turn.complete_pack or turn.result.status in ("handoff", "ended"):
                 self.lifecycle.complete(conversation)
             trace = turn.trace.model_copy(deep=True)
-            if speech_answer:
+            if speech_answer and trace.recognition is None:
                 trace.recognition = speech_answer.metadata
             trace.session_id = session_id
             trace.turn = global_context.turn_number

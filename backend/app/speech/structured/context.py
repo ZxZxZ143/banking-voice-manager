@@ -49,6 +49,9 @@ class TranscriptionContext(BaseModel):
     prompt: str = Field(default=_PROMPTS["none"], max_length=500)
     keywords: tuple[str, ...] = Field(default=(), max_length=10)
     accuracy_mode: Literal["medium", "high"] = "medium"
+    capture_part: Literal[
+        "whole", "first", "middle", "last", "prefix", "digits", "letters", "region"
+    ] = "whole"
 
 
 def context_for_slot(slot: str | None, language: str | None = None) -> TranscriptionContext:
@@ -67,3 +70,32 @@ def context_for_slot(slot: str | None, language: str | None = None) -> Transcrip
         keywords=keywords,
         accuracy_mode="medium" if kind == "none" else "high",
     )
+
+
+def kind_for_slot(slot, contact_field=None):
+    return (
+        "phone"
+        if slot == "new_value" and contact_field == "phone"
+        else SLOT_KINDS.get(slot, "none")
+    )
+
+
+def context_for_capture(slot, language, capture=None, contact_field=None):
+    context = context_for_slot(kind_for_slot(slot, contact_field), language)
+    if slot == "region":
+        context = context_for_slot(slot, language)
+    if capture and capture.slot == slot and capture.phase == "segments":
+        from app.speech.structured.capture import PARTS, part_instruction
+
+        context = context_for_slot(capture.kind, language)
+        part = PARTS[capture.kind][len(capture.parts)]
+        return context.model_copy(
+            update={
+                "capture_part": part,
+                "prompt": part_instruction(capture.kind, part),
+            }
+        )
+    if capture and capture.slot == slot and capture.phase == "confirmation":
+        # Yes/no needs no identifier hints and no second paid transcription.
+        return context_for_slot(None, language)
+    return context

@@ -10,7 +10,8 @@ from typing import Any, Literal, Protocol
 
 from app.speech.audio import PCM_BYTES_PER_SECOND, validate_pcm_frame
 from app.speech.structured.context import TranscriptionContext
-from app.speech.structured.recognition import resolve_recognition
+from app.speech.structured.policy import StructuredRecognitionPolicy
+from app.speech.structured.recognition import bounded_hypothesis, resolve_recognition
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ async def relay_stream(
     context = context or TranscriptionContext()
     utterance_audio = bytearray()
     committed_at = None
+    second_task = None
     transcript_received = False
     ended = asyncio.Event()
     total_bytes = 0
@@ -51,7 +53,7 @@ async def relay_stream(
     speech_end_reported = False
 
     async def commit():
-        nonlocal committed_at
+        nonlocal committed_at, second_task
         if committed_at is not None:
             return
         if not detector.tracker.has_speech:
@@ -59,6 +61,14 @@ async def relay_stream(
             ended.set()
             return
         committed_at = perf_counter()
+        if (
+            StructuredRecognitionPolicy.requires_consensus(context.expected_kind)
+            and utterance_audio
+            and second_pass
+        ):
+            second_task = asyncio.create_task(
+                bounded_hypothesis(bytes(utterance_audio), context, second_pass)
+            )
         if phone_timing:
             await emit(
                 {
@@ -146,7 +156,12 @@ async def relay_stream(
                 if context.expected_kind != "none":
                     first_ms = (perf_counter() - committed_at) * 1000
                     outcome = await resolve_recognition(
-                        event["transcript"], bytes(utterance_audio), context, second_pass, first_ms
+                        event["transcript"],
+                        bytes(utterance_audio),
+                        context,
+                        second_pass,
+                        first_ms,
+                        second_task=second_task,
                     )
                     utterance_audio.clear()
                     extra["recognition"] = outcome.metadata.model_dump()
@@ -189,6 +204,8 @@ async def relay_stream(
             task.result()
     finally:
         utterance_audio.clear()
+        if second_task is not None:
+            tasks.append(second_task)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
