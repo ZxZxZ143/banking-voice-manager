@@ -1,240 +1,642 @@
-# Banking Voice Platform
+# Veyra — Banking Voice Platform
 
-Modular conversational platform for Russian, Kazakh and mixed speech. Insurance Manager, three outbound sales campaigns and Fraud & Security share sessions, streaming transcription, browser speech synthesis and supervisor traces. Each assistant owns its isolated business context. Shared Risk Intelligence adds advisory safety guidance without switching assistants. Insurance separates Router, Decision Policy, grounded business logic and a pack-local LLM Conversation Composer.
+Modular financial conversational AI platform for Russian, Kazakh and mixed RU/KK speech.
 
-Insurance uses the supplied **fictional Saqta Insurance** snapshot. The outbound bots use eight synthetic **Merei Demo Bank** products: three deposits, three debit/payment cards and two loans. Both catalogs have reference date **2026-10-01**. Security guidance is a synthetic demo policy dated **2026-10-02**. A full Loan Consultant remains unimplemented; the loan sales campaign only explains catalog terms and records interest.
+Veyra combines:
 
-`ScenarioRegistry` selects the default Insurance Manager for a new session; later turns
-continue the active pack. The UI selector opens Product immediately during listening and applies Insurance on the next request, preserving
-history and session ID. Assistants change only through explicit UI/API selection.
-Out-of-domain questions never invoke or forward to another pack. Insurance briefly answers
-small talk and identity enquiries, explains its scope for unrelated/banking questions, and
-retains the current insurance goal. Suspended packs resume their own context and result.
-See [the architecture](docs/ARCHITECTURE.md).
+- web and phone conversations;
+- streaming speech recognition;
+- dynamic RU / KK / mixed-language interaction;
+- specialized assistants;
+- persistent multi-turn context;
+- structured speech recognition for sensitive identifiers;
+- Fraud & Security and shared Risk Intelligence;
+- backend TTS;
+- persistent SQLite analytics;
+- Customer Intent Journey;
+- anomaly detection;
+- Finance Supervisor Dashboard;
+- real telephony integration through Vonage and Twilio adapters.
 
-## What works
+Insurance Manager, outbound sales assistants and Fraud & Security share the same application-level conversation infrastructure while preserving isolated business context.
 
-- Sensitive spoken identifiers require full read-back and explicit confirmation. Natural
-  RU/KK partial corrections update only an unambiguous digit/letter/region, then repeat
-  the full value. Correction/repair attempts are bounded; keyboard input or specialist
-  handoff remains available. A fast STT candidate can start read-back without admission.
-  Browser voice prewarms input during Cedar playback, uses adaptive local endpointing and
-  a bounded RAM-only near-end buffer with echo protection. See
-  [correction, latency and release evidence](docs/VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
-- Expected fields configure RU/KK/mixed normalization. Region `ноль два` maps to Almaty
-  pricing; 01 to Astana, 03–20 to other. Earlier synthetic canonical accuracy was 62%;
-  ASR errors are why the current [precision gate](docs/STRUCTURED_SPEECH_PRECISION_GATE.md)
-  requires confirmation for every sensitive field.
-- Product language continuity is application-owned. Explicit «ответь на русском» /
-  «қазақша жауап беріңіз» persists and repeats the pending question without advancing sales.
-  Browser and phone use the same authorized response language for speech.
-- Browser speech uses private backend TTS first, then SpeechSynthesis fallback. Configure
-  `TTS_PROVIDER=auto|openai|browser`, `BACKEND_TTS_MODEL` (default `gpt-4o-mini-tts`),
-  `BACKEND_TTS_VOICE` (default `cedar`), optional `BACKEND_TTS_VOICE_RU/KK` overrides
-  and `BACKEND_TTS_INSTRUCTIONS_RU/KK`. The user's listening preference is cedar;
-  feminine presentation has not been approved. Five RU/KK voice comparisons and an
-  isolated streaming playback prototype are measured in the validation report.
-  OpenAI uses the existing server-only key. No backend provider means browser fallback for
-  web and unavailable speech for phone. Local Silero/Piper RU+KK prototypes were measured
-  on Windows/Linux but still require human listening before becoming the default.
-  See [measured TTS quality and language validation](docs/TTS_QUALITY_VALIDATION.md).
+The same `MessageService`, Risk Intelligence and analytics pipeline are used by both **web** and **phone** channels.
 
-- Stages 5A/5B: privacy-safe structured conversation events persist in SQLite; read-only
-  `/api/analytics/events`, `/api/analytics/sessions/{session_id}` and
-  `/api/analytics/summary` and additive dashboard APIs support the integrated Finance
-  Supervisor Dashboard. `EVENT_DB_PATH` defaults
-  to `data/runtime/veyra_events.db`; Docker uses the `analytics_data` named volume.
-  Normal `docker compose down`/`up` retains events. Conversation state still resets.
-  See the
-  [integration contract](docs/ANALYTICS_API_CONTRACT.md) and
-  [storage validation](docs/STAGE5A_STORAGE_VALIDATION.md).
-  Seed safely with `python scripts/seed_analytics_demo.py` in the installed backend
-  environment; `--reset` replaces only synthetic demo events.
+---
 
-- Stage 6 integration: the teammate's PhoneRuntime, Twilio and Vonage adapters call the
-  current MessageService and shared Risk, with `voice` events in the same SQLite store.
-  Telephony is disabled by default; no provider secrets are needed for web/dashboard startup.
-  Offline fixtures are verified; live PSTN remains **pending_credentials**. No outbound
-  dial command or real operator transfer is included. See [PhoneRuntime](docs/PHONE_RUNTIME.md),
-  [integration validation](docs/STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md) and the
-  [future live checklist](docs/STAGE6_LIVE_TELEPHONY_CHECKLIST.md).
+## Product idea
 
-- Manually selected `fraud_security`: brief RU/KK security guidance, safe yes/no incident
-  questions and `FraudCaseResult` for human review. It never asks for OTP/PIN/CVV/password,
-  confirms fraud, blocks accounts or changes transactions.
-- Shared Risk Intelligence: a deterministic candidate gate skips the model on ordinary
-  turns. A single bounded structured call examines a masked utterance and security-only
-  context. A detected concern produces source-based advice while preserving the selected
-  sales/Insurance state and result. The UI shows Risk Intelligence separately.
-  Model failures are visible as unavailable assessment with precautionary advice where
-  applicable. See [Stage 4 validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md).
+Veyra is designed for financial contact centers in Kazakhstan.
 
-- Product starts with a branded Merei Demo Bank greeting before listening. Currency and
-  amounts are understood and spoken naturally: «50 тысяч тенге», «100 долларов США».
-  Full conditions remain available in a separate disclosure.
-- Insurance also starts with an assistant-only Saqta Insurance greeting before listening.
-  Its Composer uses bounded history, the previous question and the authorized next step
-  to acknowledge partial answers and ask one useful follow-up. Facts are immutable server
-  blocks; only acknowledgement and question wording come from the Composer.
-  Valid requested identifiers continue the flow and reset misunderstanding counters.
-- Outbound sales: the caller assigns deposit/card/loan before the call. The bot offers the
-  assigned product first, gives short direct answers and opening steps, and adapts to explicit
-  needs. Full conditions remain in the UI. One soft refusal gets one follow-up; the next ends
-  the call. Deterministic matching, comparisons and objections produce `SalesLeadResult`.
-  Interest, requested link and callback are
-  recorded as demo next actions; no product opens, link sends or callback schedules.
-- Pack selector, visible active pack, switch notice, SalesLeadResult view and product/switch
-  supervisor fields. Interest completes the lead while keeping conversation active;
-  a final refusal ends the global call. New sales campaigns require a reset in the demo UI.
-- The existing catalog: 40 insurance scenarios and three system intents. Natural wording, independent multi-intent requests, clarification, topic switching and same-session continuation.
-- Source-based quotes for ОГПО, standard КАСКО, travel, property and accident insurance; DMS package information, clinics, documents, payment methods and owned policy/claim/payment lookups.
-- Application and servicing flows collect the catalog's required information and transfer the prepared conversation to an operator when an insurer operation is needed.
-- Explicit operator request: **«Конечно, передаю диалог оператору.»**, `conversation_status=handoff`. Goodbye produces `ended`. Both preserve history and trace and stop the automatic microphone loop.
-- A completed Insurance answer enters `wrap_up` and asks whether more help is needed in RU/KK.
-  Acknowledgements keep that offer; declining ends the conversation; a direct new request routes
-  immediately. Typed new/existing policy context survives short answers and temporary Risk
-  guidance. Scenario slot snapshots prevent old car/trip information from contaminating later requests.
-- Invalid structured routing output produces a safe clarification; repeated uncertainty ends in handoff. Provider outages remain visible errors.
+The main product idea is not only to answer customer requests, but also to transform conversations into structured business intelligence:
 
-Actual policy issuance, renewal, changes, cancellation, SMS/email delivery and contact-center transfer require external integrations. They are never reported as completed here. Identifier lookup against the synthetic snapshot is not real authentication.
+```text
+Web / Phone
+    ↓
+Speech / Text
+    ↓
+Conversational AI
+    ↓
+Business Assistant
+    ↓
+Risk Intelligence
+    ↓
+Response
+    ↓
+Persistent Events
+    ↓
+Journey / Risk / Anomalies
+    ↓
+Finance Supervisor Dashboard
+```
 
-## Quick Start — Docker
+---
 
-Requirements: Docker Desktop with a running Linux engine, Docker Compose, Internet access and an OpenAI API key with access to the routing and transcription models.
+# What works
 
-From the repository root in PowerShell, prepare `.env` once:
+## RU / KK / mixed conversations
+
+Veyra supports:
+
+- Russian;
+- Kazakh;
+- mixed RU / KK speech;
+- language switching during the same conversation;
+- multi-turn context;
+- short RU/KK confirmations and corrections;
+- language-preserving wrap-up and closing behavior.
+
+The customer is **not required to choose one language for the entire session**.
+
+### Bilingual proactive opening
+
+Before the customer has spoken, proactive assistants use the same bilingual greeting:
+
+> Сәлеметсіз бе! Сізге қалай көмектесе аламын?  
+> Здравствуйте! Чем я могу вам помочь?
+
+Kazakh comes first, then Russian.
+
+After the first customer utterance, Veyra follows the actual language of the dialogue dynamically.
+
+A customer may continue in Kazakh, Russian or mixed RU/KK, and the assistant may switch when the customer's speech naturally switches.
+
+---
+
+## Assistants
+
+The integrated project contains several isolated assistant packs:
+
+- **Insurance Manager**
+- **Fraud & Security**
+- **Product Promoter**
+- **Card Promoter**
+- **Loan Promoter**
+
+Each pack owns its own business state.
+
+The web UI exposes a manual assistant selector for deterministic testing and competition demonstration.
+
+This selector is a **demo/developer control**.
+
+A phone customer does not manually choose an assistant through the frontend.
+
+Assistants change only through explicit application/UI selection according to the current integrated contract.
+
+Out-of-domain questions do not silently forward to another assistant.
+
+See [Architecture](docs/ARCHITECTURE.md) and [Project Map](docs/PROJECT_MAP.md).
+
+---
+
+# Insurance Manager
+
+Insurance uses the supplied fictional **Saqta Insurance** snapshot.
+
+The assistant supports:
+
+- natural RU/KK dialogue;
+- persistent conversation context;
+- new/existing policy context;
+- wrap-up;
+- normal conversation completion;
+- source-grounded insurance explanations;
+- policy / claim / payment lookups against synthetic demo data;
+- safe human-review handoff where an insurer operation is required.
+
+The current insurance catalog contains:
+
+- 40 insurance scenarios;
+- 3 system intents.
+
+Supported topics include:
+
+- ОГПО;
+- КАСКО;
+- travel insurance;
+- property insurance;
+- accident insurance;
+- DMS package information;
+- clinics;
+- required documents;
+- payment methods;
+- policy status;
+- claim status;
+- payment lookups.
+
+Actual policy issuance, renewal, cancellation, SMS/email delivery and real insurer write operations require external integrations and are never falsely reported as completed.
+
+---
+
+# Outbound Product Promoters
+
+The synthetic **Merei Demo Bank** catalog contains:
+
+- three deposits;
+- three debit/payment cards;
+- two loans.
+
+The catalog reference date is **2026-10-01**.
+
+The operator/demo configuration assigns the product campaign before the conversation:
+
+- `product_promoter` — deposit;
+- `card_promoter` — card;
+- `loan_promoter` — loan.
+
+The bot:
+
+- offers the assigned product first;
+- answers questions about conditions;
+- adapts to explicit customer needs;
+- records demo interest;
+- records requested link/callback intent;
+- handles objections;
+- ends after repeated refusal.
+
+A full standalone Loan Consultant is not implemented; the loan campaign explains catalog terms and records customer interest.
+
+Actual product opening, real link delivery and real callback scheduling are outside the competition implementation.
+
+---
+
+# Fraud & Security
+
+Fraud & Security provides brief RU/KK financial safety guidance.
+
+It can ask safe incident questions and produce a `FraudCaseResult` for human review.
+
+It never asks the customer for:
+
+- OTP;
+- PIN;
+- CVV;
+- password.
+
+It does not:
+
+- confirm fraud as a proven fact;
+- block accounts;
+- cancel transactions;
+- modify financial records.
+
+---
+
+# Risk Intelligence
+
+Shared Risk Intelligence runs alongside the selected assistant.
+
+It can detect structured safety concerns while preserving the current assistant context.
+
+Examples:
+
+- suspicious transaction;
+- customer denies a payment;
+- third party asks for SMS / OTP code;
+- credential-recovery risk;
+- suspicious banking impersonation;
+- unusual security-sensitive behavior.
+
+Risk output is advisory.
+
+Veyra does **not** automatically declare fraud or sanction the customer because of an AI signal.
+
+If the existing deterministic/business review policy requires human handling, the conversation can transition to:
+
+```text
+handoff
+```
+
+This policy is language-independent.
+
+Equivalent RU and KK situations use the same review rules.
+
+High risk alone does not automatically force handoff unless the configured policy requires review.
+
+See [Fraud/Risk validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md).
+
+---
+
+# Structured speech recognition
+
+Sensitive spoken identifiers use a confirmation-first flow.
+
+Supported structured speech fields include:
+
+- phone number;
+- IIN;
+- insurance policy number;
+- support/request number;
+- vehicle registration number;
+- region code.
+
+Current flow:
+
+```text
+speech
+→ STT
+→ structured speech receipt
+→ read-back
+→ explicit confirmation / correction
+→ normalization
+```
+
+The system supports:
+
+- full read-back;
+- RU/KK partial corrections;
+- correction of individual digits;
+- correction of individual letters;
+- region corrections;
+- collection of a value in several parts;
+- bounded repair attempts.
+
+For phone numbers, a value spoken in domestic `8...` form remains in that form during read-back and is normalized to `+7...` only after confirmation.
+
+Sensitive values are not exposed in public routing context or supervisor traces.
+
+See:
+
+- [Voice latency and correction validation](docs/VOICE_LATENCY_AND_CORRECTION_VALIDATION.md)
+- [Structured speech precision gate](docs/STRUCTURED_SPEECH_PRECISION_GATE.md)
+
+---
+
+# TTS
+
+Browser speech uses private backend TTS first.
+
+Current configuration supports:
+
+```text
+TTS_PROVIDER=auto|openai|browser
+BACKEND_TTS_MODEL=gpt-4o-mini-tts
+BACKEND_TTS_VOICE=cedar
+```
+
+Optional RU/KK voice and instruction overrides are also supported by the backend configuration.
+
+Current primary integrated voice is **OpenAI Cedar**.
+
+For web:
+
+```text
+backend TTS
+→ browser playback
+→ SpeechSynthesis fallback if needed
+```
+
+For phone:
+
+```text
+backend TTS
+→ provider-specific audio conversion
+→ phone media stream
+```
+
+Browser TTS is never used as the phone-call speech engine.
+
+See [TTS quality validation](docs/TTS_QUALITY_VALIDATION.md).
+
+---
+
+# Voice runtime
+
+Browser voice uses:
+
+- streaming transcription;
+- local Silero VAD;
+- adaptive endpointing;
+- protected playback/listening lifecycle;
+- bounded RAM-only near-end buffering;
+- echo protection.
+
+Only final utterances reach Agent Core.
+
+Partial transcripts remain diagnostic only.
+
+The runtime prevents the microphone from listening to the assistant's own speech.
+
+Normal lifecycle:
+
+```text
+Listening
+→ Processing
+→ Speaking
+→ Listening
+```
+
+`handoff` and `ended` stop the automatic microphone loop.
+
+Reset invalidates stale asynchronous callbacks.
+
+Recoverable Agent failures return the browser runtime to a safe retry state.
+
+---
+
+# Architecture
+
+```text
+                    ┌───────────────────┐
+                    │      Web UI       │
+                    └─────────┬─────────┘
+                              │
+                    Browser Mic / Text
+                              │
+                              ▼
+                     Streaming STT
+                              │
+                              │
+Phone ── Telephony ── Audio ──┤
+                              ▼
+                       MessageService
+                              │
+                 ┌────────────┼────────────┐
+                 ▼            ▼            ▼
+             Insurance      Fraud       Product
+              Manager      & Security   Promoters
+                 │            │            │
+                 └────────────┼────────────┘
+                              ▼
+                      Risk Intelligence
+                              │
+                              ▼
+                         Response
+                              │
+                    ┌─────────┴─────────┐
+                    ▼                   ▼
+                  Web TTS            Phone TTS
+```
+
+Analytics path:
+
+```text
+Conversation Events
+        ↓
+SQLite Event Store
+        ↓
+Session Analytics
+        ↓
+ ┌────────────┬──────────────┬─────────────┐
+ ▼            ▼              ▼             ▼
+Risk       Journey        Anomalies     Latency
+ └────────────┴──────────────┴─────────────┘
+                      ↓
+          Finance Supervisor Dashboard
+```
+
+---
+
+# Product channels
+
+Veyra currently has exactly two user channels:
+
+```text
+web
+phone
+```
+
+There is no separate mobile channel.
+
+---
+
+# Persistent analytics
+
+Privacy-safe structured conversation events persist in SQLite.
+
+Default native database:
+
+```text
+data/runtime/veyra_events.db
+```
+
+Docker uses the `analytics_data` named volume.
+
+Normal:
+
+```text
+docker compose down
+docker compose up
+```
+
+retains analytics events.
+
+Conversation runtime state itself remains process-local.
+
+Analytics can expose:
+
+- sessions;
+- assistant/scenario;
+- channel;
+- risk;
+- handoff;
+- clarification;
+- completion;
+- latency;
+- journey;
+- anomalies.
+
+A clean clone starts with its own local SQLite database.
+
+Another developer's local database is **not** transferred through Git.
+
+See:
+
+- [Analytics API Contract](docs/ANALYTICS_API_CONTRACT.md)
+- [Storage validation](docs/STAGE5A_STORAGE_VALIDATION.md)
+- [Data Intelligence](docs/DATA_INTELLIGENCE.md)
+
+---
+
+# Customer Intent Journey
+
+Journey is derived from actual conversation events.
+
+Example:
+
+```text
+LOGIN_PROBLEM
+→ SUSPICIOUS_TRANSACTION
+→ CARD_BLOCK
+→ HANDOFF
+```
+
+Veyra does not invent a scenario transition that was not observed.
+
+Repeated identical consecutive stages can be collapsed for readability.
+
+Journey is an analytics foundation, not a full enterprise CJM editor.
+
+---
+
+# Anomaly Detection
+
+Anomaly detection is deterministic and explainable.
+
+It does not require another LLM call.
+
+Concept:
+
+```text
+historical baseline
+vs
+current activity
+→ abnormal increase
+```
+
+Example:
+
+```text
+baseline: 4 events/hour
+current: 12 events/hour
+→ abnormal increase
+```
+
+Veyra reports:
+
+- unusual volume;
+- abnormal increase;
+- deviation from baseline.
+
+It does not automatically claim:
+
+- confirmed fraud campaign;
+- confirmed attack;
+- confirmed malicious cause.
+
+---
+
+# Finance Supervisor Dashboard
+
+The integrated shadcn/ui dashboard contains:
+
+- **Overview**
+- **Live Calls**
+- **Sessions**
+- **Risk & Fraud**
+- **Anomalies**
+- **Journeys**
+- **Conversation Demo**
+
+The dashboard reads persistent SQLite analytics.
+
+## Live Calls
+
+`Live Calls` is based on recent event activity.
+
+It does not guarantee that a provider socket is currently connected.
+
+Historical demo data may be visible in Sessions while not appearing in Live Calls.
+
+For a Live Calls demo, create fresh voice activity.
+
+---
+
+# Quick Start — Docker
+
+## Requirements
+
+- Docker Desktop with Linux engine;
+- Docker Compose;
+- Internet access;
+- OpenAI API key with access to configured routing, transcription and speech models.
+
+Create `.env` from the example.
+
+### Windows PowerShell
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Set `OPENAI_API_KEY` locally. Keep `OPENAI_ROUTER_MODEL=gpt-4.1-mini` and `ROUTER_TEMPERATURE=0` for the measured configuration. Do not overwrite an existing configured `.env`.
+### macOS / Linux
 
-```powershell
+```bash
+cp .env.example .env
+```
+
+Set at minimum:
+
+```text
+OPENAI_API_KEY
+```
+
+Recommended measured Router configuration:
+
+```text
+OPENAI_ROUTER_MODEL=gpt-4.1-mini
+ROUTER_TEMPERATURE=0
+```
+
+Never overwrite an already configured `.env`.
+
+Start:
+
+```bash
 docker compose up --build
 ```
 
-- Application: [http://127.0.0.1:5173](http://127.0.0.1:5173)
-- Backend health: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
-- Proxied health: [http://127.0.0.1:5173/health](http://127.0.0.1:5173/health)
+Open:
 
-`backend` runs FastAPI as a non-root user. `frontend` serves the built React app through Nginx and proxies HTTP and voice WebSocket traffic to `backend:8000`. Health checks gate frontend startup. Both host ports bind to loopback.
+- Application: http://127.0.0.1:5173
+- Backend health: http://127.0.0.1:8000/health
+- Proxied health: http://127.0.0.1:5173/health
 
-```powershell
+Useful commands:
+
+```bash
 docker compose ps
 docker compose logs backend --tail 30
 docker compose down
 ```
 
-Stopping/recreating the backend clears its in-memory conversations and traces. `.env` is supplied at runtime and excluded from Git and Docker build context. The frontend never receives the API key.
+The backend runs FastAPI as a non-root user.
 
-## Optional local Insurance demo profile
+The frontend serves the built React application through Nginx and proxies HTTP / voice WebSocket traffic to the backend.
 
-Add `DEMO_TEST_PHONE` to the ignored local `.env`, then restart the backend. Complete
-Kazakhstan international `+7`, domestic `8` and full ten-digit numbers without a country
-code are accepted and normalized to `+7`. A shorter suffix still needs the operator/area
-code; missing digits are never guessed. No canonical file is
-rewritten and no overlay file or extra mount is required; Compose already reads `.env`
-at runtime. Blank configuration leaves the canonical backend intact.
+`.env` is supplied at runtime and excluded from Git and Docker build context.
 
-The generated client has one active OGPO policy, one successful payment with no issued
-policy attached, and one claim under review. Every field except the supplied phone is
-fictional. Print only this profile with:
+The frontend never receives server API keys.
 
-```powershell
-./.venv/Scripts/python.exe -X utf8 scripts/show_demo_profile.py
-```
+---
 
-Do not publish this command's personal phone output. It prints no API key or unrelated
-clients. Literal phones are removed from Router input; requested identifiers are parsed
-locally. Composer and supervisor traces mask identifiers too. Voice uses external STT.
+# Native development
 
-After an unknown valid identifier, Insurance offers one alternative lookup. A correction
-can use that second lookup; two unsuccessful attempts lead to useful context collection
-and specialist handoff for identity-dependent work. General knowledge/quotes stay available.
+Tested with Python 3.13 and Node 24.x.
 
-`tools/capabilities.py` declares actual grounded read-only support. Unavailable writes and
-delivery actions collect the scenario's useful required fields, perform available checks,
-then hand off with a safe `manager_summary` (field/action names, no identifier values).
-The UI supervisor panel shows that summary. No policy, claim, callback or SMS is fabricated.
+Run from repository root.
 
-## Environment
-
-| Variable | Meaning |
-|---|---|
-| `OPENAI_API_KEY` | Server-only local secret; required for live routing/STT |
-| `OPENAI_ROUTER_MODEL` | Explicit structured-output model; measured with `gpt-4.1-mini` |
-| `OPENAI_RESPONSE_MODEL` | Optional Insurance Composer model; blank reuses Router model |
-| `DEMO_TEST_PHONE` | Optional personal phone for a runtime-only fictional Insurance profile; keep in ignored `.env` |
-| `ROUTER_TEMPERATURE` | Optional model setting; example uses `0` |
-| `ROUTER_TIMEOUT_SECONDS` | 45 seconds; no automatic routing retry |
-| `RISK_TIMEOUT_SECONDS` | 8 seconds by default; one tool-free call, no retry |
-| `ROUTER_MAX_OUTPUT_TOKENS` | 2500 |
-| `ROUTER_ACCEPT_THRESHOLD` / `ROUTER_LOW_THRESHOLD` | `0.75` / `0.45` |
-| `ROUTER_HANDOFF_AFTER` / `ROUTER_MAX_UNCLEAR_TURNS` | Two very low-confidence turns / three unresolved clarifications |
-| `BACKEND_HOST` / `BACKEND_PORT` | Native defaults `127.0.0.1:8000`; Docker overrides host to `0.0.0.0` |
-| `FRONTEND_ORIGIN` | `http://localhost:5173`; voice also accepts the loopback frontend origin |
-| `STARTER_KIT_PATH` | Native `data/starter_kit`; Docker `/app/data/starter_kit` |
-| `PRODUCT_CATALOG_PATH` | Native `data/product_promoter/catalog.json`; Docker `/app/data/product_promoter/catalog.json` |
-| `SECURITY_POLICY_PATH` | Native `data/security/policy.json`; Docker `/app/data/security/policy.json` |
-| `ENABLE_DEV_STAND` | Optional `/dev` text debugger, off by default |
-
-Frontend defaults to same-origin `/api` and `/health` proxying. Its optional `frontend/.env.example` uses `VITE_API_BASE_URL` and `VITE_USE_MOCK_AGENT`. Mock replies are explicitly labelled and available only in Vite development mode; production Docker uses the real backend.
-
-## API and voice
-
-`GET /health` confirms startup and loaded dataset counts; it does not test OpenAI availability.
-
-`POST /api/message` accepts `{ "session_id": "a-stable-id", "text": "..." }` and optional
-`scenario_mode=insurance_manager|product_promoter|card_promoter|loan_promoter|fraud_security`. Reuse the ID across turns. Optional `channel=text|voice` defaults to text.
-Normal Product turns call their agent once. Normal Insurance turns call Router and Composer.
-Automatic natural switching is disabled. Only explicit `scenario_mode` or the UI selector changes the active assistant; the original question is never forwarded.
-Policy status is brief: «Сейчас ваш полис действует». An explicit end-date question returns
-the recorded date in ordinary words, without a policy number or a generic follow-up offer.
-
-`POST /api/conversation/start` accepts `{session_id, scenario_mode}` and initiates Insurance
-or an assigned sales campaign or Fraud & Security with zero model calls and no fabricated customer turn. TTS finishes before listening.
-Before an outbound call, the caller's system assigns `product_promoter` (deposit),
-`card_promoter` (card) or `loan_promoter` (loan). The local demo offers the same pre-call
-operator setting. Customer speech cannot choose another campaign. Target scoring and
-actual outbound telephony are external integrations and are not simulated as completed.
-The bot offers its product first, explains conditions/opening and adapts to explicit needs.
-One soft refusal receives one follow-up; a second refusal ends the call. An explicit request
-to stop sales/calls ends it immediately. See [outbound sales validation](docs/OUTBOUND_SALES_VALIDATION.md).
-
-Unregistered packs return 422 before any model call. All responses retain the six base fields:
-`session_id`, `response_text`, `routing`, `state`, `trace`, `conversation_status`. Insurance
-adds conversation metadata and a Router conversation signal to its existing state/schema.
-Public Insurance identifiers, source references and transcripts are masked; actual values
-remain in the pack's private business state. Product state exposes `sales_lead` and the
-actually displayed catalog records; legacy platform wire variants remain for compatibility and are not emitted by manual-only switching.
-An optional `risk` object is additive; an omitted field means no analysis was needed.
-`POST /api/security/precaution` returns one source-based safety sentence with zero model
-calls and no session mutation. The frontend uses it only on security candidates and
-speaks it while the single authoritative `/api/message` request runs. It creates no
-additional user/assistant turn; repeated source text is not spoken twice.
-Security guidance turns use `routing.kind=security_guidance` and the same safe business
-state projection. Fraud returns its own `fraud_case`. OpenAPI declares these variants.
-The latest InsuranceResult, SalesLeadResult and FraudCaseResult
-remain in their own internal entries. Trace includes pack, mode, lifecycle and safe switch/product metadata.
-
-Voice WebSocket: `ws://127.0.0.1:5173/api/v1/voice`. Start with a UUID `session_id`, 24 kHz mono PCM16, then send binary frames. Only `utterance.final` reaches Agent Core; partial text remains in voice diagnostics. See [the streaming protocol](docs/VOICE_STREAMING_CONTRACT.md).
-
-The runtime stops capture before routing/TTS. Normal playback resumes listening; `handoff` and `ended` keep it stopped. Reset invalidates stale callbacks. Backend audio is currently buffered before browser playback; its measured first chunk is not browser onset. Browser fallback prefers stable Natural/Neural/Online voices within the requested locale and reports missing locale voices. Runtime audio is not stored. Only signed telephony routes may be exposed through a future public tunnel; generic speech, app and analytics APIs stay private.
-
-The supervisor panel displays the returned transcript, scenarios/confidence, alternatives, concise reason, slots, active/pending/stack context, clarification, actions, status and timings. It does not calculate routing or display hidden chain-of-thought.
-
-## Native development
-
-Tested with Python 3.13 and Node 24.13. Run from the repository root:
+## Windows
 
 ```powershell
 python -m venv .venv
+
 ./.venv/Scripts/python.exe -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
+
 ./.venv/Scripts/python.exe -m app.main
 ```
 
-In a second terminal:
+Frontend:
 
 ```powershell
 cd frontend
@@ -242,108 +644,762 @@ npm ci
 npm run dev
 ```
 
-Stop the native services before starting Docker on the same ports.
+---
 
-## Verification
+## macOS / Linux
 
-```powershell
-./.venv/Scripts/python.exe -m pytest backend/tests -q --basetemp=work/pytest-check
-./.venv/Scripts/python.exe -m ruff check backend/app backend/tests
-./.venv/Scripts/python.exe -m ruff format --check backend/app backend/tests
-./.venv/Scripts/python.exe -X utf8 -m app.evaluation --check-data
-./.venv/Scripts/python.exe -X utf8 -m app.evaluation --run --output work/evals/new-run.json --concurrency 2 --min-interval-seconds 1 --continue-on-error
-./.venv/Scripts/python.exe -X utf8 scripts/stage1_smoke.py
-./.venv/Scripts/python.exe -X utf8 scripts/stage3_smoke.py --output work/new-stage3-e2e.json
-./.venv/Scripts/python.exe -X utf8 scripts/evaluate_product_promoter.py --output work/evals/new-product-run.json
-./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --output work/evals/new-dialogue-run.json
-./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --dataset data/insurance_conversation/completion_cases.json --output work/evals/new-completion-run.json
-./.venv/Scripts/python.exe -X utf8 scripts/evaluate_fraud_risk.py --output work/evals/new-fraud-risk.json
-./.venv/Scripts/python.exe -X utf8 scripts/stage4_risk_smoke.py --output work/new-stage4-state.json
-./.venv/Scripts/python.exe -X utf8 scripts/stage3_1_voice_smoke.py --audio-directory work/voice-stage31 --output work/new-stage31-voice.json
+```bash
+python3 -m venv .venv
+
+./.venv/bin/python -m pip install -c backend/requirements.lock -e './backend[dev,voice]'
+
+./.venv/bin/python -m app.main
 ```
 
-Live evaluation and API smoke call OpenAI. Evaluation output must be a new path; all failed calls count as wrong. In `frontend`:
+In another terminal:
 
-The voice smoke expects `voice-phone.wav`, `voice-iin.wav` and `voice-existing.wav`
-in the supplied directory: synthetic/test audio, PCM16 mono at 24 kHz. Audio evidence stays
-in ignored `work/`; it is not distributed with the repository.
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Verify backend:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Example:
+
+```json
+{
+  "status": "ok",
+  "service": "voice-router",
+  "analytics": {
+    "status": "ok",
+    "backend": "sqlite"
+  }
+}
+```
+
+When Vonage is configured:
+
+```json
+{
+  "telephony": {
+    "twilio": "disabled",
+    "vonage": "ready"
+  }
+}
+```
+
+Stop native services before using Docker on the same ports.
+
+---
+
+# Environment
+
+The exact supported configuration is documented in `.env.example`.
+
+Never commit `.env`.
+
+## Core / OpenAI
+
+| Variable | Meaning |
+|---|---|
+| `OPENAI_API_KEY` | Server-only OpenAI secret |
+| `OPENAI_ROUTER_MODEL` | Structured routing model; measured with `gpt-4.1-mini` |
+| `OPENAI_RESPONSE_MODEL` | Optional response/composer model; blank may reuse Router |
+| `ROUTER_TEMPERATURE` | Routing temperature; measured configuration uses `0` |
+| `ROUTER_TIMEOUT_SECONDS` | Routing timeout |
+| `RISK_TIMEOUT_SECONDS` | Risk Intelligence timeout |
+| `ROUTER_MAX_OUTPUT_TOKENS` | Router output budget |
+| `ROUTER_ACCEPT_THRESHOLD` | Accept confidence threshold |
+| `ROUTER_LOW_THRESHOLD` | Low-confidence threshold |
+
+---
+
+## Speech
+
+Typical speech configuration includes:
+
+```text
+TTS_PROVIDER
+BACKEND_TTS_MODEL
+BACKEND_TTS_VOICE
+BACKEND_TTS_VOICE_RU
+BACKEND_TTS_VOICE_KK
+BACKEND_TTS_INSTRUCTIONS_RU
+BACKEND_TTS_INSTRUCTIONS_KK
+PHONE_ENDPOINT_SILENCE_MS
+```
+
+Streaming STT uses the existing server-only OpenAI configuration.
+
+---
+
+## Analytics / persistence
+
+Important storage setting:
+
+```text
+EVENT_DB_PATH
+```
+
+Default native path:
+
+```text
+data/runtime/veyra_events.db
+```
+
+Docker uses its persistent analytics volume.
+
+See:
+
+- `docs/ANALYTICS_API_CONTRACT.md`
+- `docs/STAGE5A_STORAGE_VALIDATION.md`
+- `docs/FINANCE_DASHBOARD.md`
+
+---
+
+## Telephony
+
+Common:
+
+```text
+PUBLIC_BASE_URL
+```
+
+### Vonage
+
+Configuration includes:
+
+```text
+VONAGE_ENABLED
+VONAGE_APPLICATION_ID
+VONAGE_PRIVATE_KEY_PATH
+VONAGE_API_KEY
+VONAGE_API_SECRET
+VONAGE_SIGNATURE_SECRET
+VONAGE_TEST_FROM_NUMBER
+VONAGE_TEST_TO_NUMBER
+```
+
+### Twilio
+
+Configuration includes the corresponding account SID, auth token and phone settings.
+
+Provider credentials must remain backend-only.
+
+See:
+
+- [Phone Runtime](docs/PHONE_RUNTIME.md)
+- [Stage 6 integration validation](docs/STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md)
+- [Stage 6 live checklist](docs/STAGE6_LIVE_TELEPHONY_CHECKLIST.md)
+
+---
+
+# API
+
+## Health
+
+```http
+GET /health
+```
+
+Confirms:
+
+- service startup;
+- starter-kit loading;
+- analytics health;
+- configured telephony provider state.
+
+It does not guarantee OpenAI availability.
+
+---
+
+## Conversation message
+
+```http
+POST /api/message
+```
+
+Basic request:
+
+```json
+{
+  "session_id": "stable-session-id",
+  "text": "..."
+}
+```
+
+Optional fields include:
+
+```text
+scenario_mode
+channel
+```
+
+Supported assistant modes include:
+
+```text
+insurance_manager
+product_promoter
+card_promoter
+loan_promoter
+fraud_security
+```
+
+Reuse the same `session_id` across turns.
+
+Base response retains:
+
+```text
+session_id
+response_text
+routing
+state
+trace
+conversation_status
+```
+
+An optional `risk` object is additive.
+
+Missing `risk` means no assessment was required for that turn.
+
+---
+
+## Conversation start
+
+```http
+POST /api/conversation/start
+```
+
+Conceptual request:
+
+```json
+{
+  "session_id": "...",
+  "scenario_mode": "insurance_manager"
+}
+```
+
+It creates the assistant-initiated opening without fabricating a customer turn.
+
+TTS finishes before browser listening begins.
+
+---
+
+# Browser voice
+
+Voice WebSocket:
+
+```text
+ws://127.0.0.1:5173/api/v1/voice
+```
+
+Internal browser audio:
+
+```text
+PCM16
+mono
+24 kHz
+```
+
+Only `utterance.final` reaches Agent Core.
+
+Partial transcripts remain diagnostic.
+
+---
+
+# Telephony
+
+The project includes provider-neutral phone runtime plus adapters for:
+
+- Vonage;
+- Twilio.
+
+Phone architecture:
+
+```text
+PSTN
+→ provider
+→ signed callback / WSS
+→ audio normalization
+→ shared STT
+→ MessageService
+→ Risk
+→ backend TTS
+→ provider audio
+→ caller
+```
+
+---
+
+# Live Vonage validation
+
+## Status: LIVE VERIFIED
+
+A real Vonage PSTN call has been successfully completed end-to-end against the integrated Veyra application.
+
+Verified path:
+
+```text
+Real phone
+→ Vonage Voice API
+→ signed answer callback
+→ secure WebSocket
+→ binary L16 audio
+→ shared STT
+→ MessageService
+→ assistant + Risk Intelligence
+→ backend OpenAI TTS
+→ audio returned over Vonage
+→ real caller
+```
+
+The live test confirmed:
+
+- outbound PSTN call reached a real phone;
+- call was answered;
+- signed answer callback reached Veyra;
+- secure WebSocket connected;
+- incoming binary audio reached STT;
+- final utterances were produced;
+- Agent processing completed;
+- backend TTS generated speech;
+- response audio returned to the real phone;
+- playback completion was acknowledged;
+- multi-turn conversation worked;
+- the same application session was reused across turns;
+- call cleanup completed normally.
+
+This is separate from offline fixture validation.
+
+### Current limitations
+
+The repository does not expose unrestricted outbound campaign dialing as a general production feature.
+
+Provider-side call initiation, account billing and authorization remain operational concerns.
+
+`handoff` means human review / handling is required.
+
+It does not automatically establish a PSTN transfer to a real operator.
+
+---
+
+# Twilio
+
+A Twilio adapter is implemented and covered by automated/offline tests.
+
+The current live-verified competition provider is **Vonage**.
+
+Do not claim a live Twilio PSTN test unless one is performed separately.
+
+---
+
+# Phone offline validation
+
+Current deterministic phone smoke tests:
+
+```bash
+python -X utf8 scripts/smoke_phone_runtime.py
+
+python -X utf8 scripts/smoke_twilio_runtime.py
+
+python -X utf8 scripts/smoke_vonage_runtime.py
+
+python -X utf8 scripts/smoke_stage6_integration.py
+```
+
+These validate internal phone architecture without requiring a paid PSTN call.
+
+Historical voice smoke scripts remain in the repository for regression/reference purposes but are not the canonical validation for the current structured voice-confirmation flow.
+
+---
+
+# Finance Supervisor Dashboard
+
+Dashboard sections:
+
+```text
+Overview
+Live Calls
+Sessions
+Risk & Fraud
+Anomalies
+Journeys
+Conversation Demo
+```
+
+The application opens on **Overview**.
+
+---
+
+# Web demo
+
+1. Open the application.
+2. Go to **Conversation Demo**.
+3. Select the intended assistant.
+4. Click **Начать разговор**.
+5. Use microphone or text input.
+
+For a continuation test, stay in the same session.
+
+For an independent scenario, reset/start a new conversation.
+
+---
+
+## Insurance RU example
+
+```text
+У меня уже есть действующий страховой полис.
+```
+
+Continue naturally in the same session.
+
+---
+
+## Insurance KK example
+
+```text
+Маған саяхат сақтандыруы керек.
+```
+
+Then:
+
+```text
+Екі аптаға.
+```
+
+The same session should continue.
+
+---
+
+## Mixed example
+
+```text
+Маған полис керек, сколько это стоит?
+```
+
+The assistant should handle mixed language without requiring a language-selection step.
+
+---
+
+## Fraud / Risk example
+
+Select **Fraud & Security**.
+
+Say:
+
+```text
+Мне звонят из банка и просят SMS-код.
+```
+
+Then:
+
+```text
+Я этот код не называла. Что мне делать?
+```
+
+Verify:
+
+- Risk Intelligence appears;
+- safety guidance is provided;
+- review/handoff policy behaves correctly;
+- session appears in Dashboard;
+- risk information is visible;
+- journey is stored.
+
+Kazakh example:
+
+```text
+Мен бұл төлемді жасаған жоқпын.
+```
+
+Then:
+
+```text
+Не істеуім керек?
+```
+
+Review/handoff policy must remain equivalent across RU and KK.
+
+---
+
+# Dashboard / SQLite verification
+
+After creating a web conversation:
+
+1. open **Sessions**;
+2. find the session;
+3. open the detail view;
+4. inspect risk/journey;
+5. restart backend;
+6. refresh Dashboard.
+
+The stored analytics session should remain after restart.
+
+---
+
+# Demo analytics seed
+
+Synthetic demo analytics can be seeded with:
+
+```bash
+python scripts/seed_analytics_demo.py
+```
+
+Use supported options from the script, including anomaly generation where required.
+
+Demo records are marked as synthetic.
+
+Historical seed events may not appear in **Live Calls**, because Live Calls is based on recent activity rather than all stored sessions.
+
+Native seed writes to the configured local SQLite database.
+
+Docker seed writes into the persistent Docker analytics volume.
+
+Example Docker PowerShell seed:
 
 ```powershell
+Get-Content -Raw scripts/seed_analytics_demo.py |
+  docker compose exec -T backend python - --with-anomaly
+```
+
+---
+
+# Final technical check
+
+## Backend
+
+From repository root with the backend environment active:
+
+```bash
+python -m pytest backend/tests -q
+
+python -m ruff check backend/app backend/tests
+
+python -m ruff format --check backend/app backend/tests
+
+python -X utf8 -m app.evaluation --check-data
+```
+
+Current final integrated validation:
+
+```text
+1,350 backend tests passing
+```
+
+---
+
+## Frontend
+
+From `frontend/`:
+
+```bash
+npm ci
+
+npm test
+
 npm run typecheck
+
 npm run build
-node --experimental-transform-types --test tests/*.test.mjs
+
+npm run format:dashboard
 ```
 
-Stage 4 results, measured timeouts, advisory limitations and the presenter sequence are in
-[Fraud/Risk validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md). For saved early evaluation
-artifacts, `evaluate_fraud_risk.py --rescore INPUT --output NEW_OUTPUT` recomputes unavailable
-assessments as unknown without making model calls. New runs apply that rule directly.
-Stage 3.2 results are in [Manager validation](docs/STAGE3_2_MANAGER_VALIDATION.md).
-Current results and limitations are in
-[Completion/context validation](docs/CONVERSATION_COMPLETION_VALIDATION.md).
-Earlier [Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md) covers Stage 3.1;
-foundation evidence is in
-[Stage 3 validation](docs/STAGE3_VALIDATION.md),
-with the architecture baseline in [Stage 2 validation](docs/STAGE2_VALIDATION.md)
-and the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).
-Offline fixtures establish contract/state behavior, not model accuracy.
+Current integrated frontend validation:
 
-## Demo flows
-
-Start a conversation. Uncheck «Голосовой ввод» for text-only testing with the same runtime and browser TTS.
-
-Before Start select «Продажа депозита». The bot names Merei Demo Bank and offers a deposit
-without asking the customer to choose a category. Answer «Расскажите о ставке», then
-«Как его открыть?»; only explicit application interest produces a local sales lead.
-For refusal testing, answer «Сейчас неинтересно», then «Нет, я уверен»: one follow-up, then
-the call ends. Reset before choosing «Продажа карты» or «Продажа кредита». An operator can
-explicitly switch to Insurance; customer speech never changes the assigned campaign.
-An operator request still answers **«Конечно, передаю диалог оператору.»**
-
-1. RU: «Я оплатил страховку, но полис не появился.» — collects payment details.
-2. KK: «Маған саяхат сақтандыруы керек.» then «Екі аптаға.» — same travel scenario and session.
-3. Mixed: «Маған полис керек, сколько это стоит?» — clarifies the product.
-4. «Хочу продлить ОГПО и добавить туда сына.» — retains renewal and driver addition.
-5. «У меня проблема с полисом.» — asks a targeted question.
-6. «Рассчитайте КАСКО: машина 2024 года, стоимость 10000000 тенге.» — source quote 400000 тенге; conversation remains active.
-7. «Соедините меня с оператором.» — friendly handoff and stopped listening.
-8. Reset, then «Спасибо, до свидания.» — ended and stopped listening.
-
-For real microphone testing, allow microphone access and speak an insurance question; wait for the reply and listening to resume. Then request an operator and check that listening stays stopped. Reset and repeat with goodbye. Voice diagnostics also accept a WAV/audio fixture.
-
-## Troubleshooting and limits
-
-- Docker cannot connect: start Docker Desktop's Linux engine. A Docker Hub TLS/network timeout is a build/download problem; retry after connectivity returns.
-- Ports occupied: stop the native backend/Vite processes before starting Compose.
-- Health is green but a request fails: verify the local key/model and outbound OpenAI connectivity. No simulated reply replaces a provider outage.
-- No speech/audio: check microphone permission, installed TTS voices and the voice diagnostics. The voice image includes local Silero VAD; streaming STT still needs OpenAI connectivity.
-- A new `.env` value needs backend recreation. Do not print the full expanded Compose configuration because it contains runtime secrets.
-- Conversation state is bounded, in-memory and single-process. There is no authentication or production insurer integration; keep this stand local.
-- Routing is measured, not perfect. Consult the validation report for actual confusion pairs and invalid-output counts.
-
-Architecture/navigation: [PROJECT_MAP](docs/PROJECT_MAP.md), [ARCHITECTURE](docs/ARCHITECTURE.md), [INTEGRATION](docs/INTEGRATION.md). The older three-hour implementation plan and earlier evaluation reports are historical references.
-
-
-## Finance Supervisor Dashboard
-
-Stage 5B integrates the teammate Veyra dashboard with persistent SQLite analytics:
-Overview, recent voice sessions, Sessions/detail, Risk & Fraud, Anomalies, Journeys and
-the current Conversation Demo. Startup remains `docker compose up --build`; open
-`http://127.0.0.1:5173`. Populate its actual Docker volume in PowerShell:
-
-```powershell
-Get-Content -Raw scripts/seed_analytics_demo.py | docker compose exec -T backend python - --with-anomaly
+```text
+106 frontend tests passing
 ```
 
-The original 640-event seed remains compatible. The optional extension creates hourly
-baseline/current patterns, all explicitly labelled synthetic_demo. Runtime data is separate;
-source filters and badges make the scope visible. Persisted analytics survives backend
-restart and Compose down/up without `-v`. Conversation state remains in memory.
-The dashboard does not restore private transcripts, identifiers, provider metadata or
-free-text risk reasoning; excluded latency metrics remain unavailable. Anomalies are
-deterministic advisory volume increases with cold-start protection, without model calls.
+`npm test` is the canonical frontend test command.
 
-Runbook: [FINANCE_DASHBOARD](docs/FINANCE_DASHBOARD.md). Final API:
-[ANALYTICS_API_CONTRACT](docs/ANALYTICS_API_CONTRACT.md). Evidence and outstanding checks:
-[STAGE5B_DASHBOARD_INTEGRATION_VALIDATION](docs/STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md).
-Frontend checks: `npm test`, `npm run build`, `npm run format:dashboard`.
+The old raw Node test invocation is not the canonical full dashboard suite.
+
+---
+
+# Historical validation scripts
+
+Earlier project-stage scripts such as:
+
+```text
+stage3_smoke.py
+stage3_1_voice_smoke.py
+```
+
+remain historical regression artifacts.
+
+They do **not** represent the complete final structured speech or assistant-selection contract and should not be used as the primary release acceptance path.
+
+---
+
+# Optional Insurance demo profile
+
+Set the optional local:
+
+```text
+DEMO_TEST_PHONE
+```
+
+in ignored `.env`.
+
+The generated profile contains fictional insurance data tied to that runtime test phone.
+
+Do not publish personal phone output.
+
+No API keys or unrelated client data are printed.
+
+---
+
+# Security
+
+- `.env` is excluded from Git;
+- private telephony keys must remain outside the repository;
+- frontend never receives OpenAI / Vonage / Twilio secrets;
+- signed telephony callbacks are validated;
+- sensitive identifiers are masked outside private business state;
+- raw runtime audio is not stored;
+- demo data is synthetic;
+- public tunnel exposure should be limited to required telephony callback paths.
+
+Do not expose generic app, analytics or developer endpoints publicly for a competition tunnel unless explicitly required.
+
+Rotate any credential that is accidentally exposed.
+
+---
+
+# Known limitations
+
+The competition version intentionally does not include:
+
+- real automatic PSTN transfer to a human operator;
+- unrestricted production outbound campaign dialing;
+- advanced phone barge-in;
+- distributed/multi-node persistent state;
+- production-grade RBAC for the Supervisor Dashboard;
+- production public deployment hardening;
+- guaranteed provider-socket occupancy semantics in Live Calls.
+
+Conversation runtime state remains process-local.
+
+Persistent analytics are stored in SQLite.
+
+The project is a competition/demo implementation, not a production banking deployment.
+
+---
+
+# Troubleshooting
+
+## Docker cannot connect
+
+Start Docker Desktop / Linux engine.
+
+A Docker Hub network/TLS error is a build/download issue rather than application logic.
+
+---
+
+## Ports occupied
+
+Stop native backend/Vite processes before starting Docker.
+
+---
+
+## Health is green but Agent request fails
+
+Check:
+
+- API key;
+- configured model;
+- OpenAI connectivity.
+
+No fake provider reply silently replaces a real outage.
+
+---
+
+## No browser speech
+
+Check:
+
+- microphone permission;
+- backend TTS configuration;
+- browser fallback availability;
+- voice diagnostics.
+
+---
+
+## New `.env` value is ignored
+
+Restart/recreate the backend.
+
+Do not print expanded environment configuration because it may expose secrets.
+
+---
+
+## Telephony provider not ready
+
+Check:
+
+```text
+/health
+```
+
+Provider state may be:
+
+```text
+disabled
+ready
+unavailable
+```
+
+Verify local credentials, public URL and provider account configuration.
+
+---
+
+# Documentation
+
+Useful references:
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Project Map](docs/PROJECT_MAP.md)
+- [Integration](docs/INTEGRATION.md)
+- [Phone Runtime](docs/PHONE_RUNTIME.md)
+- [Analytics API Contract](docs/ANALYTICS_API_CONTRACT.md)
+- [Finance Dashboard](docs/FINANCE_DASHBOARD.md)
+- [Stage 4 Fraud/Risk Validation](docs/STAGE4_FRAUD_RISK_VALIDATION.md)
+- [Stage 5A Storage Validation](docs/STAGE5A_STORAGE_VALIDATION.md)
+- [Stage 5B Dashboard Validation](docs/STAGE5B_DASHBOARD_INTEGRATION_VALIDATION.md)
+- [Stage 6 Telephony Integration Validation](docs/STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md)
+- [Stage 6 Live Telephony Checklist](docs/STAGE6_LIVE_TELEPHONY_CHECKLIST.md)
+- [Structured Speech Precision Gate](docs/STRUCTURED_SPEECH_PRECISION_GATE.md)
+- [Voice Latency and Correction Validation](docs/VOICE_LATENCY_AND_CORRECTION_VALIDATION.md)
+- [TTS Quality Validation](docs/TTS_QUALITY_VALIDATION.md)
+
+---
+
+# Competition demo sequence
+
+Recommended short demo:
+
+1. Open **Overview**.
+2. Show persistent Dashboard analytics.
+3. Open **Conversation Demo**.
+4. Start an assistant.
+5. Demonstrate the bilingual KK → RU opening.
+6. Continue naturally in RU / KK / mixed speech.
+7. Demonstrate structured voice input.
+8. Demonstrate Fraud & Security.
+9. Show Risk Intelligence.
+10. Show review / handoff.
+11. Open the stored session.
+12. Show Customer Intent Journey.
+13. Show Anomaly Detection.
+14. Show SQLite persistence after restart.
+15. Demonstrate or present the **live-verified Vonage phone flow**.
+
+---
+
+Veyra is ready for the competition demo and technical evaluation.
