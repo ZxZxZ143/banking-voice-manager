@@ -8,8 +8,16 @@ browser endpointing and prewarmed input. This supersedes the timing/repair rules
 the first unique sensitive hypothesis may be read back even if the other recognizer
 fails or disagrees. It is never accepted automatically. The pending value cannot be
 replaced by a later recognizer result. The unused recognizer is cancelled; completed
-results contribute only safe corroboration metadata. Segmented repair still waits for
-both recognizers, and low-risk region admission is unchanged.
+results contribute only safe corroboration metadata. Low-risk region admission is unchanged.
+
+The [segmented capture hotfix](SEGMENTED_IDENTIFIER_CAPTURE_VALIDATION.md) supersedes the
+original immediate-handoff segment rule below. Concurrent recognizers now yield explicit
+agreement/single/conflict/unusable evidence. Each part has an independent initial plus
+one repeat/confirmation budget; only private drafts advance. One valid segment may be
+read back and explicitly confirmed if its other recognizer is unusable. Exhaustion offers
+browser keyboard entry or phone handoff. Full assembled read-back and final yes remain
+mandatory. Spoken domestic 8 and national 10-digit styles survive read-back/correction;
+canonical +7 reaches business state only after acceptance.
 
 `StructuredConfirmationResponse` and `IdentifierCorrection` are local, typed private
 objects. Corrections are resolved by position/segment or a unique old fragment, checked

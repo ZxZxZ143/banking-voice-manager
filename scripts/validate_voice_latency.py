@@ -20,6 +20,7 @@ from app.core.config import Settings
 from app.main import create_app
 from app.packs.insurance_manager.state import ConversationState, DialogState
 from app.speech.structured.capture import StructuredCapture, capture_question
+from app.speech.structured.normalization import normalize_spoken
 from app.speech.tts.factory import build_tts_provider
 
 OUTPUT = ROOT / "work/voice-latency"
@@ -106,8 +107,11 @@ def check(session_id: UUID):
         "phone": "+77775232862",
         "iin": "000101300000",
     }.get(sessions[sid])
+    pending_value = capture.candidate if capture else None
+    if pending_value and capture.kind == "phone":
+        pending_value = normalize_spoken(pending_value, "phone").value
     return {
-        "pending_matches": bool(capture and capture.candidate == expected),
+        "pending_matches": bool(capture and pending_value == expected),
         "pending": capture is not None,
         "phase": state.conversation.phase,
         "lookups": len(state.client_lookup_attempts),

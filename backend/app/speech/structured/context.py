@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 ExpectedKind = Literal[
     "none", "phone", "iin", "policy_number", "claim_number", "vehicle_plate", "region_code"
 ]
+PhoneInputStyle = Literal["domestic_8", "international_7", "national_10"]
 SLOT_KINDS = {
     name: name for name in ("phone", "iin", "policy_number", "claim_number", "vehicle_plate")
 }
@@ -14,7 +15,8 @@ SLOT_KINDS.update(drivers_iin="iin", new_driver_iin="iin", culprit_vehicle_plate
 _PROMPTS = {
     "none": "Customer speech in Russian and Kazakh, sometimes mixed.",
     "phone": (
-        "Kazakhstan phone number, +7 or domestic 8 followed by ten digits. "
+        "Kazakhstan phone: +7 or domestic 8 followed by ten digits, "
+        "or a national ten-digit number beginning with 7. "
         "Preserve every spoken digit, individually or in Russian/Kazakh groups. "
         "Do not guess missing digits."
     ),
@@ -50,6 +52,7 @@ class TranscriptionContext(BaseModel):
     keywords: tuple[str, ...] = Field(default=(), max_length=10)
     accuracy_mode: Literal["medium", "high"] = "medium"
     confirmation_kind: ExpectedKind = "none"
+    phone_input_style: PhoneInputStyle | None = None
     capture_part: Literal[
         "whole", "first", "middle", "last", "prefix", "digits", "letters", "region"
     ] = "whole"
@@ -93,10 +96,15 @@ def context_for_capture(slot, language, capture=None, contact_field=None):
         return context.model_copy(
             update={
                 "capture_part": part,
-                "prompt": part_instruction(capture.kind, part),
+                "prompt": part_instruction(capture.kind, part, capture.phone_input_style),
+                "phone_input_style": capture.phone_input_style,
             }
         )
-    if capture and capture.slot == slot and capture.phase == "confirmation":
+    if (
+        capture
+        and capture.slot == slot
+        and capture.phase in {"confirmation", "segment_confirmation"}
+    ):
         # No private value in cloud hints. A correction still needs exact digits/
         # letters; yes/no and local edits do not require a second paid ASR call.
         return context_for_slot(None, language).model_copy(

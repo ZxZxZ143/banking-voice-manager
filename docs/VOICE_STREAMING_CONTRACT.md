@@ -67,24 +67,30 @@ whole-field result returns `confirmation_required` immediately; it cannot update
 slots. Invalid first results wait for the other recognizer. An unfinished loser is cancelled;
 a completed loser can corroborate metadata but cannot replace the value being read back.
 The same conversation reply asks for full read-back confirmation or bounded segmented repair.
+Each segment has two customer turns: initial recognition plus one repeat or short segment
+confirmation. Agreement stores a private draft; one unique result with no corroboration
+requires a segment yes; conflict/unusable evidence repeats only that part. Exhaustion offers
+browser keyboard input or phone handoff. Full assembly still requires its own final read-back
+and yes. Domestic 8 is spoken back as 8; detected national ten-digit phones use 3+3+4 parts.
 Natural RU/KK minimal corrections repeat the entire corrected value and still require
 explicit confirmation. Correction context contains only field kind, never private values.
 Confirmation/correction replies need no second transcription. Region codes retain low-risk
 schema acceptance. Added metadata: `outcome`, `risk`, `consensus`, `verification_method`,
 `second_pass_wait_ms`, `candidate_ready_ms`, `realtime_final_ms`, `bounded_final_ms`,
-`readback_source` and `loser_cancelled`; no candidate value or alternate transcript is in
-metadata. Raw `text` is the winning transcript (Realtime or bounded), bound to the private
+`readback_source`, `loser_cancelled` and allowlisted `segment_evidence`; no candidate value
+or alternate transcript is in metadata. Raw `text` is the winning transcript (Realtime or bounded), bound to the private
 receipt. See [precision gate](STRUCTURED_SPEECH_PRECISION_GATE.md) and
-[correction/latency validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md).
+[correction/latency validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md), plus
+[segment validation](SEGMENTED_IDENTIFIER_CAPTURE_VALIDATION.md).
 
 ## Automatic end of utterance (VAD)
 
 Silero VAD runs locally using the small ONNX model shipped with faster-whisper;
 no Whisper transcription model is loaded. After speech is detected, continued
 silence for the selected profile commits the utterance. Browser defaults: confirmation
-750 ms, recognized correction 900 ms, region 900 ms, sensitive identifier 1300 ms and
-ordinary dialogue 1600 ms. A complete normalized partial stable for at least 400 ms can
-shorten these to 650/800/750/1100 ms respectively, always with local VAD silence.
+750 ms, recognized correction 900 ms, segment 800 ms, region 900 ms, whole sensitive
+identifier 1300 ms and ordinary dialogue 1600 ms. A complete normalized partial stable for at least 400 ms can
+shorten these to 650/800/650/750/1100 ms respectively, always with local VAD silence.
 A transient valid regex match alone cannot commit. Resumed speech resets the timer.
 The UI also permits a manual 500–5,000 ms. This is acoustic endpointing, not semantic proof of
 completion: longer hesitations can still be cut off and background speech can

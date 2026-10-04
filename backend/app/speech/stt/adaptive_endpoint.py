@@ -13,15 +13,21 @@ class AdaptiveEndpoint:
         self.profile = (
             "confirmation"
             if context.confirmation_kind != "none"
+            else "segment"
+            if context.capture_part != "whole"
             else "region"
             if context.expected_kind == "region_code"
             else "identifier"
             if context.expected_kind != "none"
             else "ordinary"
         )
-        self.base_ms = {"confirmation": 750, "region": 900, "identifier": 1300, "ordinary": 1600}[
-            self.profile
-        ]
+        self.base_ms = {
+            "confirmation": 750,
+            "segment": 800,
+            "region": 900,
+            "identifier": 1300,
+            "ordinary": 1600,
+        }[self.profile]
         self._key = None
         self._since = None
         self._short_ms = self.base_ms
@@ -37,11 +43,13 @@ class AdaptiveEndpoint:
                 key, short = response.kind, 650
             elif response.kind == "correction" and response.correction.new_fragment:
                 key, short = response.correction, 800
-        elif self.profile in {"region", "identifier"}:
+        elif self.profile in {"region", "identifier", "segment"}:
             parsed = recognize_context(text, self.context)
             if parsed.accepted:
                 key = (parsed.kind, parsed.value)
-                short = 750 if self.profile == "region" else 1100
+                short = (
+                    650 if self.profile == "segment" else 750 if self.profile == "region" else 1100
+                )
         if key != self._key:
             self._since = self.clock() if key is not None else None
         self._key, self._short_ms = key, short

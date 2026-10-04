@@ -14,8 +14,8 @@ from openai import AsyncOpenAI, OpenAIError
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.speech.audio import PCM_BYTES_PER_SECOND, PCM_SAMPLE_RATE
-from app.speech.structured.capture import recognize_context
-from app.speech.structured.context import ExpectedKind, TranscriptionContext
+from app.speech.structured.capture import phone_style, recognize_context
+from app.speech.structured.context import ExpectedKind, PhoneInputStyle, TranscriptionContext
 from app.speech.structured.policy import (
     AcceptedStructuredValue,
     RecognitionHypothesis,
@@ -48,6 +48,7 @@ class RecognitionMetadata(BaseModel):
     bounded_final_ms: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     readback_source: Literal["realtime", "bounded"] | None = None
     loser_cancelled: bool = False
+    segment_evidence: Literal["agreement", "single", "conflict", "unusable"] | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ class RecognitionResult:
     kind: str
     accepted_value: AcceptedStructuredValue | None = field(default=None, repr=False)
     candidate: RecognitionHypothesis | None = field(default=None, repr=False)
+    phone_input_style: PhoneInputStyle | None = field(default=None, repr=False)
 
     def __post_init__(self):
         if self.metadata.accepted != (self.accepted_value is not None):
@@ -195,7 +197,16 @@ async def resolve_recognition(
         result = await second_task
         waited_ms = (perf_counter() - wait_started) * 1000
         second, failed, second_ms = result.hypothesis, result.failed, result.elapsed_ms
-    decision = policy.decide(context.expected_kind, hypothesis, second)
+    decision = (
+        policy.decide_segment(context.expected_kind, hypothesis, second)
+        if context.capture_part != "whole"
+        else policy.decide(context.expected_kind, hypothesis, second)
+    )
+    styles = {
+        phone_style(h.spoken_candidate)
+        for h in (hypothesis, second)
+        if h and h.kind == "phone" and h.spoken_candidate
+    }
     return RecognitionResult(
         RecognitionMetadata(
             mode="streaming" if context.expected_kind == "none" else "structured",
@@ -208,6 +219,7 @@ async def resolve_recognition(
             outcome=decision.outcome,
             risk=decision.risk,
             consensus=decision.consensus,
+            segment_evidence=decision.segment_evidence,
             verification_method=(
                 decision.accepted_value.verification_method if decision.accepted_value else None
             ),
@@ -218,6 +230,7 @@ async def resolve_recognition(
         kind=(decision.accepted_value or decision.candidate or hypothesis).kind,
         accepted_value=decision.accepted_value,
         candidate=decision.candidate,
+        phone_input_style=next(iter(styles)) if len(styles) == 1 else None,
     )
 
 

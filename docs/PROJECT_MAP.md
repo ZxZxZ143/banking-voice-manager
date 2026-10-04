@@ -12,6 +12,17 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Segmented identifier hotfix (after 62596fa):** each private part has its own two-turn
+  budget: agreement advances, a single valid result gets a short spoken confirmation,
+  conflict/unusable evidence repeats only that part once. Exhaustion offers browser
+  keyboard input or prepared phone handoff. Domestic 8 remains 8 in read-back; detected
+  national 10-digit input uses 3+3+4. Final full confirmation still gates canonical +7
+  admission and lookup. Browser segments use 800/650 ms silence; yes/no keeps one STT.
+  Verified 1322 backend / 106 frontend tests, Docker and four offline phone smokes;
+  all five browser paths completed across retries (live RT/TTS, synthetic mic and
+  explicit fault injection). Provider failures/ASR limits remain recorded, no PSTN.
+  State-machine and release evidence: `SEGMENTED_IDENTIFIER_CAPTURE_VALIDATION.md`.
+
 - **Voice correction/latency release (after 5e850d3):** private typed RU/KK minimal edits,
   full corrected read-back and final confirmation; two correction cycles/one clarification,
   browser keyboard fallback and phone handoff. Whole-field STT races to pending read-back,
@@ -177,11 +188,12 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/core/` | Settings, contracts, per-app wiring, safe logging |
 | `backend/app/api/routes/`, `api/websocket/` | Health/text HTTP and voice WS boundaries |
 | `backend/app/speech/stt/`, `speech/tts/` | Shared STT; backend TTS factory, bounded OpenAI synthesis and deterministic RU/KK speech normalization |
-| `backend/app/speech/structured/` | Typed admission policy, RU/KK correction grammar, context/segment normalization, pending read-back race, private receipts and repair |
+| `backend/app/speech/structured/` | Typed whole/segment policies, RU/KK corrections, private source phone styles, normalization, pending read-back race and receipts |
 | `backend/app/speech/stt/adaptive_endpoint.py` | Browser local silence profiles with stable partial completeness guard; explicit manual pause remains |
 | `backend/app/packs/insurance_manager/speech_capture.py` | Bounded private correction/confirmation/segmented capture before business slots; keyboard capability versus phone handoff |
 | `data/speech/`, `scripts/build_structured_speech_dataset.py`, `scripts/evaluate_structured_speech.py` | 100-positive/12-negative synthetic corpus; text/cloud/local/pace comparisons; ignored audio/models/reports |
 | `scripts/validate_structured_browser.py`, `scripts/evaluate_tts_streaming.py` | Synthetic-only browser STT/core harness and progressive MP3 experiment, separate ports 8012/8011 |
+| `scripts/validate_segment_capture.py`, `scripts/validate_segment_capture.mjs` | Actual Conversation Demo gate; loopback 8015, synthetic audio, live RT/TTS plus explicit bounded-STT fault injection |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
 | `backend/app/speech/audio.py`, `speech/conversion.py` | Canonical PCM24 contract and bounded PyAV TTS conversion |
 | `scripts/smoke_*runtime.py`, `scripts/smoke_stage6_integration.py` | Explicit offline provider fixtures and current core/Risk/SQLite/API smoke |

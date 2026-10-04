@@ -9,6 +9,7 @@ from app.speech.structured.capture import (
     accepted_result,
     assembled,
     capture_question,
+    phone_style,
 )
 from app.speech.structured.context import kind_for_slot
 from app.speech.structured.correction import apply_correction, parse_confirmation
@@ -47,10 +48,15 @@ def advance_capture(
     if not pending and (not speech or speech.accepted_value):
         return None
     candidate = speech.candidate if speech else None
-    answer = parse_confirmation(text, kind) if pending and pending.phase == "confirmation" else None
+    answer = (
+        parse_confirmation(text, kind)
+        if pending and pending.phase in {"confirmation", "segment_confirmation"}
+        else None
+    )
     manual = recognize_expected(text, kind) if pending and channel == "text" else None
     if (
         not allow_unrecognized
+        and not (pending and pending.phase in {"segments", "segment_confirmation"})
         and (answer is None or answer.kind == "unrelated")
         and not candidate
         and not (speech and speech.metadata.candidate_count)
@@ -95,7 +101,7 @@ def advance_capture(
         )
         return step
 
-    def correction_fallback():
+    def manual_or_handoff():
         if not manual_input_available or pending.manual_requested:
             return fallback()
         pending.manual_requested = True
@@ -132,6 +138,26 @@ def advance_capture(
         return step
     if pending and pending.manual_requested:
         return fallback()
+
+    def store_segment(value):
+        pending.parts.append(value)
+        pending.segment_candidate = None
+        pending.phase = "segments"
+        if pending.kind == "phone" and len(pending.parts) == 1:
+            pending.phone_input_style = (
+                "national_10"
+                if len(value) == 3
+                else "domestic_8"
+                if value.startswith("8")
+                else "international_7"
+            )
+        if len(pending.parts) == len(PARTS[pending.kind]):
+            pending.candidate = assembled(pending)
+            if not pending.candidate:
+                return False
+            pending.phase = "confirmation"
+        return True
+
     if pending and pending.phase == "confirmation":
         pending.confirmation_attempts += 1
         if answer.kind == "confirm" and pending.pending_edit is None:
@@ -144,7 +170,7 @@ def advance_capture(
             return step
         if answer.kind == "correction":
             if pending.correction_cycles >= 2:
-                return correction_fallback()
+                return manual_or_handoff()
             edit = answer.correction
             if pending.pending_edit and edit.position is not None and not edit.new_fragment:
                 edit = replace(
@@ -155,12 +181,14 @@ def advance_capture(
             corrected = apply_correction(pending.candidate, pending.kind, edit)
             if corrected:
                 pending.candidate = corrected
+                if pending.kind == "phone":
+                    pending.phone_input_style = phone_style(corrected)
                 pending.correction_cycles += 1
                 pending.pending_edit = None
                 pending.confirmation_attempts = 0
             else:
                 if pending.clarification_used:
-                    return correction_fallback()
+                    return manual_or_handoff()
                 pending.clarification_used = True
                 pending.pending_edit = edit
                 step.question = (
@@ -181,23 +209,38 @@ def advance_capture(
             pending.confirmation_attempts = 0
         elif pending.confirmation_attempts >= 2:
             return fallback()
+    elif pending and pending.phase == "segment_confirmation":
+        part = PARTS[pending.kind][len(pending.parts)]
+        pending.segment_attempts[part] += 1
+        if answer.kind != "confirm" or not pending.segment_candidate:
+            return manual_or_handoff()
+        if not store_segment(pending.segment_candidate):
+            return manual_or_handoff()
     elif pending and pending.phase == "segments":
-        # Parts are drafts only. Each must be independently corroborated before assembly.
-        if not candidate or not speech.metadata.consensus or candidate.kind != pending.kind:
-            return fallback()
-        pending.parts.append(candidate.canonical_candidate)
-        if len(pending.parts) == len(PARTS[pending.kind]):
-            pending.candidate = assembled(pending)
-            if not pending.candidate:
-                return fallback()
-            pending.phase = "confirmation"
+        part = PARTS[pending.kind][len(pending.parts)]
+        attempts = pending.segment_attempts.get(part, 0) + 1
+        pending.segment_attempts[part] = attempts
+        if candidate and candidate.kind == pending.kind and speech.metadata.consensus:
+            if not store_segment(candidate.canonical_candidate):
+                return manual_or_handoff()
+        elif attempts >= 2:
+            return manual_or_handoff()
+        elif candidate and candidate.kind == pending.kind:
+            pending.segment_candidate = candidate.canonical_candidate
+            pending.phase = "segment_confirmation"
+        # Conflict/unusable: retain all previous drafts and repeat only this part.
     elif candidate:
         pending = StructuredCapture(
             slot,
             candidate.kind,
             previous.active_scenario,
             "confirmation",
-            candidate=candidate.canonical_candidate,
+            candidate=candidate.spoken_candidate or candidate.canonical_candidate,
+            phone_input_style=phone_style(
+                candidate.spoken_candidate or candidate.canonical_candidate
+            )
+            if candidate.kind == "phone"
+            else None,
         )
     else:
         pending = StructuredCapture(
@@ -206,6 +249,7 @@ def advance_capture(
             previous.active_scenario,
             "segments",
             repair_used=True,
+            phone_input_style=speech.phone_input_style,
         )
     meta.structured_capture = pending
     meta.recognition_attempts[slot] = min(2, meta.recognition_attempts.get(slot, 0) + 1)
@@ -213,7 +257,7 @@ def advance_capture(
         speech.metadata.model_copy(
             update={
                 "outcome": RecognitionOutcome.confirmation_required
-                if pending.phase == "confirmation"
+                if pending.phase in {"confirmation", "segment_confirmation"}
                 else RecognitionOutcome.repair_required,
             }
         ),

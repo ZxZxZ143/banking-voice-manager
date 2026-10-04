@@ -79,7 +79,8 @@ def parse_confirmation(text: str, kind: str) -> StructuredConfirmationResponse:
     full = normalize_spoken(replacement, kind)
     if full.accepted:
         return StructuredConfirmationResponse(
-            "correction", IdentifierCorrection("whole", new_fragment=full.value)
+            "correction",
+            IdentifierCorrection("whole", new_fragment=full.spoken_value or full.value),
         )
     position = None
     ordinal_indices = set()
@@ -209,7 +210,10 @@ def apply_correction(candidate: str, kind: str, edit: IdentifierCorrection) -> s
         if edit.old_fragment is not None and candidate[start : start + width] != edit.old_fragment:
             return None
         updated = candidate[:start] + new + candidate[start + width :]
-    if not re.fullmatch(PATTERNS[kind], updated):
+    if kind == "phone":
+        if not normalize_spoken(updated, kind).accepted:
+            return None
+    elif not re.fullmatch(PATTERNS[kind], updated):
         return None
     if kind == "vehicle_plate" and updated[-2:] not in REGIONS:
         return None

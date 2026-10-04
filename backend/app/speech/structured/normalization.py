@@ -174,6 +174,7 @@ class NormalizedValue:
     kind: str
     candidates: tuple[str, ...] = field(default=(), repr=False)
     overflow: bool = False
+    spoken_value: str | None = field(default=None, repr=False)
 
     @property
     def accepted(self) -> bool:
@@ -299,6 +300,7 @@ def normalize_spoken(text: str, kind: ExpectedKind, pattern: str | None = None) 
         return NormalizedValue(kind, tuple(sorted(names)))
     overflow = False
     values = set(names)
+    phone_sources = set()
     if kind in {"phone", "iin", "region_code"}:
         digits, overflow = digit_candidates(words, {"phone": 11, "iin": 12, "region_code": 2}[kind])
         if kind == "region_code" and names and not any(v.zfill(2) in REGIONS for v in digits):
@@ -306,6 +308,14 @@ def normalize_spoken(text: str, kind: ExpectedKind, pattern: str | None = None) 
         for value in digits:
             if kind == "phone" and len(value) == 11 and value[0] in "78":
                 values.add("+7" + value[1:])
+                phone_sources.add(
+                    "+" + value
+                    if value[0] == "7" and ("+" in text or "плюс" in text.casefold())
+                    else value
+                )
+            elif kind == "phone" and len(value) == 10 and value.startswith("7"):
+                values.add("+7" + value)
+                phone_sources.add(value)
             elif kind == "iin":
                 values.add(value)
             elif kind == "region_code" and value.zfill(2) in REGIONS:
@@ -346,7 +356,12 @@ def normalize_spoken(text: str, kind: ExpectedKind, pattern: str | None = None) 
                 overflow |= over
                 values.update(a + letters + b for a in first for b in last if b in REGIONS)
     valid = tuple(sorted(v for v in values if re.fullmatch(pattern or PATTERNS[kind], v)))
-    return NormalizedValue(kind, valid, overflow)
+    source = (
+        next(iter(phone_sources))
+        if len(phone_sources) == 1 and len(valid) == 1 and not overflow
+        else None
+    )
+    return NormalizedValue(kind, valid, overflow, source)
 
 
 def recognize_expected(text: str, kind: ExpectedKind) -> NormalizedValue:

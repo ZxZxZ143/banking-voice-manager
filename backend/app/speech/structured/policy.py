@@ -39,6 +39,7 @@ class RecognitionHypothesis:
     canonical_candidate: str | None = field(repr=False)
     valid_schema: bool
     evidence: Literal["unique_schema", "ambiguous", "invalid", "unavailable"]
+    spoken_candidate: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_normalized(cls, source, parsed: NormalizedValue):
@@ -48,6 +49,7 @@ class RecognitionHypothesis:
             parsed.value,
             parsed.accepted,
             "unique_schema" if parsed.accepted else "ambiguous" if parsed.candidates else "invalid",
+            parsed.spoken_value,
         )
 
 
@@ -65,6 +67,7 @@ class RecognitionDecision:
     accepted_value: AcceptedStructuredValue | None = field(default=None, repr=False)
     candidate: RecognitionHypothesis | None = field(default=None, repr=False)
     consensus: bool = False
+    segment_evidence: Literal["agreement", "single", "conflict", "unusable"] | None = None
 
 
 class StructuredRecognitionPolicy:
@@ -77,6 +80,33 @@ class StructuredRecognitionPolicy:
     @staticmethod
     def requires_consensus(kind):
         return kind in RISKS and RISKS[kind] != RecognitionRisk.low
+
+    def decide_segment(self, expected_kind, first, second=None):
+        """Draft authority only. A unique single result needs a spoken segment yes.
+
+        A malformed/ambiguous other recognizer cannot corroborate the single result;
+        two distinct unique results require repetition. Neither path admits a value.
+        """
+        valid = [h for h in (first, second) if h and h.valid_schema and h.kind == expected_kind]
+        evidence = "unusable"
+        candidate = None
+        if len(valid) == 1:
+            evidence, candidate = "single", valid[0]
+        elif len(valid) == 2:
+            if valid[0].canonical_candidate != valid[1].canonical_candidate:
+                evidence = "conflict"
+            else:
+                evidence = "agreement" if first.source != second.source else "single"
+                candidate = valid[0]
+        return RecognitionDecision(
+            RecognitionOutcome.confirmation_required
+            if candidate
+            else RecognitionOutcome.repair_required,
+            RISKS[expected_kind],
+            candidate=candidate,
+            consensus=evidence == "agreement",
+            segment_evidence=evidence,
+        )
 
     def decide(self, expected_kind, first, second=None):
         valid = [h for h in (first, second) if h is not None and h.valid_schema]

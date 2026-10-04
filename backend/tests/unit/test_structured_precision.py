@@ -148,7 +148,8 @@ def test_rejection_captures_segments_then_confirms_full_value(kind):
             assert services.dialogs.get("precision").slots == {}
             assert services.dialogs.get("precision").client_lookup_attempts == []
         pending = services.dialogs.get("precision").conversation.structured_capture
-        assert pending.phase == "confirmation" and pending.candidate == VALUES[kind]
+        assert pending.phase == "confirmation"
+        assert pending.candidate == ("87770001234" if kind == "phone" else VALUES[kind])
         response = await services.messages.process("precision", "да", channel="voice")
         assert response.trace.recognition.accepted
         assert services.dialogs.get("precision").identification.provided_values[kind] == [
@@ -177,6 +178,8 @@ def test_verification_has_a_finite_path_to_handoff_without_lookup(failure):
         else:
             await services.messages.process("precision", "нет", channel="voice")
             if failure == "segment_conflict":
+                response, _ = await submit(services, "123", "124")
+                assert response.conversation_status == "awaiting_user"
                 response, _ = await submit(services, "123", "124")
             else:
                 for part in SEGMENTS["vehicle_plate"]:
