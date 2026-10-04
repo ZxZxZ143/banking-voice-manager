@@ -2,6 +2,7 @@ from time import perf_counter
 
 from app.agent.errors import RouterOutputError
 from app.conversation.language import language_request, stable_response_language
+from app.conversation.opening import BILINGUAL_OPENING
 from app.conversation.terminal import terminal_reply
 from app.core.contracts import Contract
 from app.packs.contracts import (
@@ -146,7 +147,7 @@ class ProductPromoterPack:
         context.response_language = language
         context.last_intent = "general_discovery"
         ru = language == "ru"
-        greeting = self._greeting(language)
+        greeting = self._greeting(language, proactive=True)
         shown = []
         if context.interest_level == "declined":
             response = greeting + (
@@ -654,13 +655,22 @@ class ProductPromoterPack:
         )
         return pair[0 if language == "ru" else 1]
 
-    def _greeting(self, language):
+    def _greeting(self, language, *, proactive=False):
+        greeting = (
+            BILINGUAL_OPENING
+            if proactive
+            else ("Здравствуйте!" if language == "ru" else "Сәлеметсіз бе!")
+        )
         return (
-            f"Здравствуйте! Я виртуальный представитель демонстрационного Merei Demo Bank. "
-            f"Звоню, чтобы предложить вам вариант {CAMPAIGNS[self.campaign][2]}."
-            if language == "ru"
-            else f"Сәлеметсіз бе! Мен демонстрациялық Merei Demo Bank виртуалды өкілімін. "
-            f"Сізге {CAMPAIGNS[self.campaign][3]} ұсыну үшін қоңырау шалып тұрмын."
+            greeting
+            + " "
+            + (
+                f"Я виртуальный представитель демонстрационного Merei Demo Bank. "
+                f"Звоню, чтобы предложить вам вариант {CAMPAIGNS[self.campaign][2]}."
+                if language == "ru"
+                else f"Мен демонстрациялық Merei Demo Bank виртуалды өкілімін. "
+                f"Сізге {CAMPAIGNS[self.campaign][3]} ұсыну үшін қоңырау шалып тұрмын."
+            )
         )
 
     def _lead(self, context, status, outcome, complete):

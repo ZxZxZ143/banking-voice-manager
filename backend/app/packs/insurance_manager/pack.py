@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic import Field
 
+from app.conversation.opening import BILINGUAL_OPENING
 from app.core.contracts import Contract, Slots
 from app.packs.contracts import (
     GlobalConversationContext,
@@ -102,18 +103,8 @@ class InsuranceManagerPack:
             if global_context.language in {"ru", "kk"}
             else context.response_language
         )
-        question = (
-            "Расскажите, пожалуйста, что случилось или чем могу помочь?"
-            if language == "ru"
-            else "Не болғанын айтып беріңізші, қалай көмектесе аламын?"
-        )
-        response = (
-            "Здравствуйте! Я виртуальный помощник Saqta Insurance. "
-            "Помогу разобраться со страховкой. "
-            if language == "ru"
-            else "Сәлеметсіз бе! Мен Saqta Insurance виртуалды көмекшісімін. "
-            "Сақтандыру бойынша көмектесемін. "
-        ) + question
+        question = BILINGUAL_OPENING
+        response = question
         state = context.to_dialog(global_context)
         state.response_language = language
         state.conversation = ConversationState(
