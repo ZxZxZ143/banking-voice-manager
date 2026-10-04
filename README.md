@@ -85,7 +85,10 @@ See [the architecture](docs/ARCHITECTURE.md).
 - Source-based quotes for ОГПО, standard КАСКО, travel, property and accident insurance; DMS package information, clinics, documents, payment methods and owned policy/claim/payment lookups.
 - Application and servicing flows collect the catalog's required information and transfer the prepared conversation to an operator when an insurer operation is needed.
 - Explicit operator request: **«Конечно, передаю диалог оператору.»**, `conversation_status=handoff`. Goodbye produces `ended`. Both preserve history and trace and stop the automatic microphone loop.
-- A completed information request stays in the conversation. Scenario slot snapshots prevent old car/trip information from contaminating later requests.
+- A completed Insurance answer enters `wrap_up` and asks whether more help is needed in RU/KK.
+  Acknowledgements keep that offer; declining ends the conversation; a direct new request routes
+  immediately. Typed new/existing policy context survives short answers and temporary Risk
+  guidance. Scenario slot snapshots prevent old car/trip information from contaminating later requests.
 - Invalid structured routing output produces a safe clarification; repeated uncertainty ends in handoff. Provider outages remain visible errors.
 
 Actual policy issuance, renewal, changes, cancellation, SMS/email delivery and contact-center transfer require external integrations. They are never reported as completed here. Identifier lookup against the synthetic snapshot is not real authentication.
@@ -248,6 +251,7 @@ Stop the native services before starting Docker on the same ports.
 ./.venv/Scripts/python.exe -X utf8 scripts/stage3_smoke.py --output work/new-stage3-e2e.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_product_promoter.py --output work/evals/new-product-run.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --output work/evals/new-dialogue-run.json
+./.venv/Scripts/python.exe -X utf8 scripts/evaluate_insurance_conversation.py --dataset data/insurance_conversation/completion_cases.json --output work/evals/new-completion-run.json
 ./.venv/Scripts/python.exe -X utf8 scripts/evaluate_fraud_risk.py --output work/evals/new-fraud-risk.json
 ./.venv/Scripts/python.exe -X utf8 scripts/stage4_risk_smoke.py --output work/new-stage4-state.json
 ./.venv/Scripts/python.exe -X utf8 scripts/stage3_1_voice_smoke.py --audio-directory work/voice-stage31 --output work/new-stage31-voice.json
@@ -270,8 +274,10 @@ Stage 4 results, measured timeouts, advisory limitations and the presenter seque
 artifacts, `evaluate_fraud_risk.py --rescore INPUT --output NEW_OUTPUT` recomputes unavailable
 assessments as unknown without making model calls. New runs apply that rule directly.
 Stage 3.2 results are in [Manager validation](docs/STAGE3_2_MANAGER_VALIDATION.md).
-Stage 3.1 conversation results and limitations are in
-[Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md). Earlier evidence is in
+Current results and limitations are in
+[Completion/context validation](docs/CONVERSATION_COMPLETION_VALIDATION.md).
+Earlier [Conversation validation](docs/STAGE3_1_CONVERSATION_VALIDATION.md) covers Stage 3.1;
+foundation evidence is in
 [Stage 3 validation](docs/STAGE3_VALIDATION.md),
 with the architecture baseline in [Stage 2 validation](docs/STAGE2_VALIDATION.md)
 and the original baseline retained in [Stage 1 validation](docs/STAGE1_VALIDATION.md).

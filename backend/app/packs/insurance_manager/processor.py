@@ -11,6 +11,17 @@ from app.packs.insurance_manager.composer import (
     composer_payload,
     fallback_composition,
 )
+from app.packs.insurance_manager.conversation_flow import (
+    CONTEXT_SIGNALS,
+    discovery_question,
+    enter_wrap_up,
+    is_relationship_question,
+    more_questions,
+    remember_relationship,
+    scenario_relationship,
+    unfinished_request,
+    update_relationship,
+)
 from app.packs.insurance_manager.expected_answers import (
     expected_identifier,
     expected_trip_duration,
@@ -132,6 +143,9 @@ class InsuranceTurnProcessor:
                     )
                 ],
             )
+        control = self._context_control(previous, text, decision, started, speech)
+        if control is not None:
+            return control
         alternatives = identifier_answers(text, previous, self.replies.slots)
         supplied = expected_identifier(text, previous, self.replies.slots)
         if not supplied and (
@@ -239,6 +253,9 @@ class InsuranceTurnProcessor:
         except ValueError as exc:
             raise RouterOutputError() from exc
         state = self._transition(previous, decision, policy)
+        update_relationship(previous, state, decision, policy)
+        if state.conversation:
+            state.conversation.resume_after_risk = False
         if state.active_scenario != previous.active_scenario and state.conversation:
             state.conversation.recognition_attempts.clear()
         if speech and speech.metadata.accepted and state.conversation:
@@ -325,6 +342,7 @@ class InsuranceTurnProcessor:
                         # A rejected question must not erase an understood partial goal.
                         # Only typed conversational context survives, never rejected prose.
                         payload["conversation"]["acknowledged_information"] = exc.goal_context
+                        payload["relationship_choice_allowed"] = False
                     composer_error = (
                         exc.code
                         if isinstance(exc, RouterError)
@@ -342,6 +360,7 @@ class InsuranceTurnProcessor:
                             "missing_next_question",
                             "repeated_question",
                             "unsupported_fact_variant",
+                            "unnecessary_policy_classification",
                         }
                         else "composer_validation"
                     )
@@ -391,6 +410,13 @@ class InsuranceTurnProcessor:
             meta.acknowledged_information = list(
                 dict.fromkeys([*meta.acknowledged_information, *composed.acknowledged_information])
             )[-8:]
+            if meta.policy_relationship == "unknown":
+                for relationship in ("existing", "new"):
+                    if relationship + "_policy" in meta.acknowledged_information:
+                        remember_relationship(meta, relationship)
+                        break
+            if is_relationship_question(composed.question):
+                meta.expected_answer_type = "policy_relationship"
             meta.phase = (
                 "handoff"
                 if state.conversation_status == "handoff"
@@ -409,6 +435,24 @@ class InsuranceTurnProcessor:
                     "ru": " Вернёмся к оставшемуся запросу?",
                     "kk": " Қалған сұраққа оралайық па?",
                 }[state.response_language]
+        if state.conversation and state.conversation_status not in {"handoff", "ended"}:
+            resolved = reply.completed or (
+                policy.scenario_ids == ["SYS_OUT_OF_SCOPE"] and not unfinished_request(previous)
+            )
+            if resolved and not (
+                state.active_scenario
+                or state.pending_scenarios
+                or state.scenario_stack
+                or state.awaiting_confirmation
+                or reply.expected_slot
+            ):
+                enter_wrap_up(state.conversation, state.response_language)
+                state.conversation.last_assistant_act = "answer"
+                state.conversation_status = "awaiting_user"
+                # Facts are immutable; the application owns this lifecycle question.
+                if not reply.completed and self.composer is not None:
+                    response = payload["grounded_facts"]
+                response += " " + more_questions(state.response_language)
         state = append_turn(state, DialogTurn(role="assistant", text=response))
         response_ms = (perf_counter() - response_started) * 1000
         trace = TraceRecord(
@@ -433,6 +477,9 @@ class InsuranceTurnProcessor:
             ),
             expected_slot=state.conversation.expected_slot if state.conversation else None,
             conversation_phase=state.conversation.phase if state.conversation else None,
+            policy_relationship=(
+                state.conversation.policy_relationship if state.conversation else None
+            ),
             repair_attempts=state.conversation.repair_attempts if state.conversation else None,
             slots=decision.slots,
             actions=reply.actions,
@@ -457,6 +504,111 @@ class InsuranceTurnProcessor:
             ),
         )
         return state, decision, trace, reply, completed_scenario, collected_data
+
+    def _context_control(self, previous, text, decision, started, speech):
+        """Semantic control signals operate only in the application-authorized phase."""
+        meta = previous.conversation
+        signal = decision.conversation_signal
+        if not meta or decision.slots or signal not in CONTEXT_SIGNALS:
+            return None
+        selected = [item.scenario_id for item in decision.scenarios]
+        wrap_up = meta.phase == "wrap_up" and not unfinished_request(previous)
+        resume = meta.resume_after_risk and signal == "acknowledgement"
+        if not (wrap_up or resume) or previous.conversation_status in {"handoff", "ended"}:
+            return None
+        allowed = (
+            {"SYS_UNCLEAR", "SYS_GOODBYE"}
+            if wrap_up
+            else {
+                "SYS_UNCLEAR",
+                previous.active_scenario,
+            }
+        )
+        if selected and (len(selected) != 1 or selected[0] not in allowed):
+            return None  # A direct business request always takes precedence.
+        from app.conversation.terminal import terminal_reply
+        from app.packs.insurance_manager.response.routing import RoutingReplyResult
+
+        state = previous.model_copy(deep=True)
+        # Acknowledgements are understood controls, not uncertain scenario selections.
+        decision = RouterDecision.model_validate(
+            {
+                **decision.model_dump(),
+                "scenarios": [],
+                "segments": [],
+                "alternatives": [],
+                "is_continuation": False,
+                "clarification_question": None,
+                "relationship_needed": False,
+            }
+        )
+        meta = state.conversation
+        language = reply_language_for_turn(text, decision) or previous.response_language
+        state.language = decision.language
+        state.response_language = language
+        decision.response_language = language
+        state.unclear_count = state.consecutive_low_confidence = meta.repair_attempts = 0
+        meta.resume_after_risk = False
+        ended = wrap_up and signal == "no_more_questions"
+        state.conversation_status = "ended" if ended else "awaiting_user"
+        if resume:
+            question = meta.last_question
+            if meta.expected_slot and not question:
+                question = self.replies._ask(state, meta.expected_slot).text
+            question = question or discovery_question(state)
+            response = (
+                "Продолжим ваш запрос. " if language == "ru" else "Сұрағыңызды жалғастырайық. "
+            ) + question
+            meta.last_assistant_act = "ask_slot" if meta.expected_slot else "ask_followup"
+            meta.last_question = question
+        elif ended:
+            response = terminal_reply("ended", language)
+            meta.last_assistant_act = "goodbye"
+            meta.last_question = meta.expected_answer_type = None
+        elif signal == "more_questions":
+            response = (
+                "Конечно. Что ещё хотите узнать?"
+                if language == "ru"
+                else "Әрине. Тағы не білгіңіз келеді?"
+            )
+            meta.last_assistant_act = "ask_followup"
+            meta.last_question = response
+            meta.expected_answer_type = "problem_description"
+        else:
+            response = ("Пожалуйста. " if language == "ru" else "Оқасы жоқ. ") + more_questions(
+                language
+            )
+            enter_wrap_up(meta, language)
+            meta.last_assistant_act = "ask_followup"
+        reply = RoutingReplyResult(text=response, expected_slot=meta.expected_slot, completed=ended)
+        state = append_turn(state, DialogTurn(role="user", text=text))
+        state = append_turn(state, DialogTurn(role="assistant", text=response))
+        elapsed = (perf_counter() - started) * 1000
+        trace = TraceRecord(
+            session_id=state.session_id,
+            turn=state.turn_number,
+            turn_number=state.turn_number,
+            transcript=text,
+            language=decision.language,
+            scenarios=decision.scenarios,
+            reason="Resume unfinished request after security guidance"
+            if resume
+            else "Resolved request follow-up",
+            policy_outcome="continue" if resume else "wrap_up",
+            recognition=speech.metadata if speech else None,
+            conversation_act=meta.last_assistant_act,
+            expected_answer_type=meta.expected_answer_type,
+            expected_slot=meta.expected_slot,
+            conversation_phase=meta.phase,
+            policy_relationship=meta.policy_relationship,
+            repair_attempts=0,
+            active_scenario=state.active_scenario,
+            scenario_stack=state.scenario_stack,
+            pending_scenarios=state.pending_scenarios,
+            conversation_status=state.conversation_status,
+            latency_ms=LatencyRecord(router=elapsed, total=elapsed),
+        )
+        return state, decision, trace, reply, None, dict(state.slots)
 
     def _recognition_repair(self, previous, text, speech):
         from app.packs.insurance_manager.response.routing import RoutingReplyResult
@@ -682,6 +834,8 @@ class InsuranceTurnProcessor:
     def _finish_scenario(state: DialogState, current_requests: list[str]) -> None:
         """Complete a read-only answer, not the conversation; resume deferred work."""
         finished = state.active_scenario
+        if state.conversation:
+            state.conversation.scenario_relationships.pop(finished, None)
         state.scenario_identification.pop(finished, None)
         state.scenario_slots.pop(finished, None)
         state.scenario_stack = [value for value in state.scenario_stack if value != finished]
@@ -704,6 +858,13 @@ class InsuranceTurnProcessor:
             value for value in state.pending_scenarios if value != state.active_scenario
         ]
         if state.active_scenario:
+            if state.conversation:
+                remember_relationship(
+                    state.conversation,
+                    state.conversation.scenario_relationships.get(
+                        state.active_scenario, scenario_relationship(state.active_scenario)
+                    ),
+                )
             state.identification = state.scenario_identification.get(
                 state.active_scenario, IdentificationState()
             ).model_copy(deep=True)

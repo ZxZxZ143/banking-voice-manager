@@ -53,7 +53,7 @@ def test_current_language_overrides_stale_reply_language_in_one_session():
             if language == "kk":
                 assert "қ" in body["response_text"].lower()
             else:
-                assert "уточ" in body["response_text"].lower()
+                assert "расскажите" in body["response_text"].lower()
 
 
 @pytest.mark.parametrize(

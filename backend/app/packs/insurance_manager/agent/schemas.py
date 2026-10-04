@@ -5,14 +5,26 @@ from typing import Annotated, Literal
 from pydantic import Field, StrictBool, StrictInt, create_model, model_validator
 
 from app.core.contracts import Contract, Language, Slots
+from app.packs.insurance_manager.conversation_flow import CONTEXT_SIGNALS
 from app.packs.insurance_manager.data.models import SlotDataset
-from app.packs.insurance_manager.state import IdentifierKind
+from app.packs.insurance_manager.state import IdentifierKind, PolicyRelationship
 from app.tracing.selections import ScenarioScore, ScenarioSelection
 
 
 class IdentifierAnswer(Contract):
     status: Literal["provided", "unavailable", "correction", "partial", "unknown"]
     field: IdentifierKind | None = None
+
+
+ConversationSignal = Literal[
+    "none",
+    "greeting",
+    "answer",
+    "partial_answer",
+    "acknowledgement",
+    "more_questions",
+    "no_more_questions",
+]
 
 
 class SemanticSegment(ScenarioSelection):
@@ -26,11 +38,13 @@ class RouterDecision(Contract):
     response_language: Literal["ru", "kk"] | None = None
     clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
     segments: list[SemanticSegment] = Field(default_factory=list)
-    scenarios: list[ScenarioSelection] = Field(min_length=1)
+    scenarios: list[ScenarioSelection]
     alternatives: list[ScenarioScore] = Field(default_factory=list)
     slots: Slots = Field(default_factory=dict)
     is_continuation: bool = False
-    conversation_signal: Literal["none", "greeting", "answer", "partial_answer"] = "none"
+    conversation_signal: ConversationSignal = "none"
+    policy_relationship: PolicyRelationship = "unknown"
+    relationship_needed: bool = False
     scope_kind: Literal["none", "small_talk", "identity", "banking", "unrelated"] = Field(
         default="none", exclude_if=lambda v: v == "none"
     )
@@ -38,6 +52,15 @@ class RouterDecision(Contract):
     @model_validator(mode="after")
     def validate_segments(self) -> "RouterDecision":
         ids = [item.scenario_id for item in self.scenarios]
+        if not ids and (
+            self.conversation_signal not in CONTEXT_SIGNALS
+            or self.slots
+            or self.segments
+            or self.alternatives
+            or self.is_continuation
+            or self.scope_kind != "none"
+        ):
+            raise ValueError("Only a pure conversational control may omit scenario selection")
         if len(ids) != len(set(ids)):
             raise ValueError("Selected scenarios must be unique")
         for index, segment in enumerate(self.segments):
@@ -64,13 +87,23 @@ class RouterAgentOutput(Contract):
     language: Language
     response_language: Literal["ru", "kk"] | None = None
     clarification_question: str | None = Field(default=None, min_length=1, max_length=400)
-    segments: list[SemanticSegment] = Field(min_length=1)
-    scenarios: list[ScenarioSelection] = Field(min_length=1)
+    segments: list[SemanticSegment]
+    scenarios: list[ScenarioSelection]
     alternatives: list[ScenarioScore] = Field(max_length=2)
     slots: list[ExtractedSlot]
     is_continuation: bool
-    conversation_signal: Literal["none", "greeting", "answer", "partial_answer"] = "none"
+    conversation_signal: ConversationSignal = "none"
+    policy_relationship: PolicyRelationship = "unknown"
+    relationship_needed: bool = False
     scope_kind: Literal["none", "small_talk", "identity", "banking", "unrelated"] = "none"
+
+    @model_validator(mode="after")
+    def require_selection_or_control(self):
+        if (not self.scenarios or not self.segments) and not (
+            not self.scenarios and not self.segments and self.conversation_signal in CONTEXT_SIGNALS
+        ):
+            raise ValueError("Ordinary routing requires nonempty scenarios and segments")
+        return self
 
     def to_decision(self) -> RouterDecision:
         names = [slot.name for slot in self.slots]
@@ -86,6 +119,8 @@ class RouterAgentOutput(Contract):
             slots={slot.name: slot.value for slot in self.slots},
             is_continuation=self.is_continuation,
             conversation_signal=self.conversation_signal,
+            policy_relationship=self.policy_relationship,
+            relationship_needed=self.relationship_needed,
             scope_kind=self.scope_kind,
             identifier_answer=self.identifier_answer,
         )

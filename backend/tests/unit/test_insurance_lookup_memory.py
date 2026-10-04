@@ -259,7 +259,8 @@ def test_unavailable_claim_number_then_phone_resolves_single_owned_claim(languag
         result = await built.messages.process("claim", "87075551234")
         assert result.trace.completed_scenario == "SC17"
         assert result.trace.actions == ["find_client", "get_claim"]
-        assert result.conversation_status == "active"
+        assert result.conversation_status == "awaiting_user"
+        assert result.state.conversation.phase == "wrap_up"
 
     asyncio.run(run())
 

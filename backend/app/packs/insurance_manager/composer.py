@@ -6,6 +6,11 @@ from typing import Literal
 from pydantic import Field
 
 from app.core.contracts import Contract
+from app.packs.insurance_manager.conversation_flow import (
+    discovery_question,
+    is_relationship_question,
+    relationship_choice_allowed,
+)
 from app.packs.insurance_manager.privacy import redact_text, safe_slots
 from app.packs.structured_agent import StructuredAgent
 
@@ -41,8 +46,20 @@ Greeting-only needs greeting and an OPEN help question, never new/existing class
 Interpret short/partial answers against the last question. Once new/existing was answered,
 acknowledge and narrow to the actual problem; do not ask that choice again. Repeated context
 is still useful: offer concrete problem alternatives or ask what outcome they want.
-For an initial vague insurance problem, clarify whether it concerns a new or existing
-policy. After existing/new is understood, ask narrower concrete alternatives (documents,
+Ask new versus existing ONLY when relationship_choice_allowed=true. It is never a universal
+fallback. conversation.policy_relationship is authoritative conversational context, not
+ownership verification. Even when the Router has left it unknown, a customer's statement of
+having an issued or paid policy is existing-policy context; acknowledge that typed information
+and ask what they need done. Missing operation details do not make the relationship unknown.
+Do not ask the binary question while acknowledging existing_policy or new_policy.
+Retain it through short answers, slot collection and related tasks.
+When unknown and the distinction is unnecessary, ask an open help question or the specific
+missing detail. Security guidance, general payment/office information, identity and small
+talk do not require policy classification. A resolved answer enters application-owned
+wrap_up; acknowledgements there accept the answer, and declining more help ends the dialog.
+Never restart discovery or repeat an answered business question in wrap_up. After a Risk
+detour, resume the exact unfinished step; only with no unfinished task offer further help.
+After existing/new is understood, ask narrower concrete alternatives (documents,
 changes, term, payment or another issue), not the same generic 'describe your problem'.
 Always include existing_policy/new_policy in acknowledged_information when such context
 was supplied or reaffirmed; problem_details only for actual relevant new problem details.
@@ -101,7 +118,15 @@ class ComposedReply(Contract):
         Literal["existing_policy", "new_policy", "problem_details", "provided_data"]
     ] = Field(default_factory=list, max_length=4)
     expected_answer_type: (
-        Literal["problem_description", "product_type", "choice", "slot"] | None
+        Literal[
+            "problem_description",
+            "product_type",
+            "choice",
+            "policy_relationship",
+            "slot",
+            "more_questions",
+        ]
+        | None
     ) = None
     fact_variant: Literal["default", "policy_end_date", "policy_period"] = "default"
 
@@ -137,6 +162,11 @@ class ConversationComposer:
 
 def validate_composition(result: ComposedReply, payload: dict) -> None:
     action = payload["allowed_action"]
+    if is_relationship_question(result.acknowledgement + " " + (result.question or "")) and (
+        not payload.get("relationship_choice_allowed", False)
+        or set(result.acknowledged_information) & {"existing_policy", "new_policy"}
+    ):
+        raise ValueError("unnecessary_policy_classification")
     if result.fact_variant != "default" and result.fact_variant not in payload.get(
         "grounded_variants", {}
     ):
@@ -243,7 +273,9 @@ def composer_payload(previous, state, text, decision, policy, reply, slots):
         "conversation": conversation.model_dump(),
         "grounded_facts": facts,
         "grounded_variants": reply.fact_variants,
-        "allow_followup": reply.allow_followup,
+        "allow_followup": reply.allow_followup and not reply.completed,
+        "relationship_choice_allowed": relationship_choice_allowed(state, decision),
+        "discovery_question": discovery_question(state, decision),
         "source_keys": [redact_text(key, state.slots) for key in reply.source_keys],
         "allowed_action": action,
         "next_slot": next_slot,
@@ -257,6 +289,13 @@ def fallback_composition(payload: dict, reply) -> ComposedReply:
     action = payload["allowed_action"]
     if action in {"handoff", "goodbye", "answer"}:
         return ComposedReply(conversation_act=action, acknowledgement="")
+    if payload.get("relationship_choice_allowed"):
+        return ComposedReply(
+            conversation_act="ask_followup",
+            acknowledgement="",
+            question=payload["discovery_question"],
+            expected_answer_type="policy_relationship",
+        )
     if action == "scope_reply":
         question = payload["conversation"]["last_question"]
         return ComposedReply(

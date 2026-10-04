@@ -210,6 +210,12 @@ class RoutingReplyGenerator:
                 expected_slot=state.conversation.expected_slot if state.conversation else None,
             )
         if selected == "SYS_UNCLEAR":
+            from app.packs.insurance_manager.conversation_flow import (
+                discovery_question,
+                is_relationship_question,
+                relationship_choice_allowed,
+            )
+
             # The source template requires option_a/option_b, which may be absent.
             # Do not invent alternatives or expose unfilled template placeholders.
             question = getattr(decision, "clarification_question", None)
@@ -217,6 +223,10 @@ class RoutingReplyGenerator:
                 isinstance(question, str)
                 and question.strip()
                 and not any(token in question for token in ("{", "}", "None", "null", "undefined"))
+                and (
+                    not is_relationship_question(question)
+                    or relationship_choice_allowed(state, decision)
+                )
             ):
                 return RoutingReplyResult(text=question.strip())
             labels_by_id = {
@@ -249,16 +259,7 @@ class RoutingReplyGenerator:
                             "kk": f"Сізге {labels[0]} керек пе, әлде {labels[1]} керек пе?",
                         }[language]
                     )
-            return RoutingReplyResult(
-                text={
-                    "ru": (
-                        "Уточните, пожалуйста: вы хотите подобрать новый полис "
-                        "или разобраться с уже существующим?"
-                    ),
-                    "kk": "Жаңа полис таңдағыңыз келе ме, әлде қолданыстағы полис "
-                    "бойынша мәселе бар ма?",
-                }[language]
-            )
+            return RoutingReplyResult(text=discovery_question(state, decision))
         system = self.catalog.get_system_intent(selected)
         if system is not None:
             return RoutingReplyResult(text=getattr(system.response, language))

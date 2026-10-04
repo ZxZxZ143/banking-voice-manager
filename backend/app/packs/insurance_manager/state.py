@@ -8,6 +8,7 @@ from app.packs.contracts import GlobalConversationContext
 from app.packs.insurance_manager.tools.capabilities import ManagerSummary
 
 IdentifierKind = Literal["phone", "iin", "policy_number", "claim_number", "vehicle_plate"]
+PolicyRelationship = Literal["new", "existing", "not_applicable", "unknown"]
 
 
 class IdentificationState(Contract):
@@ -41,7 +42,12 @@ class ConversationState(Contract):
     expected_slot: str | None = None
     repair_attempts: int = Field(default=0, ge=0)
     recognition_attempts: dict[str, int] = Field(default_factory=dict, max_length=9)
-    phase: Literal["discover", "collect", "resolve", "confirm", "handoff"] = "discover"
+    phase: Literal["discover", "collect", "resolve", "wrap_up", "confirm", "handoff"] = "discover"
+    policy_relationship: PolicyRelationship = "unknown"
+    scenario_relationships: dict[str, PolicyRelationship] = Field(
+        default_factory=dict, max_length=40
+    )
+    resume_after_risk: bool = False
     acknowledged_information: list[str] = Field(default_factory=list, max_length=8)
     travel_duration_days: int | None = Field(default=None, ge=1, le=365)
     last_acknowledgement: str = ""

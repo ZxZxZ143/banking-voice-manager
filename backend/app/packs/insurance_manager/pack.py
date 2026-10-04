@@ -156,6 +156,31 @@ class InsuranceManagerPack:
         )
 
     @staticmethod
+    def after_security_guidance(context, public, language):
+        """Retain business work; mark only the pack's conversational next step."""
+        from app.packs.insurance_manager.conversation_flow import (
+            enter_wrap_up,
+            more_questions,
+            remember_relationship,
+            unfinished_request,
+        )
+
+        context = context.model_copy(deep=True)
+        public = public.model_copy(deep=True)
+        context.conversation = context.conversation or ConversationState()
+        context.response_language = language
+        if unfinished_request(context):
+            context.conversation.resume_after_risk = True
+            followup = ""
+        else:
+            remember_relationship(context.conversation, "not_applicable")
+            enter_wrap_up(context.conversation, language)
+            followup = more_questions(language)
+        public.conversation = context.conversation.model_copy(deep=True)
+        public.response_language = language
+        return context, public, followup
+
+    @staticmethod
     def redact_trace(trace, slots=None):
         trace.transcript = redact_text(trace.transcript, slots)
         if trace.recognition and trace.recognition.expected_kind not in {"none", "region_code"}:
@@ -188,11 +213,12 @@ class InsuranceManagerPack:
             completed_flow,
             collected_data,
         ) = await self.processor.process(previous, text, speech=speech)
+        selected = decision.scenarios[0].scenario_id if decision.scenarios else None
         result = InsuranceResult(
             scenario_id=(
-                decision.scenarios[0].scenario_id
+                selected
                 if state.conversation_status in ("handoff", "ended")
-                else completed_flow or state.active_scenario or decision.scenarios[0].scenario_id
+                else completed_flow or state.active_scenario or selected
             ),
             status=state.conversation_status,
             collected_data=collected_data,

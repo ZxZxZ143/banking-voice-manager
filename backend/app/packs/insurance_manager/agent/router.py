@@ -200,6 +200,22 @@ class RouterAgent:
 
     def _validate_decision(self, decision: RouterDecision, state: DialogState) -> None:
         selections = [item.scenario_id for item in decision.scenarios]
+        if not selections:
+            from app.packs.insurance_manager.conversation_flow import unfinished_request
+
+            meta = state.conversation
+            if not (
+                meta
+                and state.conversation_status not in {"handoff", "ended"}
+                and (
+                    meta.phase == "wrap_up"
+                    and not unfinished_request(state)
+                    or meta.resume_after_risk
+                    and decision.conversation_signal == "acknowledgement"
+                )
+            ):
+                raise RouterOutputError("continuation")
+            return
         alternatives = [item.scenario_id for item in decision.alternatives]
         if any(
             self.catalog.get_by_id(item) is None and self.catalog.get_system_intent(item) is None

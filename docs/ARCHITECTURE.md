@@ -130,7 +130,7 @@ coverage and limitations; free wording cannot add numerical facts or claim an ex
 The LLM controls conversational framing rather than reauthoring authoritative insurance facts.
 Policy status is a concise localized fact without identifiers or dataset dates. The Composer
 may select an offered immutable end-date/period variant for an explicit date question;
-the server suppresses follow-up filler for this answer. These dates still use the owned
+the server suppresses free follow-up filler and appends its own completion question. These dates still use the owned
 record and canonical snapshot reference date. A completed scenario is never continued by
 a stale model flag: its selected follow-up is treated as a fresh request.
 Final dialogue no longer comes directly from scenario classification; deterministic replies
@@ -141,7 +141,20 @@ new/existing goal metadata, asks a narrower question and resets misunderstanding
 prose never survives as facts or business authorization.
 
 Conversational metadata tracks act, last question, expected answer type/slot, repair attempts,
-phase and existing/new conversational context. Greeting is discovery, not a business scenario.
+phase and typed `policy_relationship` (new/existing/not_applicable/unknown). Greeting is
+discovery, not a business scenario. Relationship follows semantic evidence and catalog-defined
+new/existing workflows, survives short replies/collection and is saved for deferred scenarios.
+It never establishes ownership or authorizes a lookup or write. New/existing classification
+requires a genuinely ambiguous insurance goal with no established relationship; otherwise
+discovery asks an open question or the specific missing detail.
+
+Once a read-only answer has no pending action, field, deferred scenario or handoff, the pack
+enters `wrap_up` and offers further help in RU/KK. Typed Router signals distinguish acceptance,
+another unstated question and declining more help. The application answers these without
+business lookup or Composer, resets misunderstanding counters, and closes only on the decline.
+Pure controls have empty selections/segments; ordinary routing still requires both. Controls
+outside the authorized phase fail validation. A direct new request routes normally and releases
+the completed request's relationship. This does not add a new agent or alter catalog IDs.
 Valid requested identifiers have a literal numeric/RU/KK digit normalization path in
 `expected_answers.py`: it validates the already requested field, never selects an intent.
 Policy may continue the active workflow on that validated data even if routing output was
@@ -304,7 +317,11 @@ Each entry keeps its last pack-produced public projection separately from privat
 A security detour uses that safe projection and a fresh trace, preserving the selected
 business context and typed result; no business Router/Composer/Product call is made on
 that turn. The lifecycle remains active/resumed/completed as before. Only explicit
-operator/farewell may terminate it. A normal continuation then uses the retained state.
+operator/farewell may terminate it. Insurance's optional `after_security_guidance` hook marks
+only conversational metadata: unfinished work sets `resume_after_risk`, so acceptance repeats
+its exact pending question before collecting more data, including after failed identifier STT.
+With no unfinished business, security advice enters wrap-up. Product business state and result
+remain unchanged. A normal continuation then uses the retained state.
 
 The manually selected `packs/fraud_security/` consumes the same assessment once, asks at
 most one safe follow-up, tracks enum facts and asked questions, and produces

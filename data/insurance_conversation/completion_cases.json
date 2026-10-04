@@ -1,0 +1,295 @@
+{
+  "description": "Part D completion and policy context: synthetic RU/KK semantic regression dialogues. Gold stays outside model input.",
+  "cases": [
+    {
+      "id": "C01-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Оператор банка сказал, что у меня какие-то проблемы со страховкой и что мне нужно сообщить четырёхзначный код из SMS.",
+          "wrap_up": true,
+          "relationship": "not_applicable"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Хорошо.",
+          "resolved_acknowledgement": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Нет, спасибо.",
+          "terminal": "ended",
+          "no_more_questions": true
+        }
+      ]
+    },
+    {
+      "id": "C02-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Какими способами можно оплатить страховку?",
+          "wrap_up": true,
+          "relationship": "not_applicable",
+          "facts": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Спасибо",
+          "resolved_acknowledgement": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Да, есть ещё вопрос",
+          "open_followup": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Хочу оформить страховку для поездки",
+          "scenario": "SC06",
+          "relationship": "new",
+          "wrap_up": false,
+          "slot": "trip_country"
+        }
+      ]
+    },
+    {
+      "id": "C03-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "У меня уже есть полис.",
+          "relationship": "existing"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Он не появился в приложении.",
+          "relationship": "existing"
+        }
+      ]
+    },
+    {
+      "id": "C04-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Хочу застраховать автомобиль.",
+          "relationship": "new",
+          "wrap_up": false
+        }
+      ]
+    },
+    {
+      "id": "C05-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": true,
+          "text": "У меня вопрос по страховке.",
+          "relationship": "unknown"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "У меня уже есть полис",
+          "relationship": "existing",
+          "progress": true
+        }
+      ]
+    },
+    {
+      "id": "C06-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Где ваш офис в Алматы?",
+          "wrap_up": true,
+          "relationship": "not_applicable",
+          "facts": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Всё, больше ничего",
+          "terminal": "ended",
+          "no_more_questions": true
+        }
+      ]
+    },
+    {
+      "id": "C07-ru",
+      "lang": "ru",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Проверьте срок моего полиса",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Звонящий из банка просит мой код из SMS",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Понял, спасибо",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        }
+      ]
+    },
+    {
+      "id": "C01-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Банк қызметкері сақтандыруымда мәселе бар екенін айтып, SMS-тегі кодты сұрады.",
+          "wrap_up": true,
+          "relationship": "not_applicable"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Жақсы.",
+          "resolved_acknowledgement": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Жоқ, рақмет.",
+          "terminal": "ended",
+          "no_more_questions": true
+        }
+      ]
+    },
+    {
+      "id": "C02-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Сақтандыру ақысын қалай төлеуге болады?",
+          "wrap_up": true,
+          "relationship": "not_applicable",
+          "facts": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Рақмет",
+          "resolved_acknowledgement": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Иә, тағы сұрағым бар",
+          "open_followup": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Сапарға сақтандыру рәсімдегім келеді",
+          "scenario": "SC06",
+          "relationship": "new",
+          "wrap_up": false,
+          "slot": "trip_country"
+        }
+      ]
+    },
+    {
+      "id": "C03-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Менде сақтандыру полисі бар.",
+          "relationship": "existing"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Ол қолданбада көрінбейді.",
+          "relationship": "existing"
+        }
+      ]
+    },
+    {
+      "id": "C04-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Көлігімді сақтандырғым келеді.",
+          "relationship": "new",
+          "wrap_up": false
+        }
+      ]
+    },
+    {
+      "id": "C05-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": true,
+          "text": "Сақтандыру туралы сұрағым бар.",
+          "relationship": "unknown"
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Менде полис бар",
+          "relationship": "existing",
+          "progress": true
+        }
+      ]
+    },
+    {
+      "id": "C06-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Алматыдағы кеңсеңіз қайда?",
+          "wrap_up": true,
+          "relationship": "not_applicable",
+          "facts": true
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Болды, басқа сұрағым жоқ",
+          "terminal": "ended",
+          "no_more_questions": true
+        }
+      ]
+    },
+    {
+      "id": "C07-kk",
+      "lang": "kk",
+      "turns": [
+        {
+          "allow_relationship_question": false,
+          "text": "Полисімнің мерзімін тексеріңіз",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Банктен қоңырау шалған адам SMS кодымды сұрайды",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        },
+        {
+          "allow_relationship_question": false,
+          "text": "Түсіндім, рақмет",
+          "relationship": "existing",
+          "slot": "phone",
+          "wrap_up": false
+        }
+      ]
+    }
+  ]
+}

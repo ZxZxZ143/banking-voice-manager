@@ -75,8 +75,9 @@ business scenarios or other system intents. If there is an independently clear i
 request alongside unrelated material, route the in-scope request. An explicit request for
 a human now is SC37; a later callback is SC36. Never infer a human request from anger alone.
 System outcomes are real selections too: scenarios MUST contain the selected SYS_* ID,
-confidence and reason, with a matching segment quoting the utterance. Never return empty
-scenarios/segments just because there is no business request or because you ask a question.
+confidence and reason, with a matching segment quoting the utterance. Empty scenarios/segments
+are permitted ONLY for the explicit contextual control signals described below; all ordinary
+routing, including discovery and unclear requests, still requires a selection and segment.
 
 CONTEXT AND LANGUAGE
 For SYS_OUT_OF_SCOPE only, scope_kind distinguishes harmless small_talk, identity questions
@@ -103,6 +104,38 @@ expected answer and last question when present. A meaningful answer can remain S
 if the concrete business outcome is still unknown. That is progress, not failed understanding.
 Even if the last question asked for a problem, learning that the policy is existing or
 new is partial_answer: it narrows discovery. Supplied relevant insurance context is progress.
+POLICY RELATIONSHIP AND COMPLETION
+policy_relationship is conversational evidence, NEVER proof of ownership or authorization.
+Infer new/existing semantically from the current request and relevant history, not from
+whether an identifier is supplied. Purchase/quote of insurance implies new; changing,
+renewing, cancelling, recovering an issued policy or a claim implies existing. A paid policy
+missing in the app is existing.
+Relationship and requested operation are independent: a statement of owning, holding or
+having paid for insurance establishes existing EVEN IF no concrete operation is stated yet.
+Keep SYS_UNCLEAR + partial_answer for that unknown operation, but policy_relationship=existing
+and relationship_needed=false. An intention to insure establishes new even without a product.
+Apply the same ownership/existence meaning in Russian and inflected Kazakh. Never confuse
+an unknown requested operation with an unknown policy relationship.
+Security advice, general payment methods, offices, identity
+and small talk are not_applicable. Use unknown for data-only replies without new evidence;
+the application retains the known relationship. Explicit corrections can change it.
+relationship_needed=true ONLY for an actual insurance goal where distinguishing new from
+existing materially changes the next step AND neither utterance nor context establishes it.
+Never ask that binary question after a completed answer, acknowledgement, security advice,
+irrelevant request, or when the relationship is already known. Ask the specific missing detail.
+When conversation.phase=wrap_up, the last request is resolved; no business action remains.
+Interpret short replies to the more-questions offer semantically: acknowledgement for thanks
+or acceptance without another request; more_questions for wanting another question without
+stating it; no_more_questions for declining further help. For these control turns use EMPTY
+scenarios, segments, alternatives and slots, with is_continuation=false, scope_kind=none.
+They are understood conversational controls, NEVER SYS_UNCLEAR. The application closes on
+no_more_questions. Direct new requests take precedence over these signals and
+route normally. Do not turn a request containing polite thanks into a mere acknowledgement.
+When resume_after_risk=true, an acknowledgement accepts the safety advice and resumes the
+unfinished task at its last question, not a new discovery or purchase. Return the same empty
+control output with conversation_signal=acknowledgement; application state owns resumption.
+Outside those contexts use the ordinary answer/partial_answer rules. Never label an answer
+to a required field as no_more_questions. Read the application phase before interpreting no.
 Greeting alone is SYS_UNCLEAR with conversation_signal=greeting, not a business selection.
 When the customer repeats context already understood, acknowledge it as partial_answer
 and narrow the remaining question, rather than inventing a business scenario.

@@ -207,7 +207,14 @@ def test_security_detour_keeps_private_state_result_and_no_hidden_switch_then_co
         assert (
             after.active_scenario_pack == mode and "fraud_security" not in after.scenario_contexts
         )
-        assert after.scenario_contexts[mode].state == before.state
+        current = after.scenario_contexts[mode].state
+        if mode == "insurance_manager":
+            assert current.model_dump(exclude={"conversation"}) == before.state.model_dump(
+                exclude={"conversation"}
+            )
+            assert current.conversation.resume_after_risk
+        else:
+            assert current == before.state
         assert after.scenario_contexts[mode].result == before.result
         assert after.scenario_contexts[mode].lifecycle == before.lifecycle
         assert reply.risk.level == "high" and "Не сообщайте" in reply.response_text

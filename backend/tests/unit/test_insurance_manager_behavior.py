@@ -76,7 +76,8 @@ def test_phone_normalization_and_overlay_lookup_no_format_loop(phone):
         )
         assert private.slots["phone"] == "+77075551234"
         assert second.trace.completed_scenario == "SC25"
-        assert second.conversation_status == "active"
+        assert second.conversation_status == "awaiting_user"
+        assert second.state.conversation.phase == "wrap_up"
         assert second.state.conversation.expected_slot is None
         assert "формат" not in second.response_text
         assert "77075551234" not in json.dumps(second.trace.model_dump())
@@ -222,7 +223,7 @@ def test_phone_without_country_code_is_hidden_from_provider(phone):
 
 
 @pytest.mark.parametrize("variant", ["default", "policy_end_date", "policy_period"])
-def test_policy_answer_uses_only_offered_facts_without_extra_question(variant):
+def test_policy_answer_uses_only_offered_facts_and_application_wrap_up(variant):
     built = build(decision("SC25", {"iin": "000101300000"}), demo=True)
 
     class PolicyComposer:
@@ -240,10 +241,14 @@ def test_policy_answer_uses_only_offered_facts_without_extra_question(variant):
     turn = asyncio.run(built.messages.process("policy", "Проверка полиса"))
     assert turn.trace.completed_scenario == "SC25"
     assert turn.trace.expected_slot is None
-    assert "?" not in turn.response_text and "[номер скрыт]" not in turn.response_text
+    assert turn.response_text.count("?") == 1 and "[номер скрыт]" not in turn.response_text
+    assert turn.response_text.endswith("Остались ещё вопросы по страхованию?")
+    assert "Могу помочь ещё?" not in turn.response_text
     assert "2026-10-01" not in turn.response_text
     if variant == "default":
-        assert turn.response_text == "Сейчас ваш полис действует."
+        assert turn.response_text == (
+            "Сейчас ваш полис действует. Остались ещё вопросы по страхованию?"
+        )
     else:
         assert "31 декабря 2026 года" in turn.response_text
         assert "990001" not in turn.response_text

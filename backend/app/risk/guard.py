@@ -75,6 +75,13 @@ async def guidance_turn(pack, global_context, entry, run, text, policy):
         if "official_channels" not in keys:
             reply += " " + policy.text("official_channels", language)
         assessment.guidance_shown = list(dict.fromkeys(keys + ["official_channels"]))
+        after_guidance = getattr(pack, "after_security_guidance", None)
+        if after_guidance:
+            entry.state, public, followup = after_guidance(entry.state, public, language)
+            if followup:
+                reply += " " + followup
+                status = "awaiting_user"
+                result = result.model_copy(update={"status": status})
     # Update only shared wire metadata. The selected pack's business state/result survive.
     metadata = {
         "turn_number": global_context.turn_number + 1,
@@ -97,6 +104,10 @@ async def guidance_turn(pack, global_context, entry, run, text, policy):
         conversation_act="security_guidance",
         policy_outcome="security_advisory",
         source_keys=["security.policy." + k for k in assessment.guidance_shown],
+        conversation_phase=getattr(getattr(public, "conversation", None), "phase", None),
+        policy_relationship=getattr(
+            getattr(public, "conversation", None), "policy_relationship", None
+        ),
     )
     return PackTurn(
         context=entry.state.model_copy(deep=True),

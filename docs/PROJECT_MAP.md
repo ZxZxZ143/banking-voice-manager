@@ -12,6 +12,17 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Insurance completion/context (Part D, Stage 6 branch):** resolved read-only and standalone
+  Risk answers enter `conversation.phase=wrap_up`, offer RU/KK further help, acknowledge without
+  restarting discovery, and end on no-more-questions. Direct new requests route normally.
+  Typed `policy_relationship` retains new/existing context through collection and Risk detours;
+  source scenarios plus semantic Router evidence establish it, never ownership authorization.
+  New/existing classification is gated to genuine ambiguity; generic SYS_UNCLEAR fallback is open.
+  Pure contextual controls have empty selections/segments and never appear as SYS_UNCLEAR.
+  Ordinary routing still requires selections/segments. See `CONVERSATION_COMPLETION_VALIDATION.md`.
+  Verified: 1160 backend / 97 frontend tests; 14 live RU/KK dialogues (34 turns), zero unnecessary
+  classification questions; canonical routing 95.2% primary / 94.2% full, with known remaining errors.
+
 - **Structured speech refinement (Stage 6 branch):** shared expected-slot context,
   high-delay identifier STT, deterministic RU/KK/mixed normalization and one conditional
   bounded gpt-transcribe second pass. Region 01/02/03–20 use Astana/Almaty/other pricing.
@@ -174,6 +185,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/agent/`, `dialog/`, `data/`, `scenarios/`, `tools/`, `response/` | Compatibility exports/adapters for existing consumers; insurance implementation moved into the pack |
 | `backend/app/dev_stand/index.html`, `api/routes/dev.py` | Opt-in same-origin text debug stand; not production UI |
 | `backend/app/tracing/` | TraceRecord, nullable latencies and bounded collector |
+| `backend/app/packs/insurance_manager/conversation_flow.py` | Pack-local completion phase, policy relationship and gated discovery |
+| `data/insurance_conversation/completion_cases.json` | 14 synthetic RU/KK completion/context dialogue evaluations |
 | `backend/app/evaluation/` | Data/live-eval CLI, exclusive predictions and official evaluator report |
 | `backend/tests/unit/`, `backend/tests/integration/` | Offline tests and API smoke checks |
 | `frontend/src/main.tsx`, `App.tsx` | Veyra dashboard navigation/source scope and retained live Conversation Demo/runtime |
@@ -303,6 +316,9 @@ Application traces expose concise reasons and measured latency, never hidden cha
   with no canonical private value. Ordinary wire remains unchanged.
 - `agent/schemas.py`: RouterDecision has language, response_language (ru/kk), segments, selections,
   alternatives, slots, conversation_signal, optional clarification_question and continuation.
+  Typed `policy_relationship` and `relationship_needed` govern contextual discovery. Signals
+  `acknowledgement`, `more_questions`, `no_more_questions` bypass business execution only in
+  authorized wrap-up/Risk-resume state; those controls allow empty selections/segments.
   Insurance also has optional typed identifier_answer (provided/unavailable/correction/partial/
   unknown + field kind); unavailability and clear alternative identifiers continue the active
   identification step. Private supplied values and failed fingerprints are excluded from
@@ -310,19 +326,21 @@ Application traces expose concise reasons and measured latency, never hidden cha
   unavailable_fields and failed_lookup_fields, with lookup_exhausted/operator_review.
   SDK transport uses a named-slot list with non-null values for closed JSON
   schema; `to_decision()` restores the slots object. Dependencies use earlier zero-based indices.
-  SDK selections/segments are nonempty even for system intents. Fresh routing input omits
+  Ordinary SDK selections/segments are nonempty even for system intents. Fresh routing input omits
   storage language defaults; source enum spellings normalize before strict validation.
 - `dialog/models.py`: DialogueState includes session/language/response_language/client,
   active scenario, stack, pending scenarios, slots, confirmation flag, turn number,
   unclear and consecutive-low-confidence counts, clarification_options, conversation_status,
   scenario_mode and scenario_slots snapshots, plus bounded history and optional conversation
   metadata (act, question, expected answer/slot, repair attempts, phase, recognized context).
+  Insurance conversation adds `phase=wrap_up`, `policy_relationship` (new/existing/
+  not_applicable/unknown), per-scenario relationship snapshots and `resume_after_risk`.
   Statuses: active, awaiting_user, awaiting_confirmation, handoff, ended; confirmation is
   reserved, not emitted until a real preview/confirmation workflow exists.
 - `tracing/models.py`: transcript, scenarios, alternatives, concise reason, slots, actions,
   session/turn, clarification/handoff/status, active/pending and measured timings
   (router/policy/business/composer/response/total), source_keys, policy_outcome, completed_scenario,
-  conversation act/phase/expected slot/repair count, allowlisted composer_error and optional
+  conversation act/phase/policy_relationship/expected slot/repair count, allowlisted composer_error and optional
   safe manager_summary (field/action names only).
   Actions list only attempted read-only helpers; unmeasured stages = null. Read-only helper
   duration is included in response latency, not a separately measured tools span.

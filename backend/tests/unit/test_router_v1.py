@@ -214,8 +214,10 @@ def test_sdk_schema_has_closed_objects_and_required_fields(kit):
 
     check(schema.json_schema())
     properties = schema.json_schema()["properties"]
-    assert properties["scenarios"]["minItems"] == 1
-    assert properties["segments"]["minItems"] == 1
+    # Empty lists represent typed contextual controls; ordinary routing is still
+    # rejected by the model validator below when either required list is empty.
+    assert properties["scenarios"].get("minItems", 0) == 0
+    assert properties["segments"].get("minItems", 0) == 0
     assert properties["alternatives"]["maxItems"] == 2
 
 

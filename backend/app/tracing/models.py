@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, JsonValue
 
@@ -52,6 +52,7 @@ class TraceRecord(Contract):
     expected_answer_type: str | None = None
     expected_slot: str | None = None
     conversation_phase: str | None = None
+    policy_relationship: Literal["new", "existing", "not_applicable", "unknown"] | None = None
     repair_attempts: int | None = None
     slots: Slots = Field(default_factory=dict)
     actions: list[str] = Field(default_factory=list)
