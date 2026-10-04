@@ -123,6 +123,11 @@ Business specification: `data/starter_kit/README.ru.md`.
   or performs bank operations. Source policy and separate 50-case evaluation live in
   `data/security/`. Reusable Risk and Fraud case panels share the existing voice runtime.
   Evidence and measured limits: `STAGE4_FRAUD_RISK_VALIDATION.md`.
+  KK Risk hotfix: existing fact/answer-based review conditions precede semantic goodbye;
+  high risk alone still does not force handoff. Non-mixed terminal controls use established
+  RiskContext response language via the existing continuity helper; mixed presentation
+  remains unchanged. Deterministic regressions cover RU/KK review and neutral closings;
+  live confirmation is pending manual retest.
 
 - **Outbound sales follow-up:** `product_promoter` sells a preassigned deposit;
   `card_promoter` and `loan_promoter` reuse the implementation with separate manifests/context.

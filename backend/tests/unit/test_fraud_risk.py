@@ -455,3 +455,69 @@ def test_warning_preserves_completed_lead_lifecycle():
         and after.state == before.state
         and after.result == before.result
     )
+
+
+@pytest.mark.parametrize("lang", ["ru", "kk"])
+@pytest.mark.parametrize("intent", ["concern", "goodbye"])
+def test_review_required_signal_cannot_be_bypassed_by_farewell(lang, intent):
+    reported = security([RiskSignal.ACCOUNT_TAKEOVER], language=lang)
+    reported.intent = intent
+    built = services(RiskFixture(reported))
+    text = (
+        "Мне сообщили о входе в мой аккаунт"
+        if lang == "ru"
+        else "Менің аккаунтыма басқа адам кірді, сау болыңыз"
+    )
+    result = asyncio.run(built.messages.process("review", text, "fraud_security"))
+    assert result.risk.level == "high"
+    assert result.conversation_status == "handoff"
+    assert result.state.fraud_case.case_status == "needs_review"
+    assert result.state.response_language == lang
+    assert result.response_text.endswith(
+        "Конечно, передаю диалог оператору."
+        if lang == "ru"
+        else "Әрине, диалогты операторға тапсырамын."
+    )
+
+
+@pytest.mark.parametrize("lang,text", [("kk", "Рахмет"), ("kk", "Ок"), ("ru", "Спасибо")])
+def test_neutral_terminal_turn_preserves_established_security_language(lang, text):
+    first = security([RiskSignal.OTP_REQUESTED], language=lang)
+    goodbye = security().model_copy(
+        update={"intent": "goodbye", "language": "ru", "response_language": "ru"}
+    )
+    built = services(RiskFixture(first, goodbye))
+    asyncio.run(
+        built.messages.process(
+            "closing", "Кодты сұрады" if lang == "kk" else "Мне просили код", "fraud_security"
+        )
+    )
+    result = asyncio.run(built.messages.process("closing", text))
+    assert result.conversation_status == "ended"
+    assert result.state.response_language == lang
+    assert result.routing.response_language == lang
+    assert result.response_text == ("Сау болыңыз!" if lang == "kk" else "До свидания!")
+
+
+@pytest.mark.parametrize("intent", ["concern", "goodbye"])
+def test_high_secret_request_without_disclosure_does_not_force_handoff(intent):
+    output = security([RiskSignal.OTP_REQUESTED], language="kk")
+    output.intent = intent
+    built = services(RiskFixture(output))
+    result = asyncio.run(built.messages.process("no-review", "Кодты сұрады", "fraud_security"))
+    assert result.risk.level == "high"
+    assert result.conversation_status == ("active" if intent == "concern" else "ended")
+    assert not result.scenario_result.handoff
+
+
+def test_mixed_terminal_turn_keeps_existing_dominant_reply_policy():
+    first = security([RiskSignal.OTP_REQUESTED], language="kk")
+    goodbye = security().model_copy(
+        update={"intent": "goodbye", "language": "mixed", "response_language": "ru"}
+    )
+    built = services(RiskFixture(first, goodbye))
+    asyncio.run(built.messages.process("mixed-close", "Кодты сұрады", "fraud_security"))
+    result = asyncio.run(built.messages.process("mixed-close", "Спасибо, сау болыңыз"))
+    assert result.conversation_status == "ended"
+    assert result.routing.language == "mixed"
+    assert result.state.response_language == "kk"  # existing marked-Kazakh security guard

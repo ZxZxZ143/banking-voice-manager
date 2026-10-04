@@ -69,15 +69,36 @@ class FraudSecurityPack:
             if decision.case_type != "none":
                 context.case_type = decision.case_type
             context.transaction_kind = decision.transaction_kind or context.transaction_kind
+        # Apply the existing fact-based review rule before a semantic farewell can close.
+        review = False
+        if decision and decision.confidence >= 0.6:
+            signals = set(context.facts)
+            review = bool(
+                signals
+                & {
+                    S.OTP_DISCLOSED,
+                    S.CREDENTIAL_DISCLOSED,
+                    S.REMOTE_ACCESS_INSTALLED,
+                    S.COERCED_TRANSFER_SENT,
+                    S.LOST_CARD,
+                    S.ACCOUNT_TAKEOVER,
+                    S.CONTACT_CHANGE,
+                }
+            )
+            review |= S.UNKNOWN_TRANSACTION in signals and context.transaction_kind is not None
+            review |= decision.answer is True and context.pending_question == "link_exposure"
         if decision and decision.intent in ("operator_request", "goodbye"):
-            assessment.guidance_shown = []
-            status = "handoff" if decision.intent == "operator_request" else "ended"
+            keys = assessment.guidance_shown[:2] if review and decision.intent == "goodbye" else []
+            assessment.guidance_shown = keys
+            status = "handoff" if decision.intent == "operator_request" or review else "ended"
             context.pending_question = None
+            reply = " ".join(self.knowledge.text(key, language) for key in keys)
+            reply = (reply + " " + terminal_reply(status, language)).strip()
             return self._turn(
                 global_context,
                 context,
                 run,
-                terminal_reply(status, language),
+                reply,
                 status,
                 "needs_review" if status == "handoff" else "informed",
                 decision,
@@ -142,20 +163,6 @@ class FraudSecurityPack:
         context.pending_question = None
         signals = set(context.facts)
         guidance = assessment.guidance_shown if assessment else []
-        review = bool(
-            signals
-            & {
-                S.OTP_DISCLOSED,
-                S.CREDENTIAL_DISCLOSED,
-                S.REMOTE_ACCESS_INSTALLED,
-                S.COERCED_TRANSFER_SENT,
-                S.LOST_CARD,
-                S.ACCOUNT_TAKEOVER,
-                S.CONTACT_CHANGE,
-            }
-        )
-        review |= S.UNKNOWN_TRANSACTION in signals and context.transaction_kind is not None
-        review |= decision.answer is True and previous_question == "link_exposure"
         question = None
         if not review:
             if S.UNKNOWN_TRANSACTION in signals:
