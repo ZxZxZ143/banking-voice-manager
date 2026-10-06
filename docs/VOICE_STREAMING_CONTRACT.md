@@ -74,14 +74,27 @@ browser keyboard input or phone handoff. Full assembly still requires its own fi
 and yes. Domestic 8 is spoken back as 8; detected national ten-digit phones use 3+3+4 parts.
 Natural RU/KK minimal corrections repeat the entire corrected value and still require
 explicit confirmation. Correction context contains only field kind, never private values.
-Confirmation/correction replies need no second transcription. Region codes retain low-risk
+Clear RU/KK confirmations and parsed corrections use one transcription. Unexpected
+English yes/no and unknown confirmation replies can use one conditional `gpt-transcribe`
+attempt over the same short utterance (at most 10 seconds, 20-second deadline, no retries).
+Public RU/KK keywords and original-language instructions contain no pending identifier.
+The deterministic parser owns affirmative/negative/correction evidence; English yes/no
+has no authority. An available conflicting second result never chooses either answer.
+Unresolved whole/segment confirmations retain the same draft and get one localized
+repeat before existing keyboard/phone fallback. Only clearly expressed separate requests
+leave capture for the existing Router. Region codes retain low-risk
 schema acceptance. Added metadata: `outcome`, `risk`, `consensus`, `verification_method`,
 `second_pass_wait_ms`, `candidate_ready_ms`, `realtime_final_ms`, `bounded_final_ms`,
-`readback_source`, `loser_cancelled` and allowlisted `segment_evidence`; no candidate value
+`readback_source`, `loser_cancelled`, allowlisted `segment_evidence` and optional
+`confirmation_status` (confirm/reject/correction/unrelated/out_of_language_confirmation/conflict); no candidate value
 or alternate transcript is in metadata. Raw `text` is the winning transcript (Realtime or bounded), bound to the private
 receipt. See [precision gate](STRUCTURED_SPEECH_PRECISION_GATE.md) and
 [correction/latency validation](VOICE_LATENCY_AND_CORRECTION_VALIDATION.md), plus
 [segment validation](SEGMENTED_IDENTIFIER_CAPTURE_VALIDATION.md).
+Confirmation recovery can replace final `text` with the bounded RU/KK transcript; the
+single-use receipt is bound to that exact visible text. Audio stays in RAM and clears
+on final/cancellation; recovered text is removed from receipt storage. See
+[confirmation validation](RU_KK_CONFIRMATION_STT_VALIDATION.md).
 
 ## Automatic end of utterance (VAD)
 

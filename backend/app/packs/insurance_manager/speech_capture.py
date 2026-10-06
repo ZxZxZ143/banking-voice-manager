@@ -12,7 +12,11 @@ from app.speech.structured.capture import (
     phone_style,
 )
 from app.speech.structured.context import kind_for_slot
-from app.speech.structured.correction import apply_correction, parse_confirmation
+from app.speech.structured.correction import (
+    apply_correction,
+    parse_confirmation,
+    separate_confirmation_request,
+)
 from app.speech.structured.normalization import recognize_expected
 from app.speech.structured.policy import RISKS, RecognitionOutcome
 from app.speech.structured.recognition import RecognitionMetadata, RecognitionResult
@@ -49,14 +53,18 @@ def advance_capture(
         return None
     candidate = speech.candidate if speech else None
     answer = (
-        parse_confirmation(text, kind)
+        speech.confirmation
+        if speech and speech.confirmation
+        else parse_confirmation(text, kind)
         if pending and pending.phase in {"confirmation", "segment_confirmation"}
         else None
     )
     manual = recognize_expected(text, kind) if pending and channel == "text" else None
+    if answer and answer.kind == "unrelated" and separate_confirmation_request(text):
+        return None
     if (
         not allow_unrecognized
-        and not (pending and pending.phase in {"segments", "segment_confirmation"})
+        and not (pending and pending.phase in {"segments", "confirmation", "segment_confirmation"})
         and (answer is None or answer.kind == "unrelated")
         and not candidate
         and not (speech and speech.metadata.candidate_count)
@@ -143,6 +151,7 @@ def advance_capture(
         pending.parts.append(value)
         pending.segment_candidate = None
         pending.phase = "segments"
+        pending.confirmation_attempts = 0
         if pending.kind == "phone" and len(pending.parts) == 1:
             pending.phone_input_style = (
                 "national_10"
@@ -157,6 +166,32 @@ def advance_capture(
                 return False
             pending.phase = "confirmation"
         return True
+
+    if answer and answer.kind in {"unrelated", "out_of_language_confirmation", "conflict"}:
+        pending.confirmation_attempts += 1
+        if pending.confirmation_attempts >= 2:
+            return manual_or_handoff()
+        step.question = (
+            (
+                "Уточните, пожалуйста: номер верный? Ответьте только «да» или «нет»."
+                if answer.kind == "conflict"
+                else "Не расслышал подтверждение. Скажите, пожалуйста, только «да» или «нет»."
+            )
+            if state.response_language == "ru"
+            else (
+                "Нақтылаңызшы: нөмір дұрыс па? Тек «иә» немесе «жоқ» деп жауап беріңізші."
+                if answer.kind == "conflict"
+                else "Растауды ести алмадым. Тек «иә» немесе «жоқ» деп айтыңызшы."
+            )
+        )
+        pending.prompt = step.question
+        step.speech = RecognitionResult(
+            speech.metadata.model_copy(
+                update={"outcome": RecognitionOutcome.confirmation_required}
+            ),
+            kind=kind,
+        )
+        return step
 
     if pending and pending.phase == "confirmation":
         pending.confirmation_attempts += 1

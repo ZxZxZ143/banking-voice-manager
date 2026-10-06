@@ -377,7 +377,9 @@ def test_unrelated_question_cannot_leave_old_confirmation_authority_active():
 
     async def run():
         await submit(services, VALUES["iin"], VALUES["iin"])
-        await services.messages.process("precision", "Вы бот?", channel="voice")
+        await services.messages.process(
+            "precision", "Расскажите, как работает страховка?", channel="voice"
+        )
         assert services.dialogs.get("precision").conversation.structured_capture is None
         assert services.dialogs.get("precision").slots == {}
 

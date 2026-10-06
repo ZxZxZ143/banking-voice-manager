@@ -9,6 +9,7 @@ from openai import OpenAIError
 from pydantic import ValidationError
 
 from app.speech.errors import SpeechConfigurationError, SpeechProviderError
+from app.speech.structured.context import TranscriptionContext
 from app.speech.stt.base import MAX_AUDIO_BYTES, AudioInput
 from app.speech.stt.openai_provider import OpenAISTTProvider
 from app.speech.tts.base import MAX_SPEECH_CHARACTERS
@@ -75,6 +76,7 @@ def test_transcription_preserves_provider_metadata(
         model="test-model",
         file=(audio_input.filename, audio_input.audio, audio_input.content_type),
         response_format="json",
+        prompt=TranscriptionContext().prompt,
     )
     assert result.text == "Test transcript fixture"
     assert result.detected_language == metadata.get("language")

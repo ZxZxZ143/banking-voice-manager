@@ -4,7 +4,7 @@ import asyncio
 import io
 import wave
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 from time import monotonic, perf_counter
 from typing import Literal
@@ -16,13 +16,21 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.speech.audio import PCM_BYTES_PER_SECOND, PCM_SAMPLE_RATE
 from app.speech.structured.capture import phone_style, recognize_context
 from app.speech.structured.context import ExpectedKind, PhoneInputStyle, TranscriptionContext
+from app.speech.structured.correction import (
+    StructuredConfirmationResponse,
+    parse_confirmation,
+    separate_confirmation_request,
+)
 from app.speech.structured.policy import (
+    RISKS,
     AcceptedStructuredValue,
     RecognitionHypothesis,
     RecognitionOutcome,
     RecognitionRisk,
     StructuredRecognitionPolicy,
 )
+
+CONFIRMATION_AUDIO_LIMIT = PCM_BYTES_PER_SECOND * 10
 
 
 class RecognitionMetadata(BaseModel):
@@ -49,6 +57,17 @@ class RecognitionMetadata(BaseModel):
     readback_source: Literal["realtime", "bounded"] | None = None
     loser_cancelled: bool = False
     segment_evidence: Literal["agreement", "single", "conflict", "unusable"] | None = None
+    confirmation_status: (
+        Literal[
+            "confirm",
+            "reject",
+            "correction",
+            "unrelated",
+            "out_of_language_confirmation",
+            "conflict",
+        ]
+        | None
+    ) = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +77,8 @@ class RecognitionResult:
     accepted_value: AcceptedStructuredValue | None = field(default=None, repr=False)
     candidate: RecognitionHypothesis | None = field(default=None, repr=False)
     phone_input_style: PhoneInputStyle | None = field(default=None, repr=False)
+    confirmation: StructuredConfirmationResponse | None = field(default=None, repr=False)
+    recovered_text: str | None = field(default=None, repr=False)
 
     def __post_init__(self):
         if self.metadata.accepted != (self.accepted_value is not None):
@@ -175,6 +196,10 @@ def pending_readback(
 async def resolve_recognition(
     text, pcm, context, second_pass=None, first_pass_ms=0, *, second_task=None
 ):
+    if context.confirmation_kind != "none":
+        return await resolve_confirmation(
+            text, pcm, context, second_pass, first_pass_ms, second_task=second_task
+        )
     first = recognize_context(text, context)
     hypothesis = RecognitionHypothesis.from_normalized("realtime", first)
     policy = StructuredRecognitionPolicy()
@@ -234,6 +259,69 @@ async def resolve_recognition(
     )
 
 
+async def resolve_confirmation(
+    text, pcm, context, second_pass=None, first_pass_ms=0, *, second_task=None
+):
+    """One conditional attempt on short audio. The parser owns RU/KK evidence.
+
+    No draft identifier is available here. Valid replies use the fast path; an
+    already supplied second result must agree before either reply is trusted.
+    """
+    kind = context.confirmation_kind
+    first = parse_confirmation(text, kind)
+    known = {"confirm", "reject", "correction"}
+    answer, recovered_text = first, None
+    failed, second_ms, waited_ms = False, None, None
+    used = second_task is not None
+    if (
+        second_task is None
+        and first.kind not in known
+        and not separate_confirmation_request(text)
+        and 0 < len(pcm) <= CONFIRMATION_AUDIO_LIMIT
+        and second_pass
+    ):
+        second_task = asyncio.create_task(second_pass.transcribe(pcm, context))
+        used = True
+    if second_task is not None:
+        started = perf_counter()
+        try:
+            async with asyncio.timeout(20):
+                second_text = await second_task
+            if not isinstance(second_text, str) or len(second_text) > 500:
+                raise ValueError("Invalid confirmation transcript")
+            second = parse_confirmation(second_text, kind)
+            if first.kind in known:
+                answer = first if first == second else StructuredConfirmationResponse("conflict")
+            elif second.kind in known:
+                answer, recovered_text = second, second_text
+        except (OpenAIError, TimeoutError, ValueError):
+            failed = True
+            if first.kind in known:
+                answer = StructuredConfirmationResponse("conflict")
+        finally:
+            second_ms = waited_ms = (perf_counter() - started) * 1000
+    return RecognitionResult(
+        RecognitionMetadata(
+            mode="structured",
+            expected_kind=kind,
+            first_pass_valid=first.kind in known,
+            second_pass_used=used,
+            second_pass_failed=failed,
+            candidate_count=0,
+            accepted=False,
+            outcome=RecognitionOutcome.confirmation_required,
+            risk=RISKS[kind],
+            first_pass_ms=first_pass_ms,
+            second_pass_ms=second_ms,
+            second_pass_wait_ms=waited_ms,
+            confirmation_status=answer.kind,
+        ),
+        kind=kind,
+        confirmation=answer,
+        recovered_text=recovered_text,
+    )
+
+
 @dataclass(frozen=True)
 class _Receipt:
     session_id: str
@@ -266,7 +354,7 @@ class RecognitionReceipts:
             turn,
             slot,
             sha256(text.strip().encode()).hexdigest(),
-            outcome,
+            replace(outcome, recovered_text=None) if outcome.recovered_text else outcome,
             monotonic() + 120,
         )
         return token

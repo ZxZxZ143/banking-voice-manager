@@ -152,6 +152,15 @@ def test_segment_exhaustion_is_bounded_and_preserves_problem(browser, failure):
                 channel="voice",
                 manual_input_available=browser,
             )
+            if failure == "unclear":
+                pending = services.dialogs.get("precision").conversation.structured_capture
+                assert (
+                    pending.phase == "segment_confirmation" and pending.segment_candidate == "8777"
+                )
+                assert response.trace.recognition.outcome == "confirmation_required"
+                response = await services.messages.process(
+                    "precision", "возможно", channel="voice", manual_input_available=browser
+                )
         else:
             for attempt in range(2):
                 response = await spoken(

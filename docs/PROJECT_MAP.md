@@ -12,6 +12,16 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **RU/KK confirmation STT hotfix (from current main 17aa980):** ordinary STT preserves
+  primary Russian/Kazakh language and script; confirmation hints contain only public
+  RU/KK vocabulary. Clear confirmations/corrections keep one STT; unsafe short outputs
+  receive one bounded recovery attempt. Foreign English yes/no never confirms/rejects.
+  Whole/segment confirmation stays application-owned, preserves the private draft and
+  repeats once on unresolved/conflicting evidence before existing manual/phone fallback.
+  Verified 1435 backend / 106 frontend tests, nine actual Conversation Demo cases with
+  synthetic microphone, Docker and four Windows/Linux offline phone smokes. Measured
+  acoustic limits and release evidence: `RU_KK_CONFIRMATION_STT_VALIDATION.md`.
+
 - **Segmented identifier hotfix (after 62596fa):** each private part has its own two-turn
   budget: agreement advances, a single valid result gets a short spoken confirmation,
   conflict/unusable evidence repeats only that part once. Exhaustion offers browser
@@ -202,6 +212,8 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `data/speech/`, `scripts/build_structured_speech_dataset.py`, `scripts/evaluate_structured_speech.py` | 100-positive/12-negative synthetic corpus; text/cloud/local/pace comparisons; ignored audio/models/reports |
 | `scripts/validate_structured_browser.py`, `scripts/evaluate_tts_streaming.py` | Synthetic-only browser STT/core harness and progressive MP3 experiment, separate ports 8012/8011 |
 | `scripts/validate_segment_capture.py`, `scripts/validate_segment_capture.mjs` | Actual Conversation Demo gate; loopback 8015, synthetic audio, live RT/TTS plus explicit bounded-STT fault injection |
+| `data/speech/confirmation_utterances.json`, `scripts/evaluate_confirmation_stt.py` | Separate synthetic RU/KK/mixed/noisy confirmation benchmark; Cedar/Coral test voices and explicit offline fixtures |
+| `scripts/validate_confirmation_browser.py`, `scripts/validate_confirmation_browser.mjs` | Actual confirmation browser gate; loopback 8016, synthetic microphone, live providers and labeled contamination fixtures |
 | `backend/app/telephony/` | Teammate PhoneRuntime, AgentBridge, bounded sessions and Twilio/Vonage gateways/adapters; offline bench |
 | `backend/app/speech/audio.py`, `speech/conversion.py` | Canonical PCM24 contract and bounded PyAV TTS conversion |
 | `scripts/smoke_*runtime.py`, `scripts/smoke_stage6_integration.py` | Explicit offline provider fixtures and current core/Risk/SQLite/API smoke |

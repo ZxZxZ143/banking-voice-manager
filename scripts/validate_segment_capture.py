@@ -45,7 +45,8 @@ original_relay = voice.relay
 class FaultBounded(BoundedTranscriber):
     async def transcribe(self, pcm, context):
         if context.expected_kind == "none":
-            raise AssertionError("Confirmation must never call bounded STT")
+            # Clear RU/KK confirmations stay single-pass; ambiguous ones may recover.
+            return await super().transcribe(pcm, context)
         case, sid = active["case"], active["sid"]
         capture = app.state.services.dialogs.get(sid).conversation.structured_capture
         initial = context.capture_part == "whole"

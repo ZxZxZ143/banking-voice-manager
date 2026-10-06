@@ -1,0 +1,18 @@
+[
+  {"id":"ru_yes","language":"ru","text":"Да.","expected":"confirm"},
+  {"id":"ru_no","language":"ru","text":"Нет.","expected":"reject"},
+  {"id":"ru_correct","language":"ru","text":"Верно.","expected":"confirm"},
+  {"id":"ru_incorrect","language":"ru","text":"Неверно.","expected":"reject"},
+  {"id":"kk_yes","language":"kk","text":"Иә.","expected":"confirm"},
+  {"id":"kk_no","language":"kk","text":"Жоқ.","expected":"reject"},
+  {"id":"kk_correct","language":"kk","text":"Дұрыс.","expected":"confirm"},
+  {"id":"kk_incorrect","language":"kk","text":"Дұрыс емес.","expected":"reject"},
+  {"id":"mixed_yes","language":"ru","text":"Иә, верно.","expected":"confirm"},
+  {"id":"mixed_no","language":"kk","text":"Нет, дұрыс емес.","expected":"reject"},
+  {"id":"ru_yes_noise","language":"ru","text":"Да, всё верно.","expected":"confirm","noise":true},
+  {"id":"ru_no_noise","language":"ru","text":"Нет, неверно.","expected":"reject","noise":true},
+  {"id":"kk_yes_noise","language":"kk","text":"Иә, дұрыс.","expected":"confirm","noise":true},
+  {"id":"kk_no_noise","language":"kk","text":"Жоқ, дұрыс емес.","expected":"reject","noise":true},
+  {"id":"ru_unknown","language":"ru","text":"Может быть.","expected":"unresolved"},
+  {"id":"kk_unknown","language":"kk","text":"Білмеймін.","expected":"unresolved"}
+]

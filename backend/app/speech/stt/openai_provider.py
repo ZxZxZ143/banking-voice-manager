@@ -5,6 +5,7 @@ from time import perf_counter
 from openai import AsyncOpenAI, OpenAIError
 
 from app.speech.errors import SpeechConfigurationError, SpeechProviderError
+from app.speech.structured.context import TranscriptionContext
 from app.speech.stt.base import AudioInput, TranscriptionResult
 
 
@@ -46,6 +47,7 @@ class OpenAISTTProvider:
                         model=self._model,
                         file=(audio.filename, audio.audio, audio.content_type),
                         response_format="json",
+                        prompt=TranscriptionContext().prompt,
                     )
         except (OpenAIError, TimeoutError):
             raise SpeechProviderError(

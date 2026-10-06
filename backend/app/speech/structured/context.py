@@ -12,8 +12,32 @@ SLOT_KINDS = {
 SLOT_KINDS["region"] = "region_code"
 SLOT_KINDS.update(drivers_iin="iin", new_driver_iin="iin", culprit_vehicle_plate="vehicle_plate")
 
+_LANGUAGE_PROMPT = (
+    "Customer speech is primarily Russian and Kazakh, sometimes mixed. "
+    "Preserve the original language and script. Do not translate speech into English. "
+    "English may occur when genuinely spoken, including product names or Latin identifiers."
+)
+CONFIRMATION_KEYWORDS = (
+    "да",
+    "нет",
+    "верно",
+    "неверно",
+    "правильно",
+    "неправильно",
+    "иә",
+    "жоқ",
+    "дұрыс",
+    "дұрыс емес",
+)
+_CONFIRMATION_PROMPT = (
+    "Transcribe this short confirmation exactly in Russian or Kazakh, sometimes mixed. "
+    "Preserve the spoken language and script; do not translate into English. "
+    "Preserve да, нет, иә, жоқ exactly when spoken. If uncertain, do not substitute English "
+    "Yes or No. Preserve short corrections: digits, Latin letters and positions. "
+    "Do not invent omitted characters."
+)
 _PROMPTS = {
-    "none": "Customer speech in Russian and Kazakh, sometimes mixed.",
+    "none": _LANGUAGE_PROMPT,
     "phone": (
         "Kazakhstan phone: +7 or domestic 8 followed by ten digits, "
         "or a national ten-digit number beginning with 7. "
@@ -44,6 +68,13 @@ _PROMPTS = {
 }
 
 
+def language_prompt(prompt: str, language: str | None) -> str:
+    if language in {"ru", "kk"}:
+        preferred = "Russian" if language == "ru" else "Kazakh"
+        prompt += f" Prefer {preferred} for ambiguous sounds only; preserve clearly spoken RU/KK."
+    return prompt
+
+
 class TranscriptionContext(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     language_hint: Literal["ru", "kk", "mixed"] | None = None
@@ -70,7 +101,7 @@ def context_for_slot(slot: str | None, language: str | None = None) -> Transcrip
     return TranscriptionContext(
         language_hint=language if language in {"ru", "kk", "mixed"} else None,
         expected_kind=kind,
-        prompt=_PROMPTS[kind],
+        prompt=language_prompt(_PROMPTS[kind], language),
         keywords=keywords,
         accuracy_mode="medium" if kind == "none" else "high",
     )
@@ -105,17 +136,13 @@ def context_for_capture(slot, language, capture=None, contact_field=None):
         and capture.slot == slot
         and capture.phase in {"confirmation", "segment_confirmation"}
     ):
-        # No private value in cloud hints. A correction still needs exact digits/
-        # letters; yes/no and local edits do not require a second paid ASR call.
+        # Only public vocabulary, never the pending identifier or read-back.
         return context_for_slot(None, language).model_copy(
             update={
                 "confirmation_kind": capture.kind,
                 "accuracy_mode": "high",
-                "prompt": (
-                    f"The caller is confirming or correcting a {capture.kind}. "
-                    "Preserve yes/no, corrected digit or Latin letter and its position exactly. "
-                    "Russian/Kazakh or mixed speech. Do not invent omitted characters."
-                ),
+                "prompt": language_prompt(_CONFIRMATION_PROMPT, language),
+                "keywords": CONFIRMATION_KEYWORDS,
             }
         )
     return context

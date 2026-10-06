@@ -30,7 +30,9 @@ class IdentifierCorrection:
 
 @dataclass(frozen=True)
 class StructuredConfirmationResponse:
-    kind: Literal["confirm", "reject", "correction", "unrelated"]
+    kind: Literal[
+        "confirm", "reject", "correction", "unrelated", "out_of_language_confirmation", "conflict"
+    ]
     correction: IdentifierCorrection | None = field(default=None, repr=False)
 
 
@@ -67,12 +69,30 @@ _SOFT = {"все", "всё", "целиком", "полностью", "совер
 _CUES = r"\b(вместо|замен\w*|исправ\w*|не|только|кроме|сказали|орнына|емес|тек|өзгерт\w*)\b"
 
 
+def separate_confirmation_request(text: str) -> bool:
+    """Allow a clearly expressed new request, never classify a short unknown answer.
+
+    This only releases capture ownership. The existing Router still selects the
+    business scenario. Bare foreign yes/no and short unavailable answers stay local.
+    """
+    tokens = re.findall(r"[^\W\d_]+", text.casefold())
+    return len(tokens) >= 3 and bool(
+        re.search(
+            r"\b(?:хочу|нуж\w*|расскаж\w*|подскаж\w*|сколько|как|почему|помоги\w*|"
+            r"керек|қалай|қанша|айт\w*|көмектес\w*|алғым)\b",
+            text.casefold(),
+        )
+    )
+
+
 def parse_confirmation(text: str, kind: str) -> StructuredConfirmationResponse:
     if len(text) > 500:
         return StructuredConfirmationResponse("unrelated")
     text = text.casefold().replace("ё", "е").strip()
     matches = list(re.finditer(r"[0-9]+|[^\W\d_]+", text))
     tokens = [m.group() for m in matches]
+    if tokens and set(tokens) <= {"yes", "no", "yep", "nope", "yeah", "nah"}:
+        return StructuredConfirmationResponse("out_of_language_confirmation")
     # Whole replacements may have a rejection prefix. Normalize only within the
     # source schema, never reinterpret another identifier type as this one.
     replacement = re.sub(r"^(?:нет|неверно|жоқ)[\s,.:;-]*", "", text)
@@ -157,6 +177,13 @@ def parse_confirmation(text: str, kind: str) -> StructuredConfirmationResponse:
         old, new = None, groups[0]
     else:
         old, new = None, None
+    if (
+        not groups
+        and position is None
+        and not (letter or digit or region)
+        and not re.search(r"\b(?:вместо|замен\w*|исправ\w*|орнына|өзгерт\w*)\b", text)
+    ):
+        return StructuredConfirmationResponse("unrelated")
     if new and target == "fragment" and not region:
         if new.isdigit() and (old is None or old.isdigit()):
             target, segment = "digit", "digits"

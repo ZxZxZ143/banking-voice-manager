@@ -13,6 +13,7 @@ from app.speech.structured.capture import recognize_context
 from app.speech.structured.context import TranscriptionContext
 from app.speech.structured.policy import RecognitionHypothesis, StructuredRecognitionPolicy
 from app.speech.structured.recognition import (
+    CONFIRMATION_AUDIO_LIMIT,
     bounded_hypothesis,
     pending_readback,
     resolve_recognition,
@@ -164,6 +165,13 @@ async def relay_stream(
                     raise ValueError("Audio limit exceeded")
                 if context.expected_kind != "none":
                     utterance_audio.extend(pcm)
+                elif context.confirmation_kind != "none":
+                    # Short confirmation audio stays only in RAM; never transcribe
+                    # a truncated long utterance as though it were a short yes/no.
+                    if total_bytes <= CONFIRMATION_AUDIO_LIMIT:
+                        utterance_audio.extend(pcm)
+                    else:
+                        utterance_audio.clear()
                 await upstream.send(
                     json.dumps(
                         {
@@ -234,7 +242,15 @@ async def relay_stream(
                 transcript_received = True
                 first_final_ms = (perf_counter() - committed_at) * 1000
                 outcome = None
-                if context.expected_kind != "none":
+                if context.confirmation_kind != "none":
+                    outcome = await resolve_recognition(
+                        event["transcript"],
+                        bytes(utterance_audio),
+                        context,
+                        second_pass,
+                        first_final_ms,
+                    )
+                elif context.expected_kind != "none":
                     first_ms = (perf_counter() - committed_at) * 1000
                     first_hypothesis = RecognitionHypothesis.from_normalized(
                         "realtime", recognize_context(event["transcript"], context)
@@ -262,7 +278,12 @@ async def relay_stream(
                         )
                         if race and second_watcher:
                             await second_watcher
-                await publish(event["transcript"], outcome, event.get("item_id"))
+                text = (
+                    outcome.recovered_text
+                    if outcome and outcome.recovered_text
+                    else event["transcript"]
+                )
+                await publish(text, outcome, event.get("item_id"))
                 return
         if not ended.is_set():
             if race and second_task:

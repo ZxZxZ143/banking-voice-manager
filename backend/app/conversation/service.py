@@ -84,7 +84,13 @@ class MessageService:
                 conversation.global_context.turn_number,
                 slot,
             )
-        return context_for_slot(None), 0, None
+        entry = (
+            conversation.scenario_contexts.get(conversation.active_scenario_pack)
+            if conversation
+            else None
+        )
+        language = getattr(entry.state, "response_language", None) if entry else None
+        return context_for_slot(None, language), 0, None
 
     def record_recognition(self, session_id, turn, slot, text, outcome):
         return self.recognitions.put(session_id, turn, slot, text, outcome)
