@@ -1,5 +1,11 @@
 # Veyra — Banking Voice Platform
 
+**Conversational AI · RU/KK speech · Shared web/phone runtime · Event analytics**
+
+[Architecture](docs/ARCHITECTURE.md) · [Quick start](#quick-start--docker) · [Dashboard](docs/FINANCE_DASHBOARD.md) · [Project map](docs/PROJECT_MAP.md) · [Telephony validation](docs/STAGE6_TELEPHONY_INTEGRATION_VALIDATION.md)
+
+The shared core combines isolated assistant contexts, confirmation-first speech handling and privacy-filtered SQLite events. Business data is synthetic; conversation state is process-local. Twilio/Vonage adapters are implemented and validated offline, while live PSTN validation remains pending credentials.
+
 Modular financial conversational AI platform for Russian, Kazakh and mixed RU/KK speech.
 
 Veyra combines:
