@@ -15,6 +15,7 @@ from app.telephony.base import (
     CallEnded,
     CallStarted,
     IncomingAudio,
+    PlaybackTiming,
     ProviderAudio,
     ProviderError,
     TelephonyEvent,
@@ -364,6 +365,12 @@ class PhoneRuntime:
 
     async def _turn(self, call: _Call, text: str, timing: _TurnTiming, recognition_id=None) -> None:
         started = timing.final_at
+        response = None
+        metrics = {}
+        if timing.speech_end_at is not None and timing.endpoint_at is not None:
+            metrics["endpointing_ms"] = (timing.endpoint_at - timing.speech_end_at) * 1000
+        if timing.endpoint_at is not None:
+            metrics["stt_final_ms"] = (timing.final_at - timing.endpoint_at) * 1000
         try:
             async with asyncio.timeout(self.turn_timeout_seconds):
                 agent_started = perf_counter()
@@ -377,6 +384,7 @@ class PhoneRuntime:
                 )
                 response = await self.agent.respond(call.session.session_id, text, recognition_id)
                 agent_done = perf_counter()
+                metrics["agent_ms"] = (agent_done - agent_started) * 1000
                 if not self._current(call):
                     return
                 self._latency(
@@ -411,6 +419,7 @@ class PhoneRuntime:
                 if not self._current(call):
                     return
                 tts_ready = perf_counter()
+                metrics["tts_ms"] = (tts_ready - tts_started) * 1000
                 self._latency(
                     call,
                     "tts_ready",
@@ -434,8 +443,18 @@ class PhoneRuntime:
                     (playback_started - tts_ready) * 1000,
                     "tts_ready",
                 )
-                await self.provider.send_audio(call.session.call_id, speech)
+                playback = await self.provider.send_audio(call.session.call_id, speech)
                 playback_complete = perf_counter()
+                if isinstance(playback, PlaybackTiming):
+                    playback_complete = playback.completed_at
+                if timing.speech_end_at is not None:
+                    metrics["speech_end_to_playback_complete_ms"] = (
+                        playback_complete - timing.speech_end_at
+                    ) * 1000
+                    if isinstance(playback, PlaybackTiming) and playback.submitted_at is not None:
+                        metrics["speech_end_to_playback_submit_ms"] = (
+                            playback.submitted_at - timing.speech_end_at
+                        ) * 1000
                 self._latency(
                     call,
                     "playback_complete",
@@ -476,6 +495,9 @@ class PhoneRuntime:
                         type(error).__name__,
                     )
                 await self._fail_call(call.session.call_id, "phone_turn_failed")
+        finally:
+            if response is not None:
+                await self.agent.record_performance(call.session.session_id, response, metrics)
 
     async def _fail_call(self, call_id: str, code: str) -> None:
         if call := self._calls.get(call_id):

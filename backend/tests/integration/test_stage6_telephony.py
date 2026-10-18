@@ -51,7 +51,7 @@ def events(services, session):
 
 def test_complete_current_core_risk_sqlite_api_and_restart(tmp_path):
     report = smoke(tmp_path / "events.db")
-    assert report["events"] == 7 and report["restart_history_identical"]
+    assert report["events"] == 9 and report["restart_history_identical"]
 
 
 def test_phone_insurance_policy_unavailable_phone_iin_exhaustion_and_privacy(tmp_path):

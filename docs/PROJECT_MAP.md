@@ -460,11 +460,19 @@ State/traces are bounded and per-process; restart loses them. Use one worker. St
 Concurrent same-session turns are serialized, distinct sessions can run concurrently,
 and active sessions are pinned against eviction. Session IDs are demo correlation IDs,
 not authentication: keep the service local until access control is implemented.
-SQLite schema v1 `events` persists only allowlisted enums, catalog IDs and booleans plus
+SQLite schema v1 `events` persists allowlisted enums, catalog IDs, booleans and numeric runtime durations plus
 opaque correlation metadata; no raw transcripts, collected identifiers, preferences,
 replies or free-text reasons. Indexes cover time/session/assistant/type/risk/source.
 Unique hash of source/session/turn/type makes retried batches idempotent; started/handoff/
 ended keys are unique across a session. Schema and queries: `analytics/sqlite.py`.
+`performance_sample` stores one idempotent numeric-only record per committed turn in
+payload_json, without schema migration. PhoneRuntime reuses endpoint/STT/Agent/TTS clocks;
+Vonage/Twilio return existing first-media submission and mark/notify completion clocks.
+Browser/text `/api/message` persists measured Agent processing only. Overview averages
+valid runtime samples independently; missing metrics/old events stay unknown and synthetic
+data is excluded from measured latency. Samples do not change business session summaries,
+journeys or anomaly counts. Definitions/limits: `ANALYTICS_API_CONTRACT.md`.
+
 No ORM/external DB/RLS/upload service or durable replay exists. Failed writes are
 observable but can lose events. Runtime DB/WAL/SHM are ignored and excluded from images.
 

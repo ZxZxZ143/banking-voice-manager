@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, datetime
 from enum import StrEnum
 from hashlib import sha256
@@ -22,6 +23,7 @@ ActionName = Literal["kb_lookup", "get_offices", "find_client", "get_policy", "g
 
 
 class EventType(StrEnum):
+    PERFORMANCE_SAMPLE = "performance_sample"
     CONVERSATION_STARTED = "conversation_started"
     CONVERSATION_TURN = "conversation_turn"
     ASSISTANT_SELECTED = "assistant_selected"
@@ -94,8 +96,38 @@ class EndedPayload(Contract):
     kind: Literal["conversation_ended"] = "conversation_ended"
 
 
+PERFORMANCE_METRICS = (
+    "endpointing_ms",
+    "stt_final_ms",
+    "agent_ms",
+    "tts_ms",
+    "speech_end_to_playback_submit_ms",
+    "speech_end_to_playback_complete_ms",
+)
+
+
+class PerformancePayload(Contract):
+    """Content-free durations; invalid individual measurements remain unavailable."""
+
+    kind: Literal["performance_sample"] = "performance_sample"
+    endpointing_ms: float | None = None
+    stt_final_ms: float | None = None
+    agent_ms: float | None = None
+    tts_ms: float | None = None
+    speech_end_to_playback_submit_ms: float | None = None
+    speech_end_to_playback_complete_ms: float | None = None
+
+    @field_validator(*PERFORMANCE_METRICS, mode="before")
+    @classmethod
+    def measured_duration(cls, value):
+        if type(value) not in (int, float):
+            return None
+        return value if 0 <= value <= 600000 and math.isfinite(value) else None
+
+
 EventPayload = Annotated[
-    StartedPayload
+    PerformancePayload
+    | StartedPayload
     | TurnPayload
     | SelectedPayload
     | InsurancePayload

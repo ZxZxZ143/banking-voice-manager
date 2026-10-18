@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 from threading import Lock
 
 from app.analytics.mapping import map_turn_events
-from app.analytics.models import EndedPayload, HandoffPayload, StorageHealth, make_event
+from app.analytics.models import (
+    PERFORMANCE_METRICS,
+    EndedPayload,
+    HandoffPayload,
+    PerformancePayload,
+    StorageHealth,
+    make_event,
+)
 from app.analytics.store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -48,6 +55,37 @@ class EventRecorder:
             self.failure("event_mapping_failed")
             return
         await self._append(events)
+
+    async def record_performance(self, session_id, response, metrics, *, channel):
+        """One idempotent sample per committed turn, using its immutable response metadata."""
+        try:
+            trace = response.trace
+            trace = trace if isinstance(trace, dict) else trace.model_dump()
+            payload = PerformancePayload(
+                **{
+                    key: metrics[key]
+                    for key in PERFORMANCE_METRICS
+                    if key in metrics and (channel == "voice" or key == "agent_ms")
+                }
+            )
+            if not any(getattr(payload, key) is not None for key in PERFORMANCE_METRICS):
+                return
+            event = make_event(
+                created_at=datetime.now(UTC),
+                session_id=session_id,
+                turn_number=trace["turn"],
+                sequence=8,
+                channel=channel,
+                assistant_id=trace["scenario_pack_id"],
+                conversation_status=response.conversation_status,
+                event_type=payload.kind,
+                payload=payload,
+                source="runtime",
+            )
+        except Exception:
+            self.failure("event_mapping_failed")
+            return
+        await self._append([event])
 
     async def record_end(self, context, assistant_id):
         """Safe, idempotent transport close; no provider IDs, reason text or transcript."""
