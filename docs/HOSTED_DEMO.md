@@ -10,10 +10,14 @@ The original local Docker Compose workflow remains the default.
 
 - Repository build context: root (`.`).
 - Dockerfile: `deploy/Dockerfile`.
-- Next-deployment branch: `codex/analytics-demo-autoload`, based on
-  `origin/deploy/hosted-demo-20261019` at `a844ed8` (includes main `58fa498`).
-  Select that branch, or merge it into the existing hosting branch before deploying.
-- Health check: `GET /health`.
+- Active deployment branch: `deploy/hosted-demo-20261019`. The analytics feature was
+  fast-forward merged from `codex/analytics-demo-autoload` and deployed at `7e76943`
+  on 2026-10-19. It includes the hosting configuration from `a844ed8` and main `58fa498`.
+- Render service `veyra` (`srv-dbb0vje1egvs73cfbfp0`) in workspace `main` uses automatic
+  deployment on commit. A branch push triggers deployment; do not also trigger a duplicate.
+- Application health: `GET /health`. The current Render service has no explicit HTTP
+  health-check path and uses the platform's default TCP probe; `/health` was verified
+  separately over HTTPS. `/health` is the recommended explicit HTTP probe if configured.
 - One instance and one Python worker: active conversation state and voice recognition
   receipts are process-local. Do not enable horizontal scaling without shared state.
 - Container defaults to `0.0.0.0`; platform `PORT` is used when `BACKEND_PORT` is absent.
@@ -100,3 +104,8 @@ turn and microphone/STT/TTS turn. The latter require a configured provider key.
 Before provider calls, confirm 144 synthetic sessions, Journey details, anomalies,
 zero demo-only measured latency and zero active demo calls. Actual validation and
 Docker restart/recreation evidence: `ANALYTICS_DEMO_VALIDATION.md`.
+
+Live deploy `dep-dbb3p1qvcj2c738bfai0` reached `live` at 2026-10-19 15:53:03 UTC.
+Authenticated HTTPS checks at 16:00 UTC verified 144 synthetic sessions / 688 events,
+recent dates, Journey, source filters, two anomalies and the new frontend period notice
+in the served bundle. Startup logs confirm automatic installation; no seed command ran.

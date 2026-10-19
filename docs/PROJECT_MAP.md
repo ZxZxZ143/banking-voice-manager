@@ -24,8 +24,11 @@ Business specification: `data/starter_kit/README.ru.md`.
   `FINANCE_DASHBOARD.md`, `HOSTED_DEMO.md`; checks: `ANALYTICS_DEMO_VALIDATION.md`.
   Verified 1493 backend / 120 frontend tests, TypeScript/Vite, Ruff, formatting,
   offline core/Risk/restart smoke and actual hosting-image startup/restart/recreation
-  without host mounts, env file, scripts or a preseeded DB. Live Render deployment
-  and paid provider calls were not performed in this task.
+  without host mounts, env file, scripts or a preseeded DB. Subsequently merged/pushed
+  to `deploy/hosted-demo-20261019`: Render `veyra` deployed `7e76943` automatically
+  (`dep-dbb3p1qvcj2c738bfai0`, live 2026-10-19 15:53 UTC). Authenticated HTTPS checks
+  confirmed 144/688, current dates, Journey, filters, anomalies and null demo latency;
+  startup logs confirmed automatic installation. Paid provider calls were not performed.
 
 - **Legacy repository import (2026-10-19):** teammate commits `95a0a49` and `1a0e735`
   add persistent numeric-only runtime latency samples and semantic Journey event icons.

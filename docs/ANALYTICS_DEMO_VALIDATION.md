@@ -106,9 +106,58 @@ Set `ANALYTICS_DEMO_DATA_ENABLED=true` and retain
 Keep existing access secrets, OpenAI credential/model and provider configuration in
 Render environment settings. No seed/pre-deploy command is needed.
 
-This task does not change the live Render service or rotate credentials. Live paid
-LLM/STT/TTS and PSTN calls are not part of this data-loading validation. The offline
-voice smoke uses explicitly labelled provider fixtures, not measured live performance.
+The initial implementation task did not change the live service. The subsequent
+authorized deployment and its results are recorded below. Live paid LLM/STT/TTS and
+PSTN calls are not part of this data-loading validation. The offline voice smoke uses
+explicitly labelled provider fixtures, not measured live performance.
 
 Skills used: `demo-readiness`, `security-review`, `render-docker`,
 `vercel:react-best-practices` (the small dashboard notice).
+
+## Live Render deployment — 2026-10-19
+
+The user authorized merging, pushing and deploying, and confirmed workspace `main`.
+`deploy/hosted-demo-20261019` was fast-forward merged from `a844ed8` to
+`7e76943474a32ec0c01d52fa4e7ff3a82eb6b30c` and pushed to origin. Service `veyra`
+(`srv-dbb0vje1egvs73cfbfp0`, Frankfurt, Free, one instance) already had auto-deploy
+enabled for this exact branch/repository and `deploy/Dockerfile` with context `.`.
+No duplicate manual trigger, environment-variable replacement, credential rotation,
+seed command or shell job was used.
+
+Deploy `dep-dbb3p1qvcj2c738bfai0` started at 15:51:35 UTC and reached **live** at
+15:53:03 UTC for commit `7e76943`. At 15:52:56 UTC its new application instance logged:
+
+```text
+analytics_demo_ready dataset=veyra-dashboard-demo version=1 events=688 changed=True
+```
+
+Authenticated HTTPS checks against `https://veyra-nkaf.onrender.com` completed at
+16:00:32 UTC:
+
+| Live check | Result |
+|---|---|
+| Public `/health` and login page | HTTP 200; health remains minimal |
+| Unauthenticated analytics | HTTP 401; existing access gate preserved |
+| Authenticated storage health | `ok` |
+| Automatic dataset metadata | enabled, version `1`, `rolling_5m`, 300-second interval |
+| Synthetic overview | 144 sessions / 688 events |
+| Last 11 hours filter | All 144 sessions available |
+| Pagination and event identities | Disjoint session pages; 688 unique event IDs |
+| Journey for core session 002 | Four stages linked to its timeline; terminal/inactive |
+| Anomalies | Two synthetic alerts; current count 18, baseline 5, ratio 21.6 |
+| Source isolation | Runtime-only query excludes synthetic events; runtime count 0 |
+| Active demo sessions and measured latency | 0 active; every timing null with 0 samples |
+| Repeated reads | Still 688 events; no growth |
+| Served frontend | HTML/JS available; bundle includes the five-minute period notice |
+| Application error logs after startup through 15:59 UTC | No error entries |
+
+Observed synthetic timestamps span 2026-10-19 06:00:00–15:49:54 UTC, confirming
+request-driven time refresh after startup. A manual visual/browser interaction check
+could not run because both local browser tooling runtimes failed on the locked
+BitLocker `D:` drive. API verification used normal password login and an in-memory
+cookie; neither password nor cookie was saved in files, Git or application logs.
+The safe detailed result is in ignored `work/render-demo-live-validation.json`.
+
+Deployment skills: `render-deploy`, `demo-readiness`; `render-cli` guidance was read
+but CLI execution was unnecessary because the Render connector supported deployment
+monitoring. `computer-use` was read and attempted; its runtime was unavailable.
