@@ -47,6 +47,12 @@ export interface TraceRecord {
 }
 
 export interface HealthResponse {
+  analytics_demo?: {
+    enabled: boolean;
+    version: string | null;
+    time_policy: 'rolling_5m';
+    refresh_seconds: number;
+  };
   status: 'ok';
   service: 'voice-router';
   mode: 'foundation';

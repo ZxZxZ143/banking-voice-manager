@@ -8,11 +8,11 @@ remains authoritative. Integration evidence: `STAGE5B_DASHBOARD_INTEGRATION_VALI
 
 ## Start and populate
 
-From repository root in PowerShell, with the existing ignored `.env`:
+Set `ANALYTICS_DEMO_DATA_ENABLED=true` in the existing ignored `.env`, then from
+repository root in PowerShell:
 
 ```powershell
 docker compose up --build -d
-Get-Content -Raw scripts/seed_analytics_demo.py | docker compose exec -T backend python - --with-anomaly
 ```
 
 Open `http://127.0.0.1:5173`. No third analytics service is required. Local development:
@@ -21,15 +21,87 @@ the existing same-origin `/api` and `/health` proxy. Compose exposes only loopba
 There is no individual supervisor authentication; this is a local demo boundary. No
 analytics token, credentials or private phone is bundled in `VITE_*` settings.
 
-The original seed remains 120 sessions / 640 events at fixed 2026-10-03 08:00–09:59 UTC.
-`--with-anomaly` extends that same seed with 24 synthetic sessions / 48 events: six hourly
-OTP-signal baseline observations and eighteen current-window observations. All are
-`source=synthetic_demo`. `--as-of` accepts an aware ISO timestamp for repeatable fixtures;
-without it, the extension uses current UTC. Repeating the same explicit `--as-of` is
-idempotent. Repeating without it adds a fresh pattern; use `--reset --with-anomaly` when
-replacing synthetic fixtures. Reset deletes only synthetic events, preserving runtime.
-Seed timestamps and the dashboard clock matter: historical patterns eventually leave
-the rolling window. An expired pattern correctly stops producing an alert.
+No seed command is needed. The hosting Dockerfile defaults this setting to `true`;
+ordinary backend/local configuration defaults to `false`. This flag affects only
+analytics data: routing, STT and TTS still use their configured providers.
+
+### Canonical dataset and rolling dates
+
+`backend/app/analytics/fixtures/demo-v1.json` is the versioned source of truth, packaged
+with the backend. It preserves the original 120 sessions / 640 events from
+2026-10-03 08:00–09:59 UTC, plus 24 sessions / 48 events for anomalies: six hourly
+OTP-signal baseline observations and eighteen recent observations. Total: **144 sessions,
+688 events**, all `source=synthetic_demo`, no measured performance samples.
+
+The canonical reference clock is `2026-10-03T18:00:00Z`. At startup, and before the first
+analytics read in each new five-minute UTC bucket, the loader shifts every fixture
+timestamp by `floor(now / 300 seconds) * 300 seconds - reference_as_of`. IDs, order and
+time intervals stay stable. Core sessions are approximately 8–10 hours old; anomaly
+baselines are about 2–7 hours old and the spike is about 10–16 minutes old. All fit in the last
+11 hours. The dashboard displays this period when automatic data is enabled and the
+source includes demo data. Ordinary views need no manual historical date or `as_of`.
+Custom narrower filters may correctly return fewer or zero sessions. Terminal core
+sessions stay terminal; the anomaly fixtures are too old to appear active. Synthetic
+latency remains unknown/null. Runtime timestamps and the anomaly evaluation clock
+are never rewritten; `source=runtime` excludes fixtures.
+
+This is request-driven refresh, not a timer: an idle process does no work and its first
+analytics read refreshes stale fixtures. Polling in the same bucket does no dataset DB
+work. Repeated starts, clock advances and refreshes reuse the same event/session IDs.
+Anomaly response IDs still depend on `as_of` under the existing API contract; these
+response IDs are not additional stored events. Baselines remain separated by source.
+The actual `as_of` still determines window boundaries: the oldest baseline observation
+can fall just outside the six-window baseline between bucket boundaries. Counts/ratios
+are calculated from that actual window; they are not frozen or fabricated for display.
+
+### Installation, repair and failure behavior
+
+`DemoDataLoader` runs in application lifespan before requests, using the exact store
+shared by EventRecorder and AnalyticsService. SQLite database schema v2 adds
+`demo_datasets` (version, SHA-256 fixture fingerprint, time anchor) and
+`demo_dataset_events` (explicit ownership). Event schema v1 and API payloads are unchanged.
+Each initialization checks the marker, complete membership and actual event rows;
+an intact current dataset causes no event writes. Missing/changed rows are repaired.
+Version replacement, timestamp shift, membership and marker updates share one SQLite
+transaction, so failure leaves the previous set intact. Runtime records and unrelated
+synthetic datasets are preserved, including during version changes. Identity/ownership
+conflicts fail explicitly. Old unowned CLI rows are adopted only by exact canonical
+event IDs; arbitrary older anomaly patterns are not globally deleted.
+
+To publish a revised dataset, edit the canonical JSON and increment its `version`,
+preserving IDs for continuing sessions. Removed owned rows disappear on the next
+startup. The fingerprint also detects accidental edits without a version bump.
+Only one fixture version is packaged/loaded at a time; do not run old and new app
+versions concurrently against the same writable SQLite database.
+Older application builds accepting only DB v1 cannot open the upgraded database;
+on durable storage, use a v2-compatible build for rollback.
+
+Logs contain fixed failure codes or dataset/version/count/change metadata, never
+conversation contents. Invalid fixtures or failed initial installation abort startup;
+a later refresh failure follows the existing analytics HTTP 503/storage diagnostics,
+and the next read retries. `ANALYTICS_DEMO_DATA_ENABLED=false` stops automatic install
+and refresh; it does not erase previously stored data. No public seed/reset API exists.
+
+### Optional development CLI
+
+`scripts/seed_analytics_demo.py` is a thin wrapper over the packaged implementation;
+the server never imports `scripts/`. For a separate local database:
+
+```powershell
+./.venv/Scripts/python.exe scripts/seed_analytics_demo.py --db-path work/analytics-demo.db --with-anomaly --as-of 2026-10-03T18:00:00Z
+```
+
+Without `--with-anomaly`, the CLI installs only 120/640 core data. Without `--as-of`,
+both core and anomaly fixtures use the canonical reference clock. Explicit `--as-of`
+shifts both together with stable IDs. `--reset` requests the same scoped repair; it
+does not globally clear synthetic data or delete runtime. Use an isolated DB or disable
+autoload when exploring historical snapshots, because autoload restores the current
+full rolling dataset. The older fixed-clock restart smoke below is intended for that
+manual, autoload-disabled workflow.
+
+On Render Free, the source fixtures survive in the image and recreate demo analytics
+after ephemeral DB loss. New runtime events do **not** have a durability guarantee.
+See `HOSTED_DEMO.md` for deployment settings and `ANALYTICS_DEMO_VALIDATION.md` for checks.
 
 ## Screens and actual data
 
@@ -106,7 +178,7 @@ npm run build
 npm run format:dashboard
 ```
 
-From repository root after seeding Docker:
+Optional historical manual workflow, with autoload disabled and a seeded local Docker DB:
 
 ```powershell
 ./.venv/Scripts/python.exe scripts/stage5b_dashboard_smoke.py create --manifest work/stage5b-manifest.json

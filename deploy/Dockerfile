@@ -13,7 +13,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     STARTER_KIT_PATH=/app/data/starter_kit \
     PRODUCT_CATALOG_PATH=/app/data/product_promoter/catalog.json \
     SECURITY_POLICY_PATH=/app/data/security/policy.json \
-    EVENT_DB_PATH=/app/data/runtime/veyra_events.db
+    EVENT_DB_PATH=/app/data/runtime/veyra_events.db \
+    ANALYTICS_DEMO_DATA_ENABLED=true
 WORKDIR /app
 COPY backend/requirements.lock backend/pyproject.toml /app/backend/
 RUN python -c "import pathlib, subprocess, sys, tomllib; p=tomllib.loads(pathlib.Path('backend/pyproject.toml').read_text())['project']; subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir', '-c', 'backend/requirements.lock', 'setuptools>=77'] + p['dependencies'] + p['optional-dependencies']['voice'])"

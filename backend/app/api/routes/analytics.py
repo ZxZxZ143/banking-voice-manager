@@ -71,6 +71,10 @@ def filters(
 
 def read(request: Request, operation, *args, **kwargs):
     try:
+        if request.app.state.services.demo_data:
+            # Sync route runs in FastAPI's worker pool. Most reads do no demo DB work;
+            # the first after a five-minute boundary refreshes the same owned records.
+            request.app.state.services.demo_data.ensure_current()
         return operation(*args, **kwargs)
     except Exception:
         # Log fixed codes only: SQL exceptions can include host paths or payloads.

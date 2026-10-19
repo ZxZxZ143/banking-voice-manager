@@ -12,6 +12,21 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Automatic hosted analytics demo (2026-10-19):** `codex/analytics-demo-autoload` starts
+  from hosting branch `a844ed8`, including main `58fa498` and the existing access gate.
+  Packaged `analytics/fixtures/demo-v1.json` preserves 120/640 core + 24/48 anomaly data.
+  Enabled lifespan installs/repairs 144 sessions / 688 synthetic events before requests;
+  five-minute request-driven date refresh keeps them recent with stable IDs. SQLite v2
+  adds explicit dataset ownership/metadata; atomic repair/version replacement preserves
+  runtime and unrelated synthetic rows. Runtime event wire schema stays v1. No LLM,
+  scripts directory, external DB or manual hosting seed is required. Runtime durability
+  across ephemeral filesystem loss is **not** provided. Policy/runbooks:
+  `FINANCE_DASHBOARD.md`, `HOSTED_DEMO.md`; checks: `ANALYTICS_DEMO_VALIDATION.md`.
+  Verified 1493 backend / 120 frontend tests, TypeScript/Vite, Ruff, formatting,
+  offline core/Risk/restart smoke and actual hosting-image startup/restart/recreation
+  without host mounts, env file, scripts or a preseeded DB. Live Render deployment
+  and paid provider calls were not performed in this task.
+
 - **Legacy repository import (2026-10-19):** teammate commits `95a0a49` and `1a0e735`
   add persistent numeric-only runtime latency samples and semantic Journey event icons.
   Current RU/KK confirmation fixes and README are retained. Phone smoke now waits for
@@ -235,9 +250,11 @@ Business specification: `data/starter_kit/README.ru.md`.
 | `backend/app/triage/` | Text preparation; future language/normalization |
 | `backend/app/conversation/` | Domain-independent locked session store, message orchestration and statuses |
 | `backend/app/analytics/` | Safe event models/mapping, best-effort recorder, EventStore and SQLite queries |
+| `backend/app/analytics/demo.py`, `fixtures/demo-v1.json` | Packaged synthetic dataset, lifecycle loader and five-minute rolling replay |
 | `backend/app/api/routes/analytics.py`, `dashboard.py` | Backward-compatible event/session/summary routes; additive dashboard read models |
 | `backend/app/analytics/dashboard.py`, `dashboard_models.py` | Persistent deterministic sessions/journeys/risk/overview/anomalies and typed contracts |
 | `scripts/seed_analytics_demo.py`, `benchmark_analytics.py`, `stage5a_storage_smoke.py`, `stage5b_dashboard_smoke.py` | Compatible synthetic seed/anomaly extension, timings and real API/restart checks |
+| `scripts/smoke_analytics_demo_image.py` | Isolated hosting-image startup/restart/recreation without mounts, seed or provider calls |
 | `docs/ANALYTICS_API_CONTRACT.md`, `STAGE5A_STORAGE_VALIDATION.md` | Teammate integration schemas/checklist and storage evidence |
 | `backend/app/conversation/opening.py` | Shared KK-first/RU-second unsolicited help greeting for Insurance, Fraud and all sales campaigns; customer-turn language policy remains pack-owned and dynamic |
 | `backend/app/risk/` | Shared input firewall, candidate gate, typed Risk Agent, source policy and business-state-preserving guidance |
@@ -473,7 +490,7 @@ State/traces are bounded and per-process; restart loses them. Use one worker. St
 Concurrent same-session turns are serialized, distinct sessions can run concurrently,
 and active sessions are pinned against eviction. Session IDs are demo correlation IDs,
 not authentication: keep the service local until access control is implemented.
-SQLite schema v1 `events` persists allowlisted enums, catalog IDs, booleans and numeric runtime durations plus
+SQLite database v2 retains event schema v1. `events` persists allowlisted enums, catalog IDs, booleans and numeric runtime durations plus
 opaque correlation metadata; no raw transcripts, collected identifiers, preferences,
 replies or free-text reasons. Indexes cover time/session/assistant/type/risk/source.
 Unique hash of source/session/turn/type makes retried batches idempotent; started/handoff/
@@ -485,6 +502,16 @@ Browser/text `/api/message` persists measured Agent processing only. Overview av
 valid runtime samples independently; missing metrics/old events stay unknown and synthetic
 data is excluded from measured latency. Samples do not change business session summaries,
 journeys or anomaly counts. Definitions/limits: `ANALYTICS_API_CONTRACT.md`.
+
+`demo_datasets` stores dataset version/fingerprint/time anchor; `demo_dataset_events`
+stores exact event ownership. v1 migration adds these tables without changing event rows.
+`DemoDataLoader` shares EventRecorder/AnalyticsService's store. When enabled, it runs
+before lifespan yields and before analytics reads after a five-minute UTC boundary.
+One transaction verifies/replaces only owned synthetic data, repairs partial sets and
+updates membership/metadata; failures roll back. Repeat polls in the same bucket skip
+dataset DB work. Runtime dates remain real; demo timestamps shift together relative to
+the canonical `2026-10-03T18:00:00Z`, fitting within the last 11 hours. Full health adds
+`analytics_demo` metadata for the UI notice; public hosted health remains minimal.
 
 No ORM/external DB/RLS/upload service or durable replay exists. Failed writes are
 observable but can lose events. Runtime DB/WAL/SHM are ignored and excluded from images.
@@ -530,6 +557,7 @@ ROUTER_MAX_OUTPUT_TOKENS (2500), optional ROUTER_TEMPERATURE, BACKEND_HOST, BACK
 ROUTER_ACCEPT_THRESHOLD (.75), ROUTER_LOW_THRESHOLD (.45), ROUTER_HANDOFF_AFTER (2),
 ROUTER_MAX_UNCLEAR_TURNS (3), ENABLE_DEV_STAND (false), optional STARTER_KIT_PATH,
 EVENT_DB_PATH (repository data/runtime/veyra_events.db; Docker /app/data/runtime/veyra_events.db),
+ANALYTICS_DEMO_DATA_ENABLED (false locally; true in hosting Dockerfile and Render demo),
 ANALYTICS_WINDOW_SECONDS (3600), ANALYTICS_BASELINE_WINDOWS (6),
 ANALYTICS_MIN_VOLUME (5), ANALYTICS_ANOMALY_MULTIPLIER (3).
 Root .env.example contains no credentials/personal phone; .env is ignored. Optional

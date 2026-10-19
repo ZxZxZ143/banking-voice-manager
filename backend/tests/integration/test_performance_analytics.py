@@ -77,7 +77,7 @@ def test_complete_sample_persists_and_survives_restart(analytics):
     for key, expected in COMPLETE.items():
         assert metrics(reopened)[key].model_dump() == {"average_ms": expected, "samples": 1}
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
 
 
 def test_averages_and_independent_counts_missing_is_not_zero(analytics):

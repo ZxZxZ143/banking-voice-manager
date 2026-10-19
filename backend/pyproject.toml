@@ -32,7 +32,7 @@ where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["dev_stand/*.html"]
+app = ["dev_stand/*.html", "analytics/fixtures/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -18,6 +18,7 @@ import {
   Pager,
 } from "../src/components/dashboard/views.tsx";
 import { SessionTable } from "../src/components/dashboard/SessionTable.tsx";
+import { DemoPeriodNotice } from "../src/components/dashboard/DemoPeriodNotice.tsx";
 import { DetailContent } from "../src/components/dashboard/SessionDetail.tsx";
 import {
   Journey,
@@ -50,6 +51,27 @@ const render = (Component, props = {}) =>
 const sessions = parseSessionPage(fixtures.sessions).sessions;
 const detail = parseDetail(fixtures.detail);
 const select = () => {};
+
+test("automatic demo period is explicit without implying measured latency", () => {
+  const html = render(DemoPeriodNotice, { enabled: true });
+  assert.match(html, /Synthetic demo/);
+  assert.match(html, /recent 11 hours/);
+  assert.match(html, /every 5 minutes/);
+  assert.match(html, /Real sessions keep their original dates/);
+  assert.match(html, /latency remains unmeasured/);
+});
+
+test("runtime-only and disabled views do not claim a synthetic period", () => {
+  assert.equal(render(DemoPeriodNotice, { enabled: false }), "");
+  assert.equal(
+    render(DemoPeriodNotice, { enabled: true, source: "runtime" }),
+    "",
+  );
+  assert.match(
+    render(DemoPeriodNotice, { enabled: true, source: "synthetic_demo" }),
+    /Synthetic demo/,
+  );
+});
 test("overview shows real aggregate counts, sales, insurance and unavailable measurements", () => {
   const html = render(OverviewView, {
     data: parseOverview(fixtures.overview),

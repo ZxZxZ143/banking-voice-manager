@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -37,6 +38,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.services = build_services(config, router_override=router_override)
+        if application.state.services.demo_data:
+            # No analytics request can observe a half-installed or missing enabled dataset.
+            await asyncio.to_thread(application.state.services.demo_data.ensure_current)
         application.state.tts_provider = build_tts_provider(config)
         application.state.twilio_gateway = twilio_override or build_twilio_gateway(
             config, application.state.services.messages, tts=application.state.tts_provider

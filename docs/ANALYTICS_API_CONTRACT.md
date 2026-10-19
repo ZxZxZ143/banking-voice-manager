@@ -234,25 +234,38 @@ serialized. A risk signal such as `otp_disclosed` records the category, never th
 
 ## Synthetic demo data
 
-From repository root after backend installation:
+Hosted deployments automatically load the packaged dataset when
+`ANALYTICS_DEMO_DATA_ENABLED=true`. The lifespan completes loading before any requests;
+analytics reads keep its timestamps within a rolling recent period. No seed command or
+external service is required. The flag does not change assistant/provider behavior.
+
+For optional isolated historical development, after backend installation:
 
 ```powershell
-./.venv/Scripts/python.exe scripts/seed_analytics_demo.py
-./.venv/Scripts/python.exe scripts/seed_analytics_demo.py --reset
-# Isolated local fixture:
-./.venv/Scripts/python.exe scripts/seed_analytics_demo.py --db-path work/analytics-demo.db
+./.venv/Scripts/python.exe scripts/seed_analytics_demo.py --db-path work/analytics-demo.db --with-anomaly
 ```
 
-Seed dates are deterministic: 2026-10-03 08:00–09:59 UTC. It creates 120 conversations,
+Canonical core dates are 2026-10-03 08:00–09:59 UTC. The core creates 120 conversations,
 24 insurance results, 72 sales results, 40 risk signals, 24 fraud results, 12 handoffs,
-108 ended events; 640 total events. All have `source=synthetic_demo`. Rerun inserts zero.
-`--reset` deletes only synthetic_demo rows, then recreates the seed; runtime rows survive.
-To seed Docker's actual volume, stream the script into the existing backend, since image
-runtime deliberately contains application/data only:
+108 ended events; 640 total events. Autoload also includes 24 anomaly sessions / 48 events,
+for 144 sessions / 688 events total. All have `source=synthetic_demo`; no synthetic timing
+is counted as measured latency. The fixture is `app/analytics/fixtures/demo-v1.json`,
+dataset `veyra-dashboard-demo`, version `1`, reference `2026-10-03T18:00:00Z`.
 
-```powershell
-Get-Content -Raw scripts/seed_analytics_demo.py | docker compose exec -T backend python -
-```
+SQLite database v2 adds `demo_datasets` and `demo_dataset_events` ownership tables,
+migrating v1 additively. **Event schema remains 1.** Marker, membership and full row
+comparison detect partial data. Replacement/repair is one atomic transaction, preserving
+runtime and unrelated synthetic rows. Existing exact canonical seed IDs can be adopted.
+Repeated installation and five-minute rolling refresh reuse stable IDs, without growth.
+Dates shift together to the current five-minute UTC anchor: core data fits in the last
+11 hours and anomaly windows use the actual clock. Runtime dates never shift. Full time,
+versioning, failure and CLI semantics: `FINANCE_DASHBOARD.md#canonical-dataset-and-rolling-dates`.
+
+Authenticated/full `/health` adds `analytics_demo` with `enabled`, `version` (null when
+disabled), `time_policy: "rolling_5m"` and `refresh_seconds: 300`. Public hosted health
+remains minimal. Analytics endpoint shapes, filters, sorting and pagination are unchanged.
+The CLI `--reset` now repairs only the owned dataset; it never calls global
+`reset_synthetic()`. Disabling autoload leaves existing records untouched.
 
 Filter `source=runtime` for live data or `source=synthetic_demo` for fixtures. Never mix
 synthetic counts into operational metrics accidentally.
@@ -268,8 +281,8 @@ synthetic counts into operational metrics accidentally.
 - Date format: ISO 8601 with timezone, events in UTC Z; from inclusive/to exclusive.
 - Pagination: default 100, max 500, next_offset/null; journey also paginated.
 - Empty responses: render zero scalars, missing count-map keys as zero, [] and nullable channel.
-- Synthetic seed command: `python scripts/seed_analytics_demo.py` in the installed backend
-  environment; optional `--reset` or `--db-path`. Select source=synthetic_demo.
+- Synthetic data: enable `ANALYTICS_DEMO_DATA_ENABLED=true`; select source=synthetic_demo.
+  The optional CLI supports isolated historical development; see the runbook above.
 - Show read errors/degraded storage honestly. Integrated dashboard: `FINANCE_DASHBOARD.md`.
 
 ## Stage 5B additive dashboard contract
