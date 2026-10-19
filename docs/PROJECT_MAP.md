@@ -194,6 +194,11 @@ Business specification: `data/starter_kit/README.ru.md`.
   dependencies fail visibly, without mock responses.
 - **Deployment:** Docker Compose backend/frontend, Nginx HTTP/voice WebSocket proxy,
   loopback ports 8000/5173, runtime-only secrets and health checks.
+  Optional `deploy/Dockerfile` serves the built frontend through FastAPI on the same
+  cloud port. `STATIC_FRONTEND_DIR` enables it; `PORT`/`RENDER_EXTERNAL_URL` are fallbacks
+  for explicit backend port/frontend origin. Runtime `DEMO_ACCESS_PASSWORD` plus
+  `DEMO_SESSION_SECRET` enable a signed-cookie HTTP/WebSocket demo gate. Public health
+  becomes status-only; authenticated health keeps its contract. See `HOSTED_DEMO.md`.
 - **Not introduced:** Supabase, vector store, RAG, external task brokers or unrelated production packs.
 
 ## Navigation
