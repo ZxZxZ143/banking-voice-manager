@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from pydantic import SecretStr
 
 from app.analytics.dashboard import AnalyticsService
+from app.analytics.demo import DemoDataLoader
 from app.analytics.recorder import EventRecorder
 from app.analytics.sqlite import SQLiteEventStore
 from app.core.config import Settings
@@ -46,6 +47,7 @@ class Services:
     risk: RiskIntelligence | None = None
     events: EventRecorder | None = None
     analytics: AnalyticsService | None = None
+    demo_data: DemoDataLoader | None = None
 
     @property
     def insurance(self):
@@ -172,4 +174,5 @@ def build_services(settings: Settings, *, router_override: Router | None = None)
         risk=intelligence,
         events=events,
         analytics=AnalyticsService(events.store, settings),
+        demo_data=DemoDataLoader(events.store) if settings.analytics_demo_data_enabled else None,
     )

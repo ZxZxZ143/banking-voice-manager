@@ -21,6 +21,7 @@ import { Button } from "./components/ui/button";
 import { Separator } from "./components/ui/separator";
 import { Badge } from "./components/ui/badge";
 import { ConversationDemo } from "./components/dashboard/ConversationDemo";
+import { DemoPeriodNotice } from "./components/dashboard/DemoPeriodNotice";
 import {
   AnomaliesScreen,
   JourneysScreen,
@@ -207,6 +208,15 @@ export default function App() {
           </div>
         </header>
         <main id="main-content" className="min-w-0 space-y-6 p-5 lg:p-7">
+          {section !== "conversation" && (
+            <DemoPeriodNotice
+              enabled={
+                health.status === "ready" &&
+                health.data.analytics_demo?.enabled === true
+              }
+              source={source}
+            />
+          )}
           <div key={source ?? "all"} className="space-y-6">
             {section === "overview" && <OverviewScreen {...props} />}
             {section === "live" && <LiveCallsScreen {...props} />}

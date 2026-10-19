@@ -42,7 +42,21 @@ CREATE INDEX IF NOT EXISTS events_assistant ON events(assistant_id, created_at);
 CREATE INDEX IF NOT EXISTS events_type ON events(event_type, created_at);
 CREATE INDEX IF NOT EXISTS events_risk ON events(risk_level, created_at);
 CREATE INDEX IF NOT EXISTS events_source ON events(source);
-PRAGMA user_version = 1;
+"""
+
+# Additive v1 -> v2 migration; the event wire schema remains v1.
+DEMO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS demo_datasets (
+    dataset_id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    anchor TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS demo_dataset_events (
+    event_id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS demo_dataset_owner ON demo_dataset_events(dataset_id);
 """
 
 
@@ -53,8 +67,8 @@ def timestamp(value: datetime) -> str:
 class SQLiteEventStore:
     """Short file-backed transactions, WAL readers and bounded lock waits.
 
-    Connections are private to each operation/thread and always closed. Schema v1
-    needs no ORM; a future schema change must explicitly migrate user_version.
+    Connections are private to each operation/thread and always closed. Database v2
+    adds dataset ownership to v1; the event wire schema and event columns stay v1.
     """
 
     def __init__(self, path: Path, *, timeout: float = 0.1):
@@ -80,10 +94,15 @@ class SQLiteEventStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self._connection() as db:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
+                if version not in (0, 1, 2):
                     raise ValueError("Unsupported analytics schema version")
                 db.execute("PRAGMA journal_mode=WAL")
-                db.executescript(SCHEMA)
+                db.executescript(
+                    "BEGIN IMMEDIATE;\n"
+                    + SCHEMA
+                    + DEMO_SCHEMA
+                    + "\nPRAGMA user_version = 2;\nCOMMIT;"
+                )
             self._ready = True
 
     def probe(self) -> None:
@@ -96,38 +115,112 @@ class SQLiteEventStore:
 
     def append_many(self, events: list[ConversationEvent]) -> int:
         self.initialize()
+        rows = [self._row(event) for event in events]
         with self._connection() as db:
             before = db.total_changes
-            for original in events:
-                # Revalidate copies: even callers using model_construct/copy cannot
-                # bypass the allowlisted schema at the persistence boundary.
-                event = ConversationEvent.model_validate(
-                    original.model_dump(mode="json", warnings=False)
-                )
-                db.execute(
-                    """INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                       ON CONFLICT(idempotency_key) DO NOTHING""",
-                    (
-                        str(event.event_id),
-                        event.schema_version,
-                        timestamp(event.created_at),
-                        event.session_id,
-                        event.turn_number,
-                        event.sequence,
-                        event.channel,
-                        event.assistant_id,
-                        event.event_type,
-                        event.conversation_status,
-                        event.scenario_id,
-                        event.risk_level,
-                        json.dumps(event.risk_signals),
-                        event.result_status,
-                        event.source,
-                        event.payload.model_dump_json(),
-                        event.idempotency_key,
-                    ),
-                )
+            db.executemany(
+                """INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(idempotency_key) DO NOTHING""",
+                rows,
+            )
             return db.total_changes - before
+
+    @staticmethod
+    def _row(original):
+        # Revalidate at the storage boundary, including model_copy/model_construct callers.
+        event = ConversationEvent.model_validate(original.model_dump(mode="json", warnings=False))
+        return (
+            str(event.event_id),
+            event.schema_version,
+            timestamp(event.created_at),
+            event.session_id,
+            event.turn_number,
+            event.sequence,
+            event.channel,
+            event.assistant_id,
+            event.event_type,
+            event.conversation_status,
+            event.scenario_id,
+            event.risk_level,
+            json.dumps(event.risk_signals),
+            event.result_status,
+            event.source,
+            event.payload.model_dump_json(),
+            event.idempotency_key,
+        )
+
+    def install_demo_dataset(self, dataset_id, version, fingerprint, anchor, events):
+        """Repair/replace one explicitly owned set in one transaction; never touch runtime."""
+        self.initialize()
+        rows = [self._row(event) for event in events]
+        expected = {row[0]: row for row in rows}
+        if (
+            not rows
+            or len(expected) != len(rows)
+            or len({row[-1] for row in rows}) != len(rows)
+            or any(row[14] != "synthetic_demo" for row in rows)
+        ):
+            raise ValueError("Invalid synthetic dataset")
+        metadata = (version, fingerprint, timestamp(anchor))
+        with self._connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            installed = db.execute(
+                "SELECT version,fingerprint,anchor FROM demo_datasets WHERE dataset_id=?",
+                (dataset_id,),
+            ).fetchone()
+            owned = db.execute(
+                "SELECT e.* FROM events e JOIN demo_dataset_events d USING(event_id) "
+                "WHERE d.dataset_id=?",
+                (dataset_id,),
+            ).fetchall()
+            members = db.execute(
+                "SELECT count(*) FROM demo_dataset_events WHERE dataset_id=?",
+                (dataset_id,),
+            ).fetchone()[0]
+            if (
+                installed
+                and tuple(installed) == metadata
+                and members == len(rows)
+                and {row[0]: tuple(row) for row in owned} == expected
+            ):
+                return False
+            if any(row["source"] != "synthetic_demo" for row in owned):
+                raise ValueError("Dataset ownership conflicts with runtime")
+            for row in rows:
+                # Adopt an old CLI seed only by its exact deterministic identity.
+                conflicts = db.execute(
+                    "SELECT e.event_id,e.source,d.dataset_id FROM events e "
+                    "LEFT JOIN demo_dataset_events d USING(event_id) "
+                    "WHERE e.event_id=? OR e.idempotency_key=?",
+                    (row[0], row[-1]),
+                ).fetchall()
+                if any(
+                    c[0] != row[0] or c[1] != "synthetic_demo" or c[2] not in (None, dataset_id)
+                    for c in conflicts
+                ):
+                    raise ValueError("Dataset identity collision")
+            db.execute(
+                "DELETE FROM events WHERE source='synthetic_demo' AND event_id IN "
+                "(SELECT event_id FROM demo_dataset_events WHERE dataset_id=?)",
+                (dataset_id,),
+            )
+            db.executemany(
+                "DELETE FROM events WHERE source='synthetic_demo' AND event_id=?",
+                [(row[0],) for row in rows],
+            )
+            db.execute("DELETE FROM demo_dataset_events WHERE dataset_id=?", (dataset_id,))
+            db.executemany("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+            db.executemany(
+                "INSERT INTO demo_dataset_events(event_id,dataset_id) VALUES (?,?)",
+                [(row[0], dataset_id) for row in rows],
+            )
+            db.execute(
+                "INSERT INTO demo_datasets VALUES (?,?,?,?) ON CONFLICT(dataset_id) "
+                "DO UPDATE SET version=excluded.version,fingerprint=excluded.fingerprint,"
+                "anchor=excluded.anchor",
+                (dataset_id, *metadata),
+            )
+            return True
 
     @staticmethod
     def _event(row: sqlite3.Row) -> ConversationEvent:

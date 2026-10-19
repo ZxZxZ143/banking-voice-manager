@@ -2,6 +2,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Request
 
+from app.analytics.demo import REFRESH_SECONDS
 from app.analytics.models import StorageHealth
 from app.core.contracts import Contract
 
@@ -20,6 +21,13 @@ class TelephonyHealth(Contract):
     vonage: Literal["disabled", "unavailable", "ready"]
 
 
+class AnalyticsDemoHealth(Contract):
+    enabled: bool
+    version: str | None = None
+    time_policy: Literal["rolling_5m"] = "rolling_5m"
+    refresh_seconds: int = REFRESH_SECONDS
+
+
 class HealthResponse(Contract):
     status: str = "ok"
     service: str = "voice-router"
@@ -27,6 +35,7 @@ class HealthResponse(Contract):
     starter_kit: DataCounts
     analytics: StorageHealth
     telephony: TelephonyHealth
+    analytics_demo: AnalyticsDemoHealth
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -44,6 +53,14 @@ def health(request: Request) -> HealthResponse:
         for provider in ("twilio", "vonage")
     }
     return HealthResponse(
+        analytics_demo=AnalyticsDemoHealth(
+            enabled=request.app.state.services.demo_data is not None,
+            version=(
+                request.app.state.services.demo_data.dataset.fixture.version
+                if request.app.state.services.demo_data
+                else None
+            ),
+        ),
         telephony=TelephonyHealth(**telephony),
         analytics=request.app.state.services.events.health(),
         starter_kit=DataCounts(

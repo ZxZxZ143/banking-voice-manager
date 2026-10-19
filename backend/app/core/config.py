@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -13,6 +13,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",
+        populate_by_name=True,
     )
 
     openai_api_key: SecretStr | None = None
@@ -30,8 +31,16 @@ class Settings(BaseSettings):
     router_handoff_after: int = Field(default=2, ge=1, le=10)
     router_max_unclear_turns: int = Field(default=3, ge=1, le=10)
     backend_host: str = "127.0.0.1"
-    backend_port: int = Field(default=8000, ge=1, le=65535)
-    frontend_origin: str = "http://localhost:5173"
+    backend_port: int = Field(
+        default=8000, ge=1, le=65535, validation_alias=AliasChoices("BACKEND_PORT", "PORT")
+    )
+    frontend_origin: str = Field(
+        default="http://localhost:5173",
+        validation_alias=AliasChoices("FRONTEND_ORIGIN", "RENDER_EXTERNAL_URL"),
+    )
+    static_frontend_dir: Path | None = None
+    demo_access_password: SecretStr | None = Field(default=None, repr=False)
+    demo_session_secret: SecretStr | None = Field(default=None, repr=False)
     enable_dev_stand: bool = False
     twilio_enabled: bool = False
     twilio_account_sid: str | None = Field(default=None, pattern=r"^AC[0-9a-fA-F]{32}$")
@@ -73,6 +82,7 @@ class Settings(BaseSettings):
     product_catalog_path: Path = PROJECT_ROOT / "data" / "product_promoter" / "catalog.json"
     security_policy_path: Path = PROJECT_ROOT / "data" / "security" / "policy.json"
     event_db_path: Path = PROJECT_ROOT / "data" / "runtime" / "veyra_events.db"
+    analytics_demo_data_enabled: bool = False
     analytics_window_seconds: int = Field(default=3600, ge=60, le=86400)
     analytics_baseline_windows: int = Field(default=6, ge=2, le=48)
     analytics_min_volume: int = Field(default=5, ge=2, le=10000)

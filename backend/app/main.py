@@ -1,8 +1,10 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.agent.router import Router
 from app.api.routes.analytics import router as analytics_router
@@ -18,6 +20,7 @@ from app.api.websocket.voice import router as voice_router
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.services import build_services
+from app.deployment import DemoAccessMiddleware
 from app.speech.tts.factory import build_tts_provider
 from app.telephony.twilio_gateway import TwilioGateway, build_twilio_gateway
 from app.telephony.vonage_gateway import VonageGateway, build_vonage_gateway
@@ -35,6 +38,9 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         application.state.services = build_services(config, router_override=router_override)
+        if application.state.services.demo_data:
+            # No analytics request can observe a half-installed or missing enabled dataset.
+            await asyncio.to_thread(application.state.services.demo_data.ensure_current)
         application.state.tts_provider = build_tts_provider(config)
         application.state.twilio_gateway = twilio_override or build_twilio_gateway(
             config, application.state.services.messages, tts=application.state.tts_provider
@@ -70,6 +76,14 @@ def create_app(
     application.include_router(voice_router)
     application.include_router(twilio_router)
     application.include_router(vonage_router)
+    if config.static_frontend_dir is not None:
+        if not (config.static_frontend_dir / "index.html").is_file():
+            raise RuntimeError("STATIC_FRONTEND_DIR must contain the built frontend index.html")
+        application.mount(
+            "/", StaticFiles(directory=config.static_frontend_dir, html=True), name="frontend"
+        )
+    if config.demo_access_password is not None or config.demo_session_secret is not None:
+        application.add_middleware(DemoAccessMiddleware, settings=config)
     return application
 
 

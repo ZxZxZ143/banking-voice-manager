@@ -61,7 +61,7 @@ def test_initialization_schema_indexes_and_wal(store):
     store.initialize()
     store.initialize()
     with sqlite3.connect(store.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
         assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         indexes = {row[1] for row in db.execute("PRAGMA index_list(events)")}
         assert {
