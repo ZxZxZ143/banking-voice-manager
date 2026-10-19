@@ -251,8 +251,9 @@ are reported after the push; no force or discarded branch work is permitted.
 
 Storage remains best-effort post-commit and can leave gaps; no durable outbox, production
 auth, retention/backup policy, new store or production scale guarantee was introduced.
-Offset pages may shift during new traffic; active is a recency heuristic. Persisted latency,
-language and clarification metrics are unavailable. The synthetic anomaly is time-dependent.
+Offset pages may shift during new traffic; active is a recency heuristic. The subsequent persistent-response-performance hotfix adds real runtime latency samples;
+unavailable metrics/older sessions remain unknown. Language and clarification metrics
+remain unavailable. The synthetic anomaly is time-dependent.
 Known **O11**: card-campaign deposit request can be interpreted as decline instead of
 out_of_scope; no Product tuning was mixed into this integration.
 

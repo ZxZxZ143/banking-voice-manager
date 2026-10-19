@@ -42,8 +42,16 @@ class ProviderError:
 TelephonyEvent = CallStarted | IncomingAudio | CallEnded | ProviderError
 
 
+@dataclass(frozen=True)
+class PlaybackTiming:
+    """Provider-owned monotonic submission/ack clocks; never wall-clock estimates."""
+
+    submitted_at: float | None
+    completed_at: float
+
+
 class TelephonyProvider(Protocol):
-    async def send_audio(self, call_id: str, speech: SpeechResult) -> None:
+    async def send_audio(self, call_id: str, speech: SpeechResult) -> PlaybackTiming | None:
         """Return only when playback completes; cancel/close must stop pending playback.
 
         The adapter owns outgoing codec conversion or explicit format rejection.

@@ -109,7 +109,8 @@ class FixtureSTT:
 async def audio_turn(runtime, call_id, marker):
     session = runtime.registry.get(call_id)
     assert session is not None
-    before = runtime._calls[call_id].turn_number
+    call = runtime._calls[call_id]
+    before = call.turn_number
     assert await runtime.feed_audio(call_id, ProviderAudio(bytes([marker, 0]) * 240))
     await runtime.finish_utterance(call_id)
     async with asyncio.timeout(5):
@@ -117,8 +118,10 @@ async def audio_turn(runtime, call_id, marker):
             runtime._calls[call_id].turn_number == before or session.status != "active"
         ):
             await asyncio.sleep(0.001)
-    # Final playback/terminal persistence can outlive registry invalidation briefly.
-    await asyncio.sleep(0)
+        # Playback can mark the call active before the turn's finally block has
+        # persisted its metrics. Drain it before another turn or test shutdown.
+        if call.turn_task is not None:
+            await asyncio.shield(call.turn_task)
 
 
 class FixtureComposer:
@@ -195,6 +198,16 @@ def smoke(database: Path):
             assert response.status_code == 200, endpoint
         response = client.get(f"/api/analytics/sessions/{sid}/journey")
         assert response.status_code == 200
+        performance = client.get(
+            "/api/analytics/overview", params={"channel": "voice"}
+        ).json()["latency"]
+        assert (
+            performance["agent_ms"]["samples"] == performance["tts_ms"]["samples"] == 2
+        )
+        assert performance["endpointing_ms"] == {"average_ms": None, "samples": 0}
+        assert performance["stt_final_ms"] == {"average_ms": None, "samples": 0}
+        assert performance["speech_end_to_playback_submit_ms"]["samples"] == 0
+        assert performance["speech_end_to_playback_complete_ms"]["samples"] == 0
         history = client.get(f"/api/analytics/sessions/{sid}").json()
         assert history["total"] == count
         assert client.get("/health").json()["telephony"] == {
@@ -205,6 +218,12 @@ def smoke(database: Path):
     with TestClient(create_app(settings, router_override=FixtureRouter())) as restarted:
         assert restarted.get(f"/api/analytics/sessions/{sid}").json() == history
         assert (
+            restarted.get(
+                "/api/analytics/overview", params={"channel": "voice"}
+            ).json()["latency"]
+            == performance
+        )
+        assert (
             restarted.get(f"/api/analytics/sessions/{sid}/detail").json()
             == detail.json()
         )
@@ -212,6 +231,10 @@ def smoke(database: Path):
         "mode": "OFFLINE MOCK — current core/Risk/SQLite/API, fixture models/STT/silent TTS",
         "channel": "voice",
         "source": "runtime (isolated temporary database only)",
+        "performance_counts": {
+            key: value["samples"] for key, value in performance.items()
+        },
+        "performance_restart_identical": True,
         "turns": 2,
         "events": count,
         "same_session": True,

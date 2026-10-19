@@ -1,14 +1,39 @@
 import {
-  Check,
+  Bot,
+  CircleStop,
   CornerDownRight,
+  Gauge,
   Headphones,
-  HelpCircle,
+  MessageSquare,
+  PlayCircle,
   Route,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingUp,
+  TriangleAlert,
+  type LucideIcon,
 } from "lucide-react";
 import type { JourneyStage } from "../../analytics/types";
 import { Badge } from "../ui/badge";
 import { Empty } from "./shared";
 import { date, stageLabel } from "./presentation";
+const journeyEventIcons = new Map<string, LucideIcon>([
+  ["conversation_started", PlayCircle],
+  ["assistant_selected", Bot],
+  ["conversation_turn", MessageSquare],
+  ["insurance_result", ShieldCheck],
+  ["sales_lead", TrendingUp],
+  ["risk_signal", TriangleAlert],
+  ["fraud_case", ShieldAlert],
+  ["operator_handoff", Headphones],
+  ["conversation_ended", CircleStop],
+  ["performance_sample", Gauge],
+]);
+
+export function getJourneyEventIcon(eventType: string): LucideIcon {
+  return journeyEventIcons.get(eventType) ?? Route;
+}
+
 function actionLabel(action: unknown): string | null {
   if (typeof action === "string") return action;
   if (Array.isArray(action))
@@ -26,13 +51,7 @@ export function Journey({ stages }: { stages: JourneyStage[] }) {
   return (
     <ol className="space-y-0" aria-label="Customer intent journey">
       {stages.map((stage, index) => {
-        const Icon = stage.handoff
-          ? Headphones
-          : stage.clarification
-            ? HelpCircle
-            : stage.completion
-              ? Check
-              : Route;
+        const Icon = getJourneyEventIcon(stage.event_type);
         return (
           <li key={stage.id} className="relative flex gap-4 pb-7 last:pb-0">
             {index < stages.length - 1 && (

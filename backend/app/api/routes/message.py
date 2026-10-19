@@ -113,7 +113,7 @@ async def _process(
     recognition_id=None,
 ):
     try:
-        return await request.app.state.services.messages.process(
+        result = await request.app.state.services.messages.process(
             session_id,
             text,
             scenario_mode,
@@ -122,6 +122,11 @@ async def _process(
             recognition_id=recognition_id,
             manual_input_available=True,
         )
+        if not start_scenario and request.app.state.services.events:
+            await request.app.state.services.events.record_performance(
+                session_id, result, {"agent_ms": result.trace.latency_ms.total}, channel=channel
+            )
+        return result
     except SpeechReceiptError:
         return JSONResponse(
             status_code=422,

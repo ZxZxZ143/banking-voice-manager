@@ -10,6 +10,7 @@ from uuid import uuid4
 from fastapi import WebSocket
 
 from app.speech.tts.base import SpeechResult
+from app.telephony.base import PlaybackTiming
 from app.telephony.providers.twilio_audio import MulawInput, speech_to_mulaw
 
 logger = logging.getLogger(__name__)
@@ -49,16 +50,17 @@ class TwilioTelephonyProvider:
             return
         future = stream.marks.pop(name, None)
         if future is not None and not future.done():
-            future.set_result(None)
+            acknowledged_at = perf_counter()
+            future.set_result(acknowledged_at)
             logger.info(
                 "twilio playback_complete call_sid=%s stream_sid=%s mark=%s monotonic_ms=%.3f",
                 stream.call_id,
                 stream.stream_id,
                 name,
-                perf_counter() * 1000,
+                acknowledged_at * 1000,
             )
 
-    async def send_audio(self, call_id: str, speech: SpeechResult) -> None:
+    async def send_audio(self, call_id: str, speech: SpeechResult) -> PlaybackTiming:
         stream = self.streams[call_id]
         started = perf_counter()
         try:
@@ -112,7 +114,8 @@ class TwilioTelephonyProvider:
                 (perf_counter() - started) * 1000,
             )
             async with asyncio.timeout(self.playback_timeout_seconds):
-                await future
+                completed_at = await future
+            return PlaybackTiming(playback_at if audio else None, completed_at)
         except TimeoutError:
             logger.warning(
                 "twilio playback_timeout call_sid=%s stream_sid=%s mark=%s",

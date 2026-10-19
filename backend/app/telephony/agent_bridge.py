@@ -46,6 +46,10 @@ class AgentBridge:
             raise ValueError("Agent returned a different session ID")
         return response
 
+    async def record_performance(self, session_id, response, metrics):
+        if recorder := getattr(self.messages, "events", None):
+            await recorder.record_performance(session_id, response, metrics, channel="voice")
+
     async def close(self, session_id: str) -> None:
         # Current MessageService owns canonical terminal events. Minimal unit fixtures
         # may omit persistence; production always composes the current service.

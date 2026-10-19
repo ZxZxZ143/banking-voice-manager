@@ -82,7 +82,7 @@ def test_committed_turns_handoff_end_and_session_order(client):
         )
         assert response.status_code == 200
     session = client.get("/api/analytics/sessions/insurance", params={"limit": 2}).json()
-    assert session["total"] == 4 and session["next_offset"] == 2
+    assert session["total"] == 5 and session["next_offset"] == 2
     assert [e["event_type"] for e in session["events"]] == [
         "conversation_started",
         "assistant_selected",
@@ -142,7 +142,9 @@ def test_storage_failure_preserves_customer_and_is_observable(client, monkeypatc
     assert built.dialogs.get_conversation("write-fails") is not None
     assert client.get("/api/analytics/events").json()["total"] == 0
     health = client.get("/health").json()["analytics"]
-    assert health["status"] == "degraded" and health["failure_count"] == 1
+    assert (
+        health["status"] == "degraded" and health["failure_count"] == 2
+    )  # Business and performance writes.
     assert "analytics_storage_failure" in caplog.text
     assert "private host" not in caplog.text and "+77018887766" not in caplog.text
     monkeypatch.setattr(built.events.store, "query_events", fail)
@@ -264,7 +266,7 @@ def test_raw_transcripts_and_private_state_are_not_an_event_archive(client):
     )
     assert response.status_code == 200
     journey = client.get("/api/analytics/sessions/transcript-privacy").json()
-    assert journey["total"] == 4
+    assert journey["total"] == 5
     serialized = str(journey)
     for value in ("+77018887766", "991122334455", "privatePassword", "sk-testSecret"):
         assert value not in serialized
@@ -308,4 +310,6 @@ def test_terminal_security_guidance_persists_updated_sales_result(client):
     journey = client.get("/api/analytics/sessions/risk-terminal").json()
     result = [e for e in journey["events"] if e["event_type"] == "sales_lead"][-1]
     assert result["result_status"] == "handoff" and result["payload"]["handoff"]
-    assert journey["events"][-1]["event_type"] == "operator_handoff"
+    assert [e for e in journey["events"] if e["event_type"] != "performance_sample"][-1][
+        "event_type"
+    ] == "operator_handoff"

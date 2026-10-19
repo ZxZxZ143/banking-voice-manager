@@ -18,7 +18,7 @@ from app.analytics.dashboard_models import (
     RiskAnalytics,
     SessionPage,
 )
-from app.analytics.models import EventQuery, EventType
+from app.analytics.models import PERFORMANCE_METRICS, EventQuery, EventType
 from app.analytics.store import EventStore
 
 LEVELS = ("unknown", "none", "low", "medium", "high", "critical")
@@ -58,7 +58,8 @@ class AnalyticsService:
     @staticmethod
     def session_summary(events, now):
         events = sorted(
-            events, key=lambda e: (e.turn_number, e.sequence, e.created_at, str(e.event_id))
+            [e for e in events if e.event_type != "performance_sample"],
+            key=lambda e: (e.turn_number, e.sequence, e.created_at, str(e.event_id)),
         )
         first, last = events[0], events[-1]
         starts = [e for e in events if e.event_type == "conversation_started"]
@@ -127,7 +128,8 @@ class AnalyticsService:
         now = query.as_of or datetime.now(UTC)
         groups = defaultdict(list)
         for event in self._events(query) if events is None else events:
-            groups[event.session_id].append(event)
+            if event.event_type != "performance_sample":
+                groups[event.session_id].append(event)
         sessions = [self.session_summary(events, now) for events in groups.values()]
         sessions = [
             s
@@ -156,7 +158,7 @@ class AnalyticsService:
         for event in sorted(
             events, key=lambda e: (e.turn_number, e.sequence, e.created_at, str(e.event_id))
         ):
-            if event.event_type == "conversation_turn":
+            if event.event_type in ("conversation_turn", "performance_sample"):
                 continue
             actions = []
             if event.event_type == "insurance_result":
@@ -192,7 +194,7 @@ class AnalyticsService:
         events = self.store.analytics_snapshot(
             EventQuery(session_id=session_id, source=query.source)
         )
-        if not events:
+        if not any(e.event_type != "performance_sample" for e in events):
             return None
         summary = self.session_summary(events, query.as_of or datetime.now(UTC))
         page = events[query.offset : query.offset + query.limit]
@@ -280,18 +282,37 @@ class AnalyticsService:
             insurance_completed=insurance_completed,
             sources=dict(sources),
             retained_events=events,
-            latency={
-                key: MetricAverage()
-                for key in (
-                    "agent_ms",
-                    "tts_ms",
-                    "endpointing_ms",
-                    "stt_final_ms",
-                    "speech_end_to_playback_submit_ms",
-                    "speech_end_to_playback_complete_ms",
-                )
-            },
+            latency=self.performance(snapshot, query, selected_ids),
         )
+
+    @staticmethod
+    def performance(events, query, selected_ids):
+        values = {key: [] for key in PERFORMANCE_METRICS}
+        for event in events:
+            if (
+                event.event_type != "performance_sample"
+                or event.source != "runtime"
+                or event.session_id not in selected_ids
+                or query.from_time
+                and event.created_at < query.from_time
+                or query.to_time
+                and event.created_at >= query.to_time
+                or query.assistant_id
+                and event.assistant_id != query.assistant_id
+                or query.channel
+                and event.channel != query.channel
+            ):
+                continue
+            for key in PERFORMANCE_METRICS:
+                value = getattr(event.payload, key)
+                if value is not None and (event.channel == "voice" or key == "agent_ms"):
+                    values[key].append(value)
+        return {
+            key: MetricAverage(average_ms=sum(samples) / len(samples), samples=len(samples))
+            if samples
+            else MetricAverage()
+            for key, samples in values.items()
+        }
 
     def anomalies(self, query):
         now = query.as_of or datetime.now(UTC)

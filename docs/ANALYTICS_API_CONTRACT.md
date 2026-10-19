@@ -108,6 +108,7 @@ Conversation/result statuses: `active`, `awaiting_user`, `awaiting_confirmation`
 | `risk_signal` | `analysis_status`, `recommended_action`, `guidance_shown` |
 | `operator_handoff` | No additional fields |
 | `conversation_ended` | No additional fields |
+| `performance_sample` | Six optional numeric durations; see Persistent response performance below |
 
 Initial successful opener or first customer turn emits started and selected. Openers have
 `assistant_initiated=true` and contain no artificial user message. Selection is emitted
@@ -280,7 +281,7 @@ EventStore snapshot/history methods implemented by SQLiteEventStore.
 
 | GET /api/analytics suffix | Response |
 |---|---|
-| `/overview` | DashboardOverview: full selected sessions, recency, channels, assistant/status/source counts, handoffs, RiskAnalytics, sales outcomes, completed Insurance results; unavailable latency/clarification null |
+| `/overview` | DashboardOverview: full selected sessions, recency, channels, assistant/status/source counts, handoffs, RiskAnalytics, sales outcomes, completed Insurance results; independent persistent runtime latency averages/counts; unavailable clarification null |
 | `/sessions` | SessionPage: `sessions,total,limit,offset,next_offset` |
 | `/sessions/{session_id}/detail` | DashboardSessionDetail: full `summary`, bounded raw safe `timeline`, meaningful `journey` from that event page, pagination |
 | `/sessions/{session_id}/journey` | JourneyPage: bounded `stages`, pagination; unchanged event ordering |
@@ -318,3 +319,58 @@ flag is not a real policy write, sale, verified incident or operator transfer.
 Anomaly settings, cold-start and count semantics, seed extension and restart commands:
 `FINANCE_DASHBOARD.md`. Source baselines are always separate. Public pages remain bounded;
 internal aggregates materialize the full selected safe history at current local demo scale.
+
+
+## Persistent response performance
+
+The existing schema v1 `events` table/payload_json now supports `performance_sample`.
+No table migration or second dashboard endpoint is introduced. Envelope metadata remains
+session ID, committed turn number, channel (`text`/`voice`), assistant ID, current status,
+UTC creation time and `source=runtime`. Sequence 8 separates telemetry from the ordinary
+turn batch. Existing source/session/turn/type idempotency permits at most one sample per
+turn. Performance may follow a terminal business event in the raw event archive; business
+summaries, meaningful journeys, risk and anomalies exclude telemetry from their decisions.
+
+The payload is a strictly allowlisted discriminated object with `kind=performance_sample`
+and these nullable duration fields, in milliseconds:
+
+| Field / existing dashboard label | Authoritative measurement |
+|---|---|
+| `endpointing_ms` / Endpointing | Phone last VAD-positive speech timestamp → endpoint decision/commit |
+| `stt_final_ms` / STT final | Phone endpoint decision/commit → accepted final transcript (including any structured verification) |
+| `agent_ms` / Agent | Phone's existing AgentBridge call clock span; browser/text's existing MessageService trace total, excluding event persistence |
+| `tts_ms` / TTS | Phone's completed backend synthesis call span, before provider codec conversion |
+| `speech_end_to_playback_submit_ms` / Speech end → audio submission | Phone last speech timestamp → provider first-media submission start, after codec conversion/lock; not the pre-conversion runtime call |
+| `speech_end_to_playback_complete_ms` / Speech end → playback complete | Phone last speech timestamp → provider mark/notify acknowledgement |
+
+Vonage notify and Twilio mark callbacks provide their existing monotonic completion
+clocks. No media wire format, authentication, language, endpointing policy, model or
+provider choice changes. Missing speech/endpoint origins are not replaced with STT-final
+or configured silence durations. A failed synthesis/playback can retain previously
+completed stages; failed/incomplete stages remain absent. Proactive openers do not create
+an Agent sample. Browser backend-TTS requests lack a safe turn correlation contract, and
+browser playback/endpoint timers use a separate clock: no browser audio timing is persisted
+by this hotfix. Text sessions cannot populate voice timing fields.
+
+Only numbers (excluding booleans), finite and between 0 and 600,000 ms, are valid.
+Malformed individual duration fields normalize to null without poisoning other metrics.
+Unknown/free-text payload fields are forbidden. No transcript, risk reasoning, phone/IIN,
+policy number, provider call ID, credential or audio is present in a performance payload.
+Recording is best effort through the existing EventRecorder/to-thread SQLite boundary;
+storage failure remains observable and does not turn a successful customer response into
+an error. There is no durable delivery guarantee/outbox.
+
+`GET /api/analytics/overview` retains its existing `latency` map. Each field returns
+`{average_ms: number|null, samples: number}` from its own valid present measurements.
+Missing/null is not zero; actual measured zero is valid. Runtime is the only contributing
+source even under all-source queries: synthetic demo data never becomes measured latency.
+Session/source/channel/assistant/time scope is respected. Old events and sessions remain
+valid with no invented timings. The existing frontend displays average + `(N)` or `— (0)`.
+
+Offline validation uses only temporary databases and explicit fixture providers. The
+performance integration tests inject clocks and assert all six values, independent counts,
+invalid values, per-turn idempotency, source filtering, privacy and a reopened store. The
+Stage 6 smoke also proves two persisted Agent/TTS samples through the current PhoneRuntime,
+unchanged core/Risk business history and identical aggregates after app/store restart;
+STT/endpoint/playback-origin metrics correctly remain unavailable in that transcript-only
+fixture. No real runtime database is seeded and no live/paid provider calls are made.

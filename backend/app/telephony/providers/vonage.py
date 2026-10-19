@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import WebSocket
 
 from app.speech.tts.base import SpeechResult
+from app.telephony.base import PlaybackTiming
 from app.telephony.providers.vonage_audio import FRAME_BYTES, L16Input, speech_to_l16
 
 logger = logging.getLogger(__name__)
@@ -47,12 +48,13 @@ class VonageTelephonyProvider:
             return
         future = stream.notifications.pop(reply_id, None)
         if future is not None and not future.done():
-            future.set_result(None)
+            acknowledged_at = perf_counter()
+            future.set_result(acknowledged_at)
             logger.info(
                 "vonage playback_complete call_uuid=%s reply_id=%s monotonic_ms=%.3f",
                 stream.call_id,
                 reply_id,
-                perf_counter() * 1000,
+                acknowledged_at * 1000,
             )
 
     async def send_audio(self, call_id: str, speech: SpeechResult):
@@ -87,7 +89,8 @@ class VonageTelephonyProvider:
                 )
             logger.info("vonage audio_sent call_uuid=%s reply_id=%s", call_id, reply_id)
             async with asyncio.timeout(self.playback_timeout_seconds):
-                await future
+                completed_at = await future
+            return PlaybackTiming(playback_at if audio else None, completed_at)
         except TimeoutError:
             logger.warning("vonage playback_timeout call_uuid=%s", call_id)
             raise

@@ -19,7 +19,23 @@ import {
 } from "../src/components/dashboard/views.tsx";
 import { SessionTable } from "../src/components/dashboard/SessionTable.tsx";
 import { DetailContent } from "../src/components/dashboard/SessionDetail.tsx";
-import { Journey } from "../src/components/dashboard/Journey.tsx";
+import {
+  Journey,
+  getJourneyEventIcon,
+} from "../src/components/dashboard/Journey.tsx";
+import {
+  Bot,
+  CircleStop,
+  Gauge,
+  Headphones,
+  MessageSquare,
+  PlayCircle,
+  Route,
+  ShieldAlert,
+  ShieldCheck,
+  TrendingUp,
+  TriangleAlert,
+} from "lucide-react";
 import {
   DataState,
   DemoBadge,
@@ -228,4 +244,67 @@ test("all dashboard sections and source filter remain in the shell", () => {
   );
   assert.ok(demo.includes("snapshot.lastResponse?.risk"));
   assert.ok(demo.includes("TtsDebugPanel"));
+});
+
+for (const [eventType, Icon] of [
+  ["conversation_started", PlayCircle],
+  ["assistant_selected", Bot],
+  ["conversation_turn", MessageSquare],
+  ["insurance_result", ShieldCheck],
+  ["sales_lead", TrendingUp],
+  ["risk_signal", TriangleAlert],
+  ["fraud_case", ShieldAlert],
+  ["operator_handoff", Headphones],
+  ["conversation_ended", CircleStop],
+  ["performance_sample", Gauge],
+]) {
+  test(`journey ${eventType} renders its semantic decorative icon`, () => {
+    assert.equal(getJourneyEventIcon(eventType), Icon);
+    const stage = { ...fixtures.journey.stages[0], event_type: eventType };
+    const html = render(Journey, { stages: [stage] });
+    assert.ok(
+      html.includes(
+        render(Icon, { className: "size-4", "aria-hidden": "true" }),
+      ),
+    );
+    assert.ok(html.includes(eventType.replaceAll("_", " ")));
+  });
+}
+
+test("unknown journey event types safely retain the default icon", () => {
+  for (const eventType of ["future_event", "constructor", "", "__proto__"]) {
+    assert.equal(getJourneyEventIcon(eventType), Route);
+    const stage = { ...fixtures.journey.stages[0], event_type: eventType };
+    assert.ok(
+      render(Journey, { stages: [stage] }).includes(
+        render(Route, { className: "size-4", "aria-hidden": "true" }),
+      ),
+    );
+  }
+});
+
+test("semantic journey icons preserve labels, action content, ordering and input data", () => {
+  const stages = structuredClone(fixtures.journey.stages);
+  const before = structuredClone(stages);
+  const html = render(Journey, { stages });
+  const labels = [...html.matchAll(/<h3[^>]*>(.*?)<\/h3>/g)].map(
+    (match) => match[1],
+  );
+  assert.deepEqual(
+    labels,
+    stages.map((stage) => stage.event_type.replaceAll("_", " ")),
+  );
+  assert.ok(
+    html.includes("social_engineering · needs_review · operator_handoff"),
+  );
+  assert.ok(html.includes("Handoff"));
+  assert.deepEqual(stages, before);
+  assert.notEqual(
+    getJourneyEventIcon("conversation_started"),
+    getJourneyEventIcon("assistant_selected"),
+  );
+  assert.notEqual(
+    getJourneyEventIcon("assistant_selected"),
+    getJourneyEventIcon("insurance_result"),
+  );
 });

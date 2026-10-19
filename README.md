@@ -466,6 +466,14 @@ A clean clone starts with its own local SQLite database.
 
 Another developer's local database is **not** transferred through Git.
 
+Response performance averages persisted, real runtime measurements from numeric-only
+`performance_sample` events in the existing SQLite table. Phone timings use runtime
+VAD/endpoint/final, Agent/TTS and provider submission/playback acknowledgement clocks.
+Browser/text requests currently supply measured Agent duration only; unavailable voice
+measurements and older sessions stay unknown (`— (0)`), never zero. Synthetic demo events
+do not contribute measured latency. No database migration is required.
+See [metric definitions](docs/ANALYTICS_API_CONTRACT.md#persistent-response-performance).
+
 See:
 
 - [Analytics API Contract](docs/ANALYTICS_API_CONTRACT.md)

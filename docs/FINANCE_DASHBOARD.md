@@ -48,8 +48,11 @@ The source selector applies to every analytics read and detail/journey request. 
 synthetic rows have explicit sources; mixed aggregate source totals and demo badges remain
 visible. Sources are never inferred from session IDs. No raw transcript, OTP/PIN/CVV,
 private identifier, customer amount/preference, provider metadata or free-text risk reason
-is required or restored. Language, clarification and latency metrics excluded by Stage 5A
-remain null/unavailable. The safe event timeline displays enum/boolean/catalog payloads.
+is required or restored. Language and clarification metrics excluded by Stage 5A
+remain null/unavailable. Response performance now consumes persistent numeric runtime samples;
+phone paths can supply all six timings, while browser/text requests supply Agent only.
+Missing fields/old sessions remain unknown and synthetic demo data never supplies measured
+latency. See `ANALYTICS_API_CONTRACT.md#persistent-response-performance`. The safe event timeline displays enum/boolean/catalog payloads.
 
 The main runtime and TTS instances remain mounted while navigation changes. Leaving the
 Conversation Demo stops capture; it retains session/history and selected-assistant behavior.
