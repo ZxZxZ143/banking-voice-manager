@@ -12,6 +12,14 @@ Business specification: `data/starter_kit/README.ru.md`.
 
 ## Current implementation status
 
+- **Legacy repository import (2026-10-19):** teammate commits `95a0a49` and `1a0e735`
+  add persistent numeric-only runtime latency samples and semantic Journey event icons.
+  Current RU/KK confirmation fixes and README are retained. Phone smoke now waits for
+  turn telemetry before cleanup; no production runtime behavior changes in that repair.
+  Verified 1457 backend / 118 frontend tests, Ruff, TypeScript/Vite, dashboard formatting
+  with Windows line endings, and the offline Stage 6 core/Risk/SQLite restart smoke.
+  Browser/text persist Agent duration only; live PSTN remains unverified.
+
 - **RU/KK confirmation STT hotfix (from current main 17aa980):** ordinary STT preserves
   primary Russian/Kazakh language and script; confirmation hints contain only public
   RU/KK vocabulary. Clear confirmations/corrections keep one STT; unsafe short outputs

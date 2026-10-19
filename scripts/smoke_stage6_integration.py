@@ -109,7 +109,8 @@ class FixtureSTT:
 async def audio_turn(runtime, call_id, marker):
     session = runtime.registry.get(call_id)
     assert session is not None
-    before = runtime._calls[call_id].turn_number
+    call = runtime._calls[call_id]
+    before = call.turn_number
     assert await runtime.feed_audio(call_id, ProviderAudio(bytes([marker, 0]) * 240))
     await runtime.finish_utterance(call_id)
     async with asyncio.timeout(5):
@@ -117,8 +118,10 @@ async def audio_turn(runtime, call_id, marker):
             runtime._calls[call_id].turn_number == before or session.status != "active"
         ):
             await asyncio.sleep(0.001)
-    # Final playback/terminal persistence can outlive registry invalidation briefly.
-    await asyncio.sleep(0)
+        # Playback can mark the call active before the turn's finally block has
+        # persisted its metrics. Drain it before another turn or test shutdown.
+        if call.turn_task is not None:
+            await asyncio.shield(call.turn_task)
 
 
 class FixtureComposer:
